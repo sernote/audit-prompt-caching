@@ -4,6 +4,8 @@ Use this reference when the user asks how the skill applies in practice, when a 
 
 ## Cost And Migration
 
+Load `references/economics.md`.
+
 Typical users:
 - AI platform lead choosing providers or models
 - AI engineer estimating production cost
@@ -23,7 +25,34 @@ Inspect:
 - prompt layout before and after migration
 - provider references, verified against official docs before exact claims
 
+## Managed Router And OpenRouter
+
+Load `references/openrouter.md`. If the symptom is financial, also load `references/economics.md`.
+
+Typical users:
+- AI engineer using OpenRouter as an OpenAI-compatible gateway
+- backend engineer configuring model/provider fallback
+- platform lead balancing cache locality, price, latency, and privacy policy
+- agent developer using `openrouter/auto` or multiple model fallbacks
+
+Symptoms:
+- OpenRouter shows cache writes but few cache reads
+- provider or model fallback changes cache hit rate
+- `provider.order`, `provider.only`, `provider.ignore`, ZDR, or account provider settings were added
+- `openrouter/auto` or `models` routing makes repeated prompts land on different model/provider routes
+- `cache_control` works direct-to-provider but behaves differently through OpenRouter
+
+Inspect:
+- OpenRouter base URL, SDK, request body, and model slug
+- `provider` routing object, account provider preferences, fallback policy
+- `messages`, especially first system/developer and first non-system message
+- `cache_control` placement and provider-specific compatibility
+- `plugins`, especially context compression
+- `cached_tokens`, `cache_write_tokens`, cache discount, response model/provider metadata
+
 ## Prompt And Request Code
+
+Usually start from `SKILL.md` anti-patterns. For release gates or incidents, also load `references/predeploy-checklist.md`.
 
 Typical users:
 - backend engineer building LLM requests
@@ -46,6 +75,8 @@ Inspect:
 - multimodal input representation, image detail, signed URLs
 
 ## Agent And Coding Assistant
+
+Load `references/agent-tools.md`.
 
 Typical users:
 - agent developer
@@ -71,6 +102,8 @@ Inspect:
 
 ## Deployment And Self-Hosted Inference
 
+Load `references/predeploy-checklist.md` and the relevant engine/provider reference.
+
 Typical users:
 - platform/SRE engineer running vLLM, SGLang, or Qwen self-hosted
 - inference engineer tuning KV cache capacity
@@ -90,8 +123,11 @@ Inspect:
 - load balancer routing policy, sticky routing, prefix-aware routing, consistent hashing
 - KV block pressure, eviction metrics, prefix-cache hit/query metrics, TTFT by route
 - tokenizer and chat template stability for self-hosted models
+- cache salt, cache namespace, and user/tenant isolation policy
 
 ## Observability And CI
+
+Load `references/predeploy-checklist.md`.
 
 Typical users:
 - observability engineer
@@ -127,3 +163,4 @@ If the user gives only one symptom:
 - Agent got expensive: start with dynamic tools and history mutation.
 - TTFT after scaling: start with routing and KV-cache capacity.
 - vLLM/SGLang config: start with deployment files, replica routing, `max_model_len`, and KV metrics.
+- OpenRouter cache miss: start with provider sticky routing, first-message identity, fallback/model routing, and cache read/write usage fields.

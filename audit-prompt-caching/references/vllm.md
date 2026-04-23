@@ -11,6 +11,8 @@ Verify before exact claims:
 - block size and hash algorithm behavior
 - chunked prefill limitations
 - cache salt behavior
+- multimodal hash behavior
+- eviction/free-queue behavior
 - production-stack or router capabilities
 
 Official sources:
@@ -22,7 +24,7 @@ Official sources:
 
 ## Stable Mechanics
 
-vLLM Automatic Prefix Caching reuses KV-cache blocks for identical token prefixes. Blocks are hashed with prefix context, so any early token mismatch prevents downstream reuse.
+vLLM Automatic Prefix Caching reuses KV-cache blocks for identical token prefixes. Blocks are hashed with prefix context, so any early token mismatch prevents downstream reuse. Special tokens, chat templates, tokenizer versions, LoRA/adapters, and multimodal hashes can change the cache input even when visible text looks identical.
 
 Eviction is driven by available KV blocks and cache policy. Prefix caching improves TTFT and GPU utilization only when prompts share prefixes often enough to repay overhead.
 
@@ -50,17 +52,23 @@ rg -n "gpu.memory.utilization|gpu_memory_utilization|kv_cache|num_gpu_blocks|blo
 
 Check whether useful prefixes are being evicted before reuse. Increase KV budget only after measuring.
 
+vLLM's documented eviction/free-queue behavior can make cache effectiveness sensitive to block pressure and request shape. Treat low available KV blocks, high eviction indicators, and rising TTFT on long shared prefixes as a capacity issue, not only a prompt-stability issue.
+
 ### Multi-Replica Routing
 
-Standard load balancing is cache-blind. Use a prefix-aware gateway, consistent hashing on the stable prefix, or a vLLM/SGLang/Ray/KubeAI/llm-d routing layer after verifying current docs.
+Standard load balancing is cache-blind. Use a prefix-aware gateway, consistent hashing on the stable prefix, or a vLLM/SGLang/KubeAI/llm-d routing layer after verifying current docs.
 
 ### Tokenizer Or BOS Drift
 
-Identical text is not identical cache input if token IDs differ. Pin tokenizer/model versions and smoke-test tokenization for representative prompts.
+Identical text is not identical cache input if token IDs differ. Pin tokenizer/model versions, chat templates, BOS/EOS handling, adapter settings, and smoke-test tokenization for representative prompts.
+
+### Multimodal Hash Drift
+
+For multimodal requests, image or media identity may participate in cache hashing. Keep URL/base64 representation, preprocessing, image detail, and media metadata stable for cacheable prefixes.
 
 ### cache_salt Isolation
 
-If `cache_salt` is set per request or per user, cross-user reuse can disappear. Decide based on threat model, not habit.
+If `cache_salt` is set per request or per user, cross-user reuse can disappear. Decide based on threat model, not habit. Prefer shared salt only inside a safe trust boundary; do not weaken required isolation for cache efficiency.
 
 ### APC On Unique Prompts
 
@@ -86,6 +94,9 @@ Correlate cache hit rate with:
 - replica count
 - router policy
 - tokenizer/model version
+- chat template and special-token behavior
+- `cache_salt` cardinality
+- multimodal representation
 - workload mix
 
 For CI, keep a stable-tokenization smoke test for a reference prompt and fail on unexpected token ID changes.

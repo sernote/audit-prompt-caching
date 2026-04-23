@@ -11,6 +11,7 @@ Verify before exact claims:
 - request parameters such as `prompt_cache_key` and `prompt_cache_retention`
 - usage object shape for Responses API vs Chat Completions
 - tool, image, and structured-output caching semantics
+- reasoning-model and Chat Completions caveats
 
 Official sources:
 - Prompt caching: https://developers.openai.com/api/docs/guides/prompt-caching
@@ -56,6 +57,8 @@ Keep image representation stable. Changing `detail`, signed URL query strings, o
 
 Changing model, reasoning effort, or request settings can create separate cache buckets. Verify current docs and measure by route/model/settings.
 
+For reasoning models, compare Responses API vs Chat Completions behavior using current OpenAI docs. If troubleshooting mentions lower caching for a given API/model combination, report it as provider-specific and verify with usage metadata before changing architecture.
+
 ## Diagnostics
 
 For Responses API or Chat Completions, inspect:
@@ -73,6 +76,7 @@ If `cached == 0` for repeated long prompts, check:
 - image representation changed
 - request reached a different cache route
 - prompt is below the current cacheable threshold
+- reasoning effort, API surface, or request settings changed
 
 ## Monitoring
 

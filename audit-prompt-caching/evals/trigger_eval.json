@@ -60,6 +60,66 @@
     "should_trigger": true
   },
   {
+    "query": "Our cache hit rate is 90 percent but the LLM bill did not drop because output tokens may dominate",
+    "should_trigger": true
+  },
+  {
+    "query": "Pre-deploy check: timestamp in system prompt, dynamic tool order, prompt A/B flag, vLLM replicas behind round robin",
+    "should_trigger": true
+  },
+  {
+    "query": "Choose between dynamic tool retrieval, allowed_tools, tool_search, and fixed tool bundles for a 30-step agent",
+    "should_trigger": true
+  },
+  {
+    "query": "Our agent summarizes early turns and cache reads reset after compaction. Audit the context strategy.",
+    "should_trigger": true
+  },
+  {
+    "query": "Calculate effective prompt-cache cost from static tokens, dynamic tokens, output tokens, hit rate, and cache write premium",
+    "should_trigger": true
+  },
+  {
+    "query": "Azure OpenAI cached_tokens is zero for repeated prompts and one request is below the cache threshold",
+    "should_trigger": true
+  },
+  {
+    "query": "SGLang radix cache hit rate is low because timestamp comes before shared context and gateway does round robin",
+    "should_trigger": true
+  },
+  {
+    "query": "Identical vLLM prompts stopped hitting cache after tokenizer chat_template and BOS token changes",
+    "should_trigger": true
+  },
+  {
+    "query": "cache_salt is random per request and shared prefixes no longer reuse KV cache",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude cache_read_input_tokens and cache_creation_input_tokens are zero because we forgot cache_control",
+    "should_trigger": true
+  },
+  {
+    "query": "vLLM prefix cache hit rate drops under KV block pressure and LRU eviction even though prompts are stable",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenRouter cache_write_tokens is nonzero but cached_tokens stays zero after adding provider.order",
+    "should_trigger": true
+  },
+  {
+    "query": "Our OpenRouter app uses openrouter/auto and repeated long prompts do not reuse prompt cache",
+    "should_trigger": true
+  },
+  {
+    "query": "Audit prompt caching through OpenRouter with top-level cache_control, provider.only, and ZDR enabled",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenRouter context-compression plugin may be changing the cacheable prefix before the provider sees it",
+    "should_trigger": true
+  },
+  {
     "query": "Write a friendly system prompt for a customer support bot",
     "should_trigger": false
   },
@@ -109,6 +169,34 @@
   },
   {
     "query": "Explain prompt engineering basics for beginners",
+    "should_trigger": false
+  },
+  {
+    "query": "Estimate the cost of our non-LLM Kubernetes cluster",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize these tool descriptions for a product manager, no agent runtime involved",
+    "should_trigger": false
+  },
+  {
+    "query": "Create an A/B test plan for a landing page headline",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain Azure identity and access management for a storage account",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a general overview of SGLang for a nontechnical audience",
+    "should_trigger": false
+  },
+  {
+    "query": "Compare tokenizer vocab sizes for two models without discussing cache reuse",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain OpenRouter model routing basics for a beginner without discussing prompt caching or costs",
     "should_trigger": false
   }
 ]

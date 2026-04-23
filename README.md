@@ -1,6 +1,6 @@
 # Audit Prompt Caching Skill
 
-`audit-prompt-caching` is a Codex/agent skill for auditing LLM prompt and prefix cache behavior: cache misses, `cached_tokens=0`, TTFT regressions, agent tool-routing costs, provider migration risk, and vLLM/SGLang deployment issues.
+`audit-prompt-caching` is a Codex/agent skill for auditing LLM prompt and prefix cache behavior: cache misses, `cached_tokens=0`, TTFT regressions, OpenRouter/provider-routing issues, agent tool-routing costs, provider migration risk, and vLLM/SGLang deployment issues.
 
 The skill is based on a Habr article series about prompt-cache economics, common anti-patterns, and dynamic tools in agent loops.
 
@@ -20,6 +20,7 @@ The skill is based on a Habr article series about prompt-cache economics, common
 - Dynamic tool sets inside agent loops
 - History truncation, compaction, and summarization
 - Cache-aware routing for managed and self-hosted inference
+- OpenRouter sticky routing, provider fallback, and cache read/write fields
 - KV-cache budget, eviction, and deployment config
 - Provider-specific usage fields and docs freshness
 
@@ -48,6 +49,10 @@ Use $audit-prompt-caching to inspect this vLLM deployment. TTFT spiked after sca
 ```
 
 ```text
+Use $audit-prompt-caching to audit our OpenRouter app. cache_write_tokens appears, but cached_tokens stays zero after we added provider.order and openrouter/auto.
+```
+
+```text
 Use $audit-prompt-caching to compare Anthropic and OpenAI for this RAG workload using static tokens, output tokens, hit rate, and migration risk.
 ```
 
@@ -59,10 +64,16 @@ audit-prompt-caching/
   agents/openai.yaml
   references/
     openai.md
+    openrouter.md
+    azure-openai.md
     anthropic.md
+    agent-tools.md
+    sglang.md
     vllm.md
     deepseek.md
+    economics.md
     gemini.md
+    predeploy-checklist.md
     qwen.md
     yandexgpt.md
     zai.md

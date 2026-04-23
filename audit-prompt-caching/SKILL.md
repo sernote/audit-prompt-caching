@@ -3,8 +3,9 @@ name: audit-prompt-caching
 description: >
   Use when LLM prefix/prompt caching, cached_tokens/cache read fields, cache hit
   rate, TTFT, prefill latency, KV cache reuse, prompt cost, tool/schema prompt
-  stability, agent tool routing, context compaction, vLLM/SGLang deployment, or
-  multi-replica LLM routing may affect behavior, latency, or inference cost.
+  stability, OpenRouter provider routing, agent tool routing, context compaction,
+  vLLM/SGLang deployment, or multi-replica LLM routing may affect behavior,
+  latency, or inference cost.
 ---
 
 # Prompt Cache Audit
@@ -26,9 +27,20 @@ Classify the work before auditing so you inspect the right artifacts. For a deep
 |---|---|---|
 | Cost or migration audit | bill increased, provider comparison, cache discount not visible | usage logs, billing export, static/dynamic/output token estimates, provider reference |
 | Prompt/code audit | `cached_tokens=0`, prompt builder changed, schema drift | prompt renderers, SDK calls, `tools`, `response_format`, JSON/schema serialization |
+| Managed-router audit | OpenRouter cache writes without reads, provider fallback, sticky routing, `openrouter/auto` | OpenRouter request body, `provider` routing fields, model(s), plugins, usage metadata |
 | Agent/coding-assistant audit | agent got more expensive, dynamic tools, MCP routing, compaction | agent loop, tool registry, tool selection, history compaction, per-step cache logs |
 | Deployment audit | vLLM/SGLang cache misses, TTFT after scaling, multi-replica routing | `docker-compose.yml`, Helm values, Kubernetes manifests, gateway config, engine flags |
 | Observability/CI audit | need cache dashboard, release guardrail, prefix smoke test | traces, dashboards, rendered prompt snapshots, prefix/tool/schema hashes |
+
+## Scenario References
+
+Load only the reference needed for the detected scenario:
+
+- **Cost or migration**: `references/economics.md` for effective-cost variables, output-share checks, TTL/write-premium break-even, and migration cache risk.
+- **Release, incident, deploy, or monitoring**: `references/predeploy-checklist.md` for blocking checks, triage order, and observability dimensions.
+- **OpenRouter or managed provider routing**: `references/openrouter.md` for sticky routing, provider fallback/order, cache usage fields, and provider-specific cache controls through OpenRouter.
+- **Agents, coding assistants, MCP, or dynamic tools**: `references/agent-tools.md` for tool strategy selection, mode switching, and context compaction.
+- **Self-hosted SGLang**: `references/sglang.md` for RadixAttention, SGLang router, HiCache, tokenizer/chat-template drift, and cache-aware deployment checks.
 
 ## Freshness Gate
 
@@ -49,27 +61,31 @@ Search SDK imports, API base URLs, model names, deployment manifests, and config
 
 | Signal | Provider/engine | Load |
 |---|---|---|
+| `openrouter`, `openrouter.ai/api/v1`, `OPENROUTER_API_KEY`, `@openrouter/sdk`, `OpenRouter`, `openrouter/auto` | OpenRouter | `references/openrouter.md` |
+| `AzureOpenAI`, `AZURE_OPENAI_ENDPOINT`, `azure.ai.openai`, `api-version`, Azure OpenAI endpoint URLs | Azure OpenAI | `references/azure-openai.md` |
 | `openai`, `responses.create`, `chat.completions`, `prompt_cache_key` | OpenAI | `references/openai.md` |
 | `anthropic`, `messages.create`, `cache_control` | Anthropic | `references/anthropic.md` |
 | `vllm`, `--enable-prefix-caching`, `AsyncLLMEngine`, `LLM(` | vLLM | `references/vllm.md` |
+| `sglang`, `sglang_router`, `RadixAttention`, `--disable-radix-cache`, `HiCache` | SGLang | `references/sglang.md` |
 | `deepseek`, `api.deepseek.com`, `prompt_cache_hit_tokens` | DeepSeek | `references/deepseek.md` |
 | `google.genai`, `google.generativeai`, `vertexai`, `CachedContent` | Gemini | `references/gemini.md` |
 | `dashscope`, `qwen`, `bailian`, `aliyun` | Qwen/DashScope | `references/qwen.md` |
 | `yandexgpt`, `foundationModels`, `llm.api.cloud.yandex.net` | YandexGPT | `references/yandexgpt.md` |
 | `z.ai`, `zai`, `glm-`, `api.z.ai` | z.ai | `references/zai.md` |
 
-Load only the relevant provider files. If detection is ambiguous, ask which provider/engine is in use.
+Load only the relevant provider files. If OpenRouter or Azure signals appear alongside OpenAI-compatible calls, prefer the OpenRouter/Azure reference over generic OpenAI. If detection is ambiguous, ask which provider/engine is in use.
 
 ## Audit Flow
 
 1. Detect mode, provider, and use-case scenario.
-2. Apply the Freshness Gate for provider-specific facts.
-3. Measure the symptom: cache ratio, TTFT/prefill latency, cache writes vs reads, and whether the drop correlates with deploys, SDK changes, prompt changes, replica count, or agent steps.
-4. Scan universal anti-patterns below.
-5. If an agent loop or tools are present, run the Agent Tool Stability checks.
-6. Apply provider-specific checks from the loaded reference.
-7. Report findings with evidence, severity, and concrete verification steps.
-8. When making code changes, verify prefix stability before claiming success.
+2. Load the relevant scenario reference and provider reference; do not load unrelated references.
+3. Apply the Freshness Gate for provider-specific facts.
+4. Measure the symptom: cache ratio, TTFT/prefill latency, cache writes vs reads, and whether the drop correlates with deploys, SDK changes, prompt changes, replica count, or agent steps.
+5. Scan universal anti-patterns below.
+6. If an agent loop or tools are present, run the Agent Tool Stability checks.
+7. Apply provider-specific checks from the loaded reference.
+8. Report findings with evidence, severity, and concrete verification steps.
+9. When making code changes, verify prefix stability before claiming success.
 
 ## Severity
 
@@ -175,6 +191,7 @@ Search for: k8s Services with multiple replicas, round-robin gateways, autoscali
 
 Fix depends on stack:
 - Managed API: use provider-supported cache key or routing hint only after checking docs.
+- OpenRouter: inspect sticky routing, `provider.order`, `provider.only`, `provider.ignore`, fallback/model routing, and first-message conversation identity.
 - vLLM/SGLang/self-hosted: use prefix-aware routing, consistent hashing, or a gateway that hashes the stable prefix.
 - Minimum viable: route by stable prefix family while monitoring hot spots.
 
@@ -201,11 +218,19 @@ Search for: sparse traffic, batch windows separated by long pauses, large number
 
 Fix: match TTL/retention to traffic cadence for managed APIs. For self-hosted inference, size KV cache for the working set, not the theoretical model context window.
 
+### AP-9b: Over-Isolation Fragments Shared Prefixes
+
+Security or tenant isolation can intentionally prevent reuse across users. This may be correct, but it should be an explicit trade-off.
+
+Search for: per-request `cache_salt`, per-user cache keys, tenant-specific routing keys, `user_id` in cache key, cache namespace by session, full cache isolation flags.
+
+Fix: choose the coarsest safe trust boundary. Prefer route/team/tenant prefixes only when the data isolation model allows it; use per-user isolation when compliance or side-channel risk requires it. Report the expected cache-efficiency loss instead of treating it as a bug.
+
 ### AP-10: Experiment Or Config Fragmentation
 
-A/B tests, prompt variants, model settings, or reasoning/tool settings split reuse into many small caches.
+A/B tests, prompt variants, model settings, managed-router settings, or reasoning/tool settings split reuse into many small caches.
 
-Search for: `variant`, `experiment`, `feature_flag`, prompt version per request, changing reasoning effort, changing tool choice, random few-shot examples.
+Search for: `variant`, `experiment`, `feature_flag`, prompt version per request, changing reasoning effort, changing tool choice, random few-shot examples, `openrouter/auto`, multiple `models`, `provider.order`, provider fallback settings.
 
 Fix: test sequentially where possible, move differences after the stable prefix, or bucket by stable route/version and measure each bucket separately.
 
@@ -220,6 +245,7 @@ Run these whenever the app is an agent, coding assistant, MCP client, tool-using
 - Confirm tool descriptions are fixed at session start or loaded via provider-supported deferred mechanisms.
 - Confirm compaction does not rewrite `system + tools + first messages`.
 - Confirm framework metadata is not injected before the cacheable prefix.
+- For managed routers such as OpenRouter, log actual model/provider route when available.
 
 Use this diagnostic helper when project-specific tokenization is unavailable:
 
@@ -293,4 +319,5 @@ If no codebase is available, ask only the missing questions needed to diagnose:
 6. Are there multiple replicas or gateways?
 7. Are tools/schemas stable across requests and agent steps?
 8. Is history append-only, compacted, or summarized?
-9. What changed before the cache hit rate or TTFT regressed?
+9. Are cache keys, salts, or routing hints per-user/per-request or shared by prefix family?
+10. What changed before the cache hit rate or TTFT regressed?
