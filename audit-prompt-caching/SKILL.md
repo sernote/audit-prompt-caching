@@ -3,9 +3,9 @@ name: audit-prompt-caching
 description: >
   Use when LLM prefix/prompt caching, cached_tokens/cache read fields, cache hit
   rate, TTFT, prefill latency, KV cache reuse, prompt cost, tool/schema prompt
-  stability, OpenRouter provider routing, agent tool routing, context compaction,
-  vLLM/SGLang deployment, or multi-replica LLM routing may affect behavior,
-  latency, or inference cost.
+  stability, OpenRouter routing, Bedrock cache checkpoints, agent tool routing,
+  context compaction, vLLM/SGLang deployment, or multi-replica LLM routing may
+  affect behavior, latency, or inference cost.
 ---
 
 # Prompt Cache Audit
@@ -27,6 +27,7 @@ Classify the work before auditing so you inspect the right artifacts. For a deep
 |---|---|---|
 | Cost or migration audit | bill increased, provider comparison, cache discount not visible | usage logs, billing export, static/dynamic/output token estimates, provider reference |
 | Prompt/code audit | `cached_tokens=0`, prompt builder changed, schema drift | prompt renderers, SDK calls, `tools`, `response_format`, JSON/schema serialization |
+| Mechanics/latency audit | cache hit did not reduce cost/latency, decode dominates, unclear prefill vs output | `references/mechanics.md`, token/TTFT traces, output length, streaming timestamps |
 | Managed-router audit | OpenRouter cache writes without reads, provider fallback, sticky routing, `openrouter/auto` | OpenRouter request body, `provider` routing fields, model(s), plugins, usage metadata |
 | Agent/coding-assistant audit | agent got more expensive, dynamic tools, MCP routing, compaction | agent loop, tool registry, tool selection, history compaction, per-step cache logs |
 | Deployment audit | vLLM/SGLang cache misses, TTFT after scaling, multi-replica routing | `docker-compose.yml`, Helm values, Kubernetes manifests, gateway config, engine flags |
@@ -37,6 +38,7 @@ Classify the work before auditing so you inspect the right artifacts. For a deep
 Load only the reference needed for the detected scenario:
 
 - **Cost or migration**: `references/economics.md` for effective-cost variables, output-share checks, TTL/write-premium break-even, and migration cache risk.
+- **Mechanics, latency, or self-hosted compute**: `references/mechanics.md` for prefill vs decode, KV reuse, and what cache hits can and cannot improve.
 - **Release, incident, deploy, or monitoring**: `references/predeploy-checklist.md` for blocking checks, triage order, and observability dimensions.
 - **OpenRouter or managed provider routing**: `references/openrouter.md` for sticky routing, provider fallback/order, cache usage fields, and provider-specific cache controls through OpenRouter.
 - **Agents, coding assistants, MCP, or dynamic tools**: `references/agent-tools.md` for tool strategy selection, mode switching, and context compaction.
@@ -64,6 +66,7 @@ Search SDK imports, API base URLs, model names, deployment manifests, and config
 | `openrouter`, `openrouter.ai/api/v1`, `OPENROUTER_API_KEY`, `@openrouter/sdk`, `OpenRouter`, `openrouter/auto` | OpenRouter | `references/openrouter.md` |
 | `AzureOpenAI`, `AZURE_OPENAI_ENDPOINT`, `azure.ai.openai`, `api-version`, Azure OpenAI endpoint URLs | Azure OpenAI | `references/azure-openai.md` |
 | `openai`, `responses.create`, `chat.completions`, `prompt_cache_key` | OpenAI | `references/openai.md` |
+| `bedrock-runtime`, `BedrockRuntime`, `boto3.client("bedrock-runtime")`, `client.converse`, `converse_stream`, `InvokeModelCommand`, `ConverseCommand`, `invoke_model`, `cachePoint`, `CacheReadInputTokens`, `CacheWriteInputTokens` | Amazon Bedrock | `references/bedrock.md` |
 | `anthropic`, `messages.create`, `cache_control` | Anthropic | `references/anthropic.md` |
 | `vllm`, `--enable-prefix-caching`, `AsyncLLMEngine`, `LLM(` | vLLM | `references/vllm.md` |
 | `sglang`, `sglang_router`, `RadixAttention`, `--disable-radix-cache`, `HiCache` | SGLang | `references/sglang.md` |
@@ -73,14 +76,14 @@ Search SDK imports, API base URLs, model names, deployment manifests, and config
 | `yandexgpt`, `foundationModels`, `llm.api.cloud.yandex.net` | YandexGPT | `references/yandexgpt.md` |
 | `z.ai`, `zai`, `glm-`, `api.z.ai` | z.ai | `references/zai.md` |
 
-Load only the relevant provider files. If OpenRouter or Azure signals appear alongside OpenAI-compatible calls, prefer the OpenRouter/Azure reference over generic OpenAI. If detection is ambiguous, ask which provider/engine is in use.
+Load only the relevant provider files. If OpenRouter, Azure, or Bedrock signals appear alongside OpenAI/Anthropic-compatible calls, prefer the router/provider wrapper reference over the generic direct-provider reference. If detection is ambiguous, ask which provider/engine is in use.
 
 ## Audit Flow
 
 1. Detect mode, provider, and use-case scenario.
 2. Load the relevant scenario reference and provider reference; do not load unrelated references.
 3. Apply the Freshness Gate for provider-specific facts.
-4. Measure the symptom: cache ratio, TTFT/prefill latency, cache writes vs reads, and whether the drop correlates with deploys, SDK changes, prompt changes, replica count, or agent steps.
+4. Measure the symptom: cache ratio, TTFT/prefill latency, output/decode time, cache writes vs reads, and whether the drop correlates with deploys, SDK changes, prompt changes, replica count, or agent steps.
 5. Scan universal anti-patterns below.
 6. If an agent loop or tools are present, run the Agent Tool Stability checks.
 7. Apply provider-specific checks from the loaded reference.
@@ -241,6 +244,7 @@ Run these whenever the app is an agent, coding assistant, MCP client, tool-using
 - Log `cached_tokens` / `cache_read_input_tokens` on each step.
 - Log `prefix_hash` for canonical `system + tools + stable early messages`.
 - Log `tools_count` and a sorted list/hash of tool names.
+- Log output tokens and streaming timestamps when latency is the symptom.
 - Check whether cache drops exactly when the tool list changes.
 - Confirm tool descriptions are fixed at session start or loaded via provider-supported deferred mechanisms.
 - Confirm compaction does not rewrite `system + tools + first messages`.
@@ -292,6 +296,7 @@ Verify: compare prefix fingerprints across three requests and confirm provider c
 ### Monitoring
 
 - cache ratio definition for this provider
+- prefill/TTFT vs decode/output split
 - prefix hash dimensions
 - deploy/change correlation to watch
 ```

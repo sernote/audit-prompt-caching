@@ -19,6 +19,7 @@ Block or require explicit signoff when a hot LLM path adds any of these:
 - timestamp, `request_id`, `run_id`, `trace_id`, user/company/tenant data in system prompt, tools, schema, or early messages
 - dynamic or unordered `tools`
 - `response_format` or JSON schema containing per-request constants
+- Bedrock `cachePoint` / model-family cache-control placed after dynamic request content
 - prompt A/B test or feature flag before the stable prefix
 - mode switch implemented by changing system prompt or tool list
 - early-history summarization or truncation that rewrites the anchor
@@ -110,6 +111,7 @@ Core metrics:
 - cache creation/write tokens
 - output tokens
 - TTFT or prefill latency
+- final-token latency or full streamed response duration
 - cache ratio by cacheable route
 - cache writes without later reads
 - cache discount or effective cache savings when available

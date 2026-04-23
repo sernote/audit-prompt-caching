@@ -93,6 +93,7 @@ Log per step:
 - mode state
 - compaction event and compaction strategy
 - TTFT/prefill latency
+- output tokens and final-token latency when latency is the symptom
 
 Alert when:
 - prefix hash changes unexpectedly
@@ -109,3 +110,17 @@ Add a 3-5 step smoke test:
 3. Render step 2 and confirm the stable prefix hash did not change.
 4. Trigger mode switch or compaction and confirm only allowed late content changes.
 5. Fail when dynamic tool retrieval, framework metadata, or early summarization mutates the stable prefix.
+
+## Advanced Serving Note
+
+Use this only when the user owns self-hosted serving infrastructure for many concurrent agent workflows.
+
+Classic LRU eviction can be a poor fit for agent workflows because future reuse may be determined by the workflow graph rather than recent access. Research systems such as KVFlow use workflow-aware eviction and KV prefetching to preserve prefixes likely to be reused soon.
+
+Audit questions:
+- Are many agent workflows paused on tools while their KV blocks occupy memory?
+- Are useful agent prefixes evicted shortly before the agent resumes?
+- Does the scheduler know future agent steps, or only recent KV access?
+- Are CPU/GPU KV transfers visible in traces?
+
+Recommendation: report this as an advanced serving-design opportunity, not as a default app-level fix. Prefer prompt stability, routing locality, and KV capacity checks first.

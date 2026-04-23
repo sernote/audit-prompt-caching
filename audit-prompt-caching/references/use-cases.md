@@ -24,6 +24,7 @@ Inspect:
 - estimates for static tokens, dynamic tokens, output tokens, hit rate, TTL, write premium
 - prompt layout before and after migration
 - provider references, verified against official docs before exact claims
+- `references/mechanics.md` when latency or throughput is part of the question
 
 ## Managed Router And OpenRouter
 
@@ -72,6 +73,7 @@ Inspect:
 - SDK client calls and request wrappers
 - tool registry and tool serialization
 - `response_format`, JSON schema, Pydantic/dataclass serialization
+- Bedrock `cachePoint` / model-family cache-control placement
 - multimodal input representation, image detail, signed URLs
 
 ## Agent And Coding Assistant
@@ -90,6 +92,7 @@ Symptoms:
 - `tools_count` or `prefix_hash` changes on every step
 - Plan/debug/read-only modes swap the system prompt or tool list
 - long trajectories have rising TTFT or repeated prefill
+- many concurrent agent workflows evict useful KV blocks before reuse
 - compaction rewrites early messages
 
 Inspect:
@@ -99,6 +102,7 @@ Inspect:
 - subagent/tool bundle routing
 - history truncation, tool-result compaction, summarization
 - per-step `cached_tokens`/cache-read fields, `prefix_hash`, `tools_count`, tool-name hash
+- serving scheduler/KV traces for self-hosted multi-agent workloads
 
 ## Deployment And Self-Hosted Inference
 
@@ -122,6 +126,7 @@ Inspect:
 - vLLM/SGLang engine arguments such as prefix caching, max model length, GPU memory utilization, tensor/pipeline parallel settings
 - load balancer routing policy, sticky routing, prefix-aware routing, consistent hashing
 - KV block pressure, eviction metrics, prefix-cache hit/query metrics, TTFT by route
+- prefill vs decode split from `references/mechanics.md`
 - tokenizer and chat template stability for self-hosted models
 - cache salt, cache namespace, and user/tenant isolation policy
 
@@ -146,12 +151,14 @@ Inspect or add:
 - prefix fingerprint for `system + tools + stable early messages`
 - tool/schema hash and prompt version dimensions
 - cache ratio, cache writes vs reads, TTFT/prefill latency, output-token cost share
+- first-token and final-token timestamps
 - deploy, SDK, model, prompt version, route, replica, region dimensions
 - CI smoke test that fails when the cacheable prefix changes unexpectedly
 
 ## Article-Derived Scenario Map
 
 - Economics article: cost comparison, provider migration, effective cost, output share, TTL/write premium, hidden migration tax.
+- Mechanics article: KV reuse, prefill vs decode, saved compute vs output/decode limits.
 - Anti-patterns article: volatile prefix data, template drift, schema/tool serialization, append-only history, routing, parallel fan-out, cache lifetime.
 - Agents article: dynamic tool selection, stable tool bundles, masking/allowed tools/tool search/deferred loading, compaction, per-step diagnostics.
 
@@ -162,5 +169,6 @@ If the user gives only one symptom:
 - `cached_tokens=0`: start with prompt prefix and tool/schema stability.
 - Agent got expensive: start with dynamic tools and history mutation.
 - TTFT after scaling: start with routing and KV-cache capacity.
+- Cache hit but latency still high: split TTFT/prefill from decode/output and tool time.
 - vLLM/SGLang config: start with deployment files, replica routing, `max_model_len`, and KV metrics.
 - OpenRouter cache miss: start with provider sticky routing, first-message identity, fallback/model routing, and cache read/write usage fields.

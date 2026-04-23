@@ -120,6 +120,26 @@
     "should_trigger": true
   },
   {
+    "query": "Amazon Bedrock CacheWriteInputTokens is high but CacheReadInputTokens stays zero for repeated cachePoint prompts",
+    "should_trigger": true
+  },
+  {
+    "query": "Review our Bedrock Converse cachePoint placement in system messages and tools",
+    "should_trigger": true
+  },
+  {
+    "query": "Gemini implicit caching is enabled but usage_metadata cached tokens stays zero for repeated long contexts",
+    "should_trigger": true
+  },
+  {
+    "query": "Cache hits reduce TTFT but total latency is still high because output decode may dominate",
+    "should_trigger": true
+  },
+  {
+    "query": "Our self-hosted multi-agent workflow keeps evicting useful KV blocks before agents resume after tools",
+    "should_trigger": true
+  },
+  {
     "query": "Write a friendly system prompt for a customer support bot",
     "should_trigger": false
   },

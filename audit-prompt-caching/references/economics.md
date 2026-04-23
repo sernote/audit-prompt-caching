@@ -1,6 +1,6 @@
 # Prompt Cache Economics
 
-Use this reference for provider comparison, migration planning, unexplained bills, or "high hit rate but no savings" cases. Verify current provider prices, model names, TTLs, cache discounts, and storage/write premiums before exact calculations.
+Use this reference for provider comparison, migration planning, unexplained bills, or "high hit rate but no savings" cases. Verify current provider prices, model names, TTLs, cache discounts, and storage/write premiums before exact calculations. For latency or throughput symptoms, also load `references/mechanics.md`.
 
 ## Effective Cost Variables
 
@@ -12,6 +12,7 @@ Model the request by shape, not by price-list input cost alone:
 - `h`: cache hit rate for the stable prefix, from `0` to `1`
 - `P_miss`: uncached input price or compute cost
 - `P_hit`: cached-read input price or compute cost
+- `P_write`: cache-write input price or compute cost, if separate
 - `P_out`: output price
 
 Basic effective-cost shape:
@@ -20,7 +21,17 @@ Basic effective-cost shape:
 C = S * ((1 - h) * P_miss + h * P_hit) + D * P_miss + O * P_out
 ```
 
-If the provider charges for explicit cache writes, include write premium and TTL/storage cost separately. Do not assume one provider's cache math applies to another provider.
+For explicit-cache providers, prefer raw usage fields over averaged assumptions:
+
+```text
+C = input_uncached * P_miss
+  + cache_read_tokens * P_hit
+  + cache_write_tokens * P_write
+  + output_tokens * P_out
+  + storage_or_ttl_cost
+```
+
+Do not assume one provider's cache math applies to another provider. If output tokens dominate cost, prompt caching can be technically correct and financially underwhelming.
 
 ## Usage Fields To Collect
 
@@ -30,6 +41,7 @@ Collect when available:
 - total input tokens
 - cached-read tokens, such as `cached_tokens` or `cache_read_input_tokens`
 - cache-creation/write tokens, such as `cache_creation_input_tokens`
+- Bedrock-style read/write fields, such as `CacheReadInputTokens` and `CacheWriteInputTokens`
 - dynamic uncached input tokens
 - output tokens
 - model, region, route, prompt version, cache key or prefix family
@@ -49,6 +61,17 @@ Audit steps:
 - check whether a flagship model's output price dominates the workload
 - consider output length, response compression, or model choice only after confirming quality requirements
 
+### Cache Hit, Latency Did Not Drop Enough
+
+Prompt caching mainly reduces prefill/input-processing work. If total response latency stays high, split TTFT from decode/output time:
+- first-token latency or prefill time
+- final-token latency
+- output tokens
+- tool execution time
+- provider streaming overhead
+
+Do not treat a long final response as a prompt-cache failure unless TTFT or prefill also regressed.
+
 ### Price List Says Cheaper, Effective Cost Says No
 
 Compare providers with the real workload shape:
@@ -62,6 +85,7 @@ Compare providers with the real workload shape:
 For migration planning, compute both:
 - current effective cost using observed hit rate
 - target effective cost with conservative hit rate until the prompt layout is proven on the new provider
+- target latency using conservative prefill savings and unchanged output/decode cost
 
 ### Explicit Cache Write Premium
 

@@ -114,6 +114,24 @@
       "prompt": "Prompt caching worked when calling Anthropic directly, but through OpenRouter our Claude/Gemini routing behaves differently. We use top-level `cache_control`, `provider.only`, `zdr`, and the context-compression plugin. Build an audit checklist.",
       "expected_output": "Treats OpenRouter as a managed router layer; checks current OpenRouter docs for top-level vs per-block cache_control, provider eligibility, Gemini breakpoint behavior, require_parameters, ZDR/data/provider filters, and context-compression transforms; warns that privacy filters and provider constraints can correctly reduce cache-capable routes; verifies with cached_tokens, cache_write_tokens, cache discount, routed provider/model, and prompt fingerprints.",
       "files": []
+    },
+    {
+      "id": 20,
+      "prompt": "Review this Amazon Bedrock Converse request. The code uses boto3 bedrock-runtime and adds `cachePoint` after a user-specific intro, then changes tools per route. CloudWatch usage shows CacheWriteInputTokens on many calls but CacheReadInputTokens stays near zero. Some requests use cross-region inference.",
+      "expected_output": "Loads Bedrock reference before direct Anthropic/OpenAI references; checks Converse vs InvokeModel syntax, cachePoint placement, model-specific token minimums and checkpoint limits, supported checkpoint fields, TTL, cross-region inference, and CacheReadInputTokens/CacheWriteInputTokens/CacheDetails; identifies dynamic content before checkpoint and route/tool drift as likely causes; verifies with prefix fingerprints and Bedrock usage by model/region/API surface.",
+      "files": []
+    },
+    {
+      "id": 21,
+      "prompt": "Our provider reports high cached tokens and TTFT improved, but total response latency and the bill barely changed. Requests have short dynamic input, a 12k stable prefix, and 4k output tokens. Diagnose before changing the prompt cache setup.",
+      "expected_output": "Loads mechanics and economics references; separates prefill/TTFT from decode/final-token latency; explains that prompt caching mostly saves input prefill, not output token generation; asks for first-token and final-token timestamps, output tokens, cache read/write fields, and tool timing; calculates output share before blaming cache hit rate.",
+      "files": []
+    },
+    {
+      "id": 22,
+      "prompt": "We run many concurrent self-hosted agent workflows. Prefixes are stable and routed to the same workers, but useful agent KV blocks are evicted while agents wait on tools and then get recomputed right before reuse. Should we tune LRU or think about workflow-aware caching?",
+      "expected_output": "Classifies this as advanced self-hosted agent-serving audit; checks prompt stability and routing first, then treats LRU eviction as potentially mismatched to workflow reuse; references workflow-aware eviction/prefetching as an advanced serving-design opportunity; asks for scheduler, future step graph, KV eviction traces, CPU/GPU transfer timings, and TTFT by resumed agent step.",
+      "files": []
     }
   ]
 }
