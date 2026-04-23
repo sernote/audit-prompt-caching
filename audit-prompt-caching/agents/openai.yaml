@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prefix Cache Audit"
+  short_description: "Audit LLM prompt cache misses"
+  default_prompt: "Use $audit-prompt-caching to audit this LLM app for prompt cache misses and TTFT regressions."

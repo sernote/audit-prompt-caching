@@ -1,0 +1,114 @@
+[
+  {
+    "query": "cached_tokens is zero in our OpenAI Responses API calls even though the prompt is 8k tokens and repeated every request",
+    "should_trigger": true
+  },
+  {
+    "query": "Our Claude cache_control prompt is writing cache_creation_input_tokens on every request but cache_read_input_tokens stays zero",
+    "should_trigger": true
+  },
+  {
+    "query": "After scaling vLLM from 1 to 4 pods TTFT jumped and prefix cache hit rate collapsed. Check the k8s routing and max_model_len config.",
+    "should_trigger": true
+  },
+  {
+    "query": "The agent got more expensive after we started selecting only 5 tools per step instead of sending all 40 tools",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you review this prompt builder for prefix cache anti-patterns? It adds user.company and request_id to the system prompt.",
+    "should_trigger": true
+  },
+  {
+    "query": "Gemini implicit cache seems random for repeated long document prompts; help diagnose whether we should use explicit CachedContent",
+    "should_trigger": true
+  },
+  {
+    "query": "DashScope Qwen reports cache_creation_input_tokens but almost no cached_tokens. Need an audit of context cache usage.",
+    "should_trigger": true
+  },
+  {
+    "query": "DeepSeek prompt_cache_hit_tokens dropped after we changed tool schema serialization. Find likely causes.",
+    "should_trigger": true
+  },
+  {
+    "query": "We need a CI smoke test that fails when the cacheable prompt prefix changes unexpectedly",
+    "should_trigger": true
+  },
+  {
+    "query": "Compare Anthropic and OpenAI prices for our RAG workload using cache hit rate, static tokens, output tokens, and migration risk",
+    "should_trigger": true
+  },
+  {
+    "query": "Please inspect our docker-compose.yml and Helm values for vLLM prefix cache routing problems",
+    "should_trigger": true
+  },
+  {
+    "query": "We are migrating a cache_control RAG prompt from Claude to OpenAI and cached_tokens got worse",
+    "should_trigger": true
+  },
+  {
+    "query": "Our Claude-Code-like assistant injects cwd, git status, platform, and date before tool definitions. Is that hurting prompt cache?",
+    "should_trigger": true
+  },
+  {
+    "query": "Design cache observability for LLM usage with prefix_hash, tools_count, cache reads, cache writes, and TTFT",
+    "should_trigger": true
+  },
+  {
+    "query": "Review this prompt layout for a document classifier: system, user question, long shared policy, JSON schema",
+    "should_trigger": true
+  },
+  {
+    "query": "Write a friendly system prompt for a customer support bot",
+    "should_trigger": false
+  },
+  {
+    "query": "Count tokens for this prompt and tell me if it fits the context window",
+    "should_trigger": false
+  },
+  {
+    "query": "Build a simple calculator tool schema for OpenAI function calling",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain what KV cache means in transformers at a high level for a blog intro",
+    "should_trigger": false
+  },
+  {
+    "query": "Our API gateway round-robins traffic between services, but none of them are LLM inference replicas",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize this conversation history to reduce token usage",
+    "should_trigger": false
+  },
+  {
+    "query": "Generate Kubernetes YAML for a stateless web app with 4 replicas",
+    "should_trigger": false
+  },
+  {
+    "query": "Review this JSON schema for correctness and required fields",
+    "should_trigger": false
+  },
+  {
+    "query": "Find the latest OpenAI model and update our model string",
+    "should_trigger": false
+  },
+  {
+    "query": "Help me route user questions to specialized agents by topic, no LLM prompt caching involved",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a Docker Compose file for Redis and Postgres",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a Kubernetes Service for a stateless API without LLM inference",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain prompt engineering basics for beginners",
+    "should_trigger": false
+  }
+]

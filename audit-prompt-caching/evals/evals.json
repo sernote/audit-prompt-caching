@@ -1,0 +1,47 @@
+{
+  "skill_name": "audit-prompt-caching",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Audit this OpenAI request builder. Repeated calls show `usage.prompt_tokens_details.cached_tokens` stays at 0 even though the system prompt is long. The code builds `system = f\"Today is {datetime.now().isoformat()}. You help {user.company}. {BASE_SYSTEM}\"`, passes a dynamic `requestId` inside `response_format.json_schema`, and sends the same tools in whatever order the registry returns.",
+      "expected_output": "Identifies volatile prefix data, dynamic structured-output schema, and non-deterministic tool ordering; recommends moving dynamic context after the stable prefix, removing requestId from schema, sorting tools/schemas, checking OpenAI docs before exact provider claims, and verifying with prefix fingerprints plus cached_tokens.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "We have a 25-step coding agent. To reduce tokens, every step retrieves 6-8 relevant tools from a set of 60 and sends only those. The raw prompt got shorter, but total cost and TTFT went up. Logs show `tools_count` changes each step and `prefix_hash` changes with it. Review the architecture.",
+      "expected_output": "Runs agent-tool stability checks; explains that dynamic tool sets rewrite early prompt content and can be more expensive in long trajectories; recommends stable tool bundles, sorted tool definitions, provider-supported allowed tools/tool search/deferred loading after doc verification, route-level fixed tool sets, and per-step cached-token/prefix-hash monitoring.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Our self-hosted vLLM deployment has four replicas behind a regular Kubernetes Service. Prompts are stable and around 30k tokens, but cache hit rate is low and TTFT spikes after scaling. Config has `--max-model-len 131072` even though p99 input length is 12k. What should we audit?",
+      "expected_output": "Identifies cache-blind routing and KV budget pressure; recommends prefix-aware routing or stable-prefix hashing, reviewing max_model_len vs p99, monitoring KV blocks and prefix cache hit/query metrics, splitting short/long context pools, and verifying current vLLM docs before exact parameter/default claims.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "DashScope Qwen explicit context cache appears to write cache every call but never read it. The response sometimes has `prompt_tokens_details.cache_creation_input_tokens`, sometimes only OpenAI-compatible `cached_tokens`, and in Anthropic-compatible mode it exposes `cache_read_input_tokens`. Produce an audit checklist.",
+      "expected_output": "Loads Qwen/DashScope reference, distinguishes cache creation from cache read fields across compatibility routes, warns that field names vary by region/model/API surface, recommends checking official docs, and diagnoses write-without-read as prefix/TTL/route/model support issue rather than treating cached_tokens alone as enough.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "We are migrating a RAG document-classification prompt from Anthropic cache_control to OpenAI. The current layout is system instructions, then the user question, then a repeated 12k-token policy document, then output schema. The old setup had good cache reads, but early OpenAI tests show low cached_tokens. Review the migration risk.",
+      "expected_output": "Classifies this as a cost/migration plus prompt-layout audit; explains exact-prefix risk when repeated static context appears after dynamic user text; recommends moving stable RAG/policy context before dynamic content where provider semantics require it, checking official OpenAI/Anthropic docs before exact claims, recalculating effective cost with lower migration hit rate, and verifying with rendered prefix fingerprints plus provider usage fields.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "Please audit our observability plan for prompt caching. We only graph average prompt_tokens and p95 latency. We want a CI smoke test before releases but do not know what dimensions or hashes to store.",
+      "expected_output": "Classifies this as observability/CI audit; recommends cache-read/write fields, cache ratio by route/prompt family/model/region/replica, TTFT/prefill latency, output-token cost share, prefix/tool/schema hashes, deploy and prompt-version correlation, rendered prompt snapshots, and a smoke test that fails when the stable cacheable prefix changes unexpectedly.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "Review this self-hosted inference deployment for prompt caching. The repo has docker-compose.yml, Helm values, a Kubernetes Service, and a gateway config. vLLM prefix caching is enabled, but repeated 20k-token prompts hit different pods and cache metrics vary by replica.",
+      "expected_output": "Classifies this as deployment/self-hosted audit; asks to inspect Docker Compose, Helm, Kubernetes Service/Ingress/gateway config and vLLM engine flags; identifies cache-blind routing across replicas as a primary suspect; recommends sticky or prefix-aware routing, route-level metrics, KV budget review, and verification with prefix-cache hit/query metrics by route and replica.",
+      "files": []
+    }
+  ]
+}
