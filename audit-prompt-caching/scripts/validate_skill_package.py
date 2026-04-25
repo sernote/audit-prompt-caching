@@ -67,25 +67,28 @@ def validate(skill_dir):
             errors.append(f"SKILL.md missing frontmatter key: {key}")
     checks["SKILL.md"] = "ok" if not frontmatter_error else "error"
 
+    before = len(errors)
     for rel_path in sorted(set(REFERENCE_PATTERN.findall(skill_text))):
         path = skill_dir / rel_path
         if not path.exists():
             errors.append(f"referenced file does not exist: {rel_path}")
-    checks["references"] = "ok"
+    checks["references"] = "error" if len(errors) > before else "ok"
 
     eval_dir = skill_dir / "evals"
     if eval_dir.exists():
+        before = len(errors)
         for path in sorted(eval_dir.glob("*.json")):
             validate_json(path, errors)
-        checks["evals"] = "ok"
+        checks["evals"] = "error" if len(errors) > before else "ok"
     else:
         warnings.append("missing evals directory")
 
     scripts_dir = skill_dir / "scripts"
     if scripts_dir.exists():
+        before = len(errors)
         for path in sorted(scripts_dir.glob("*.py")):
             validate_python(path, errors)
-        checks["scripts"] = "ok"
+        checks["scripts"] = "error" if len(errors) > before else "ok"
     else:
         warnings.append("missing scripts directory")
 

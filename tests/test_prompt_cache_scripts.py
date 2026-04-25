@@ -261,6 +261,38 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 2)
             self.assertEqual(output["findings"][0]["path"], "src/llm.py")
 
+    def test_extract_llm_calls_scans_dockerfile_for_vllm_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "Dockerfile").write_text(
+                "\n".join(
+                    [
+                        'CMD ["vllm", "serve", "model"]',
+                        "ARG VLLM_ARGS=--enable-prefix-caching",
+                    ]
+                )
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            self.assertEqual(output["files_scanned"], 1)
+            self.assertEqual(output["providers"]["vllm"], 2)
+            self.assertEqual(output["findings"][0]["path"], "Dockerfile")
+
+    def test_extract_llm_calls_matches_sglang_dash_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            compose = tmp_path / "compose.yaml"
+            compose.write_text("command: sglang.launch_server\nargs: --disable-radix-cache\n")
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            self.assertGreaterEqual(output["providers"]["sglang"], 2)
+
     def test_validate_skill_package_checks_required_files_and_references(self):
         result = run_script("validate_skill_package.py", ROOT / "audit-prompt-caching")
 
@@ -294,9 +326,36 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             output = json.loads(result.stdout)
             self.assertEqual(output["status"], "error")
+            self.assertEqual(output["checks"]["references"], "error")
             self.assertTrue(
                 any("references/missing.md" in error for error in output["errors"])
             )
+
+    def test_validate_skill_package_marks_eval_and_script_checks_as_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            skill_dir = tmp_path / "bad-skill"
+            (skill_dir / "evals").mkdir(parents=True)
+            (skill_dir / "scripts").mkdir()
+            (skill_dir / "SKILL.md").write_text(
+                "\n".join(
+                    [
+                        "---",
+                        "name: bad-skill",
+                        "description: Use when testing bad package",
+                        "---",
+                    ]
+                )
+            )
+            (skill_dir / "evals" / "broken.json").write_text("{")
+            (skill_dir / "scripts" / "broken.py").write_text("def nope(:\n")
+
+            result = run_script("validate_skill_package.py", skill_dir)
+
+            self.assertEqual(result.returncode, 1)
+            output = json.loads(result.stdout)
+            self.assertEqual(output["checks"]["evals"], "error")
+            self.assertEqual(output["checks"]["scripts"], "error")
 
     def test_run_trigger_eval_summarizes_coverage(self):
         result = run_script("run_trigger_eval.py", ROOT / "audit-prompt-caching")

@@ -44,6 +44,15 @@ SOURCE_SUFFIXES = {
     ".yml",
 }
 
+SOURCE_FILENAMES = {
+    "Dockerfile",
+    "Containerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+}
+
 PROVIDER_PATTERNS = {
     "openai": [
         r"\bfrom\s+openai\s+import\b",
@@ -74,13 +83,13 @@ PROVIDER_PATTERNS = {
     ],
     "vllm": [
         r"\bvllm\b",
-        r"\b--enable-prefix-caching\b",
+        r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])",
         r"\bAsyncLLMEngine\b",
     ],
     "sglang": [
         r"\bsglang\b",
         r"\bRadixAttention\b",
-        r"\b--disable-radix-cache\b",
+        r"(^|[^A-Za-z0-9_])--disable-radix-cache($|[^A-Za-z0-9_-])",
         r"\bHiCache\b",
     ],
     "gemini": [
@@ -102,7 +111,9 @@ PROVIDER_PATTERNS = {
 
 
 def should_scan(path):
-    return path.is_file() and path.suffix.lower() in SOURCE_SUFFIXES
+    return path.is_file() and (
+        path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_FILENAMES
+    )
 
 
 def iter_files(root):
