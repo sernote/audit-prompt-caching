@@ -1,16 +1,42 @@
 ---
 name: audit-prompt-caching
 description: >
-  Use when LLM prefix/prompt caching, cached_tokens/cache read fields, cache hit
-  rate, TTFT, prefill latency, KV cache reuse, prompt cost, tool/schema prompt
-  stability, OpenRouter routing, Bedrock cache checkpoints, agent tool routing,
-  context compaction, vLLM/SGLang deployment, or multi-replica LLM routing may
-  affect behavior, latency, or inference cost.
+  Use when auditing LLM prompt/prefix caching, cached_tokens,
+  cache_read_input_tokens/cache_creation_input_tokens, prompt_cache_key,
+  cache_control/cachePoint placement, stable prefixes, tool/schema stability,
+  TTFT/prefill latency, OpenAI/Claude/Bedrock/OpenRouter routing, vLLM/SGLang KV
+  reuse, cache hit rate, or prompt-cache cost. Do not use for generic prompt
+  writing, generic RAG design, token counting, or non-LLM performance unless
+  prompt caching is central.
 ---
 
 # Prompt Cache Audit
 
 Diagnose and fix LLM prompt/prefix cache misses. Treat caching as an engineering property of the request path: stable prefix, cache-aware routing, and cache entries that live long enough to be reused.
+
+Caching is an optimization only when the prefix is stable, long enough, repeated, measurable, and safe. Do not add cache controls, cache keys, or routing hints blindly.
+
+## When to use
+
+Use this skill when reviewing or designing LLM calls where repeated prompt prefixes may reduce cost or latency through provider-native prompt caching, managed-router cache locality, or self-hosted KV reuse.
+
+Typical triggers:
+- `cached_tokens=0`, `cache_read_input_tokens=0`, or cache writes without reads.
+- Cache hit rate, TTFT, prefill latency, or input-token cost regressed.
+- The request uses long system prompts, tool catalogs, schemas, static documents, few-shot examples, or repeated RAG/CAG context.
+- The app uses OpenAI `prompt_cache_key`, Anthropic `cache_control`, Bedrock `cachePoint`, OpenRouter routing, Gemini/Qwen/DeepSeek cache fields, or Azure OpenAI cached-token telemetry.
+- An agent changes tools, compacts history, mutates early messages, or switches modes across steps.
+- vLLM/SGLang/self-hosted deployments have multi-replica routing, KV pressure, tokenizer/chat-template drift, or cache-aware routing questions.
+
+## When not to use
+
+Do not use this skill for:
+- generic prompt writing or prompt-quality editing without a caching concern
+- generic RAG design unless repeated context placement/cacheability is part of the task
+- token counting or context-window sizing only
+- response caching only, unless comparing it with prompt prefix caching
+- non-LLM frontend/backend performance or non-inference Kubernetes routing
+- speculative savings claims without usage data or clearly stated assumptions
 
 ## Modes
 
@@ -18,6 +44,19 @@ Diagnose and fix LLM prompt/prefix cache misses. Treat caching as an engineering
 - **Advisory**: if no codebase is available, ask targeted diagnostic questions and give provider-checked recommendations.
 - **Agent audit**: when tools, tool routing, MCP, agent loops, compaction, or multi-step trajectories are present, always run the agent-specific checks.
 - **Deployment audit**: when vLLM/SGLang, Kubernetes, Docker Compose, gateways, or multiple inference replicas are present, inspect routing and KV-cache capacity as first-class causes.
+
+## Applicability Gate
+
+Before recommending prompt-cache changes, check:
+
+1. **Reusable prefix**: Is there a static or semi-static prefix above the provider/model threshold or large enough to matter for self-hosted KV reuse?
+2. **Repeat cadence**: Is the same prefix reused often enough before cache expiry or eviction?
+3. **Exact stability**: Are tools, schemas, system/developer instructions, examples, images, and early messages byte/token stable across target requests?
+4. **Telemetry**: Are cache-read/write fields, input/output tokens, TTFT/prefill timing, model/route, and prompt version available?
+5. **Cost shape**: Is input prefill/input-token cost meaningful, or do output tokens/decode/tool latency dominate?
+6. **Safety boundary**: Would broader cache reuse violate tenant, privacy, data residency, ZDR, or side-channel requirements?
+
+If the gate fails, report why caching is not the right lever yet and recommend measurement, prompt restructuring, routing fixes, or a different optimization.
 
 ## Use-Case Map
 
@@ -43,6 +82,17 @@ Load only the reference needed for the detected scenario:
 - **OpenRouter or managed provider routing**: `references/openrouter.md` for sticky routing, provider fallback/order, cache usage fields, and provider-specific cache controls through OpenRouter.
 - **Agents, coding assistants, MCP, or dynamic tools**: `references/agent-tools.md` for tool strategy selection, mode switching, and context compaction.
 - **Self-hosted SGLang**: `references/sglang.md` for RadixAttention, SGLang router, HiCache, tokenizer/chat-template drift, and cache-aware deployment checks.
+- **Full audit deliverable**: `references/report-template.md` when the user asks for a written report or when findings need a reusable handoff artifact.
+
+## Bundled Scripts
+
+Use scripts when deterministic evidence is better than prose:
+
+- `scripts/prefix_stability_check.py`: compare two rendered prompts or JSON request payloads as raw bytes by default and find the first divergent prefix location; use `--canonical-json` only when sorted-key normalization is intentional.
+- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage logs across OpenAI, Anthropic-compatible, Bedrock-style, and OpenAI-compatible cache fields.
+- `scripts/estimate_cache_roi.py`: estimate input-only and total-cost impact from static/dynamic/output tokens, hit rate, request count, and explicit pricing assumptions.
+
+Do not treat these scripts as provider tokenizers or billing truth. Provider usage and billing exports remain authoritative.
 
 ## Freshness Gate
 
@@ -83,21 +133,36 @@ Load only the relevant provider files. If OpenRouter, Azure, or Bedrock signals 
 1. Detect mode, provider, and use-case scenario.
 2. Load the relevant scenario reference and provider reference; do not load unrelated references.
 3. Apply the Freshness Gate for provider-specific facts.
-4. Measure the symptom: cache ratio, TTFT/prefill latency, output/decode time, cache writes vs reads, and whether the drop correlates with deploys, SDK changes, prompt changes, replica count, or agent steps.
-5. Scan universal anti-patterns below.
-6. If an agent loop or tools are present, run the Agent Tool Stability checks.
-7. Apply provider-specific checks from the loaded reference.
-8. Report findings with evidence, severity, and concrete verification steps.
-9. When making code changes, verify prefix stability before claiming success.
+4. Run the Applicability Gate.
+5. Map prompt structure in order: tools, structured-output schemas, system/developer instructions, few-shot examples, static documents/context, retrieved context, conversation history, user-specific data, volatile values.
+6. Mark each segment as static, semi-static, dynamic, or volatile.
+7. Measure the symptom: cache ratio, TTFT/prefill latency, output/decode time, cache writes vs reads, and whether the drop correlates with deploys, SDK changes, prompt changes, replica count, or agent steps.
+8. Scan universal anti-patterns below.
+9. If an agent loop or tools are present, run the Agent Tool Stability checks.
+10. Apply provider-specific checks from the loaded reference.
+11. Report findings with evidence, severity, concrete fix, and validation steps.
+12. When making code changes, verify prefix stability before claiming success.
+
+## Rule Categories
+
+Use this taxonomy to keep audits consistent:
+
+| Priority | Category | Examples |
+|---|---|---|
+| P0 | Provider correctness | OpenAI automatic caching, Responses vs Chat usage fields, Anthropic `cache_control`, Bedrock `cachePoint`, provider thresholds, TTL/retention |
+| P1 | Prefix stability | static-first ordering, dynamic-last placement, no volatile early values, stable tools/schemas, deterministic document order |
+| P2 | Measurement | cache hit ratio, cache write/read distinction, output-token share, TTFT vs final latency, prompt/tool/schema hashes |
+| P3 | Architecture | prompt cache vs response cache, RAG vs CAG, multi-tenant boundaries, managed routing, self-hosted replica locality |
+| P4 | Reporting | file-line findings, before/after prompt layout, ROI assumptions, validation commands |
 
 ## Severity
 
 Assign severity from impact and evidence, not from the anti-pattern name alone:
 
 - **Critical**: confirmed metric drop or cache miss on a large shared prefix, expensive model, high traffic, long agent trajectory, or multi-replica production path.
-- **Strong**: likely cache killer found in a hot path but metrics are incomplete.
-- **Moderate**: pattern can fragment cache but impact depends on traffic shape.
-- **Low**: defensive cleanup or monitoring improvement.
+- **High**: likely cache killer found in a hot path but metrics are incomplete.
+- **Medium**: pattern can fragment cache but impact depends on traffic shape.
+- **Low**: defensive cleanup, documentation, or monitoring improvement.
 
 ## Universal Anti-Patterns
 
@@ -273,20 +338,25 @@ This is a guardrail, not a provider tokenizer. Provider usage metadata remains t
 
 ## Report Format
 
+Default to terse findings first. Use this one-line format when file/line evidence exists:
+
+```text
+file:line | severity | provider/engine | issue | cache impact | fix | validation
+```
+
+When structure is the issue, include compact before/after prompt layout.
+
 ```markdown
 ## Prefix Cache Audit Report
 
 Provider/engine: ...
 Mode: code audit / advisory / agent audit
 Provider facts: verified on YYYY-MM-DD / unverified
+Confidence: high / medium / low
 
 ### Findings
 
-[Critical] AP-2: Tool schema order changes between calls
-Evidence: `tools = list(registry.values())` in path/to/file.py:42
-Impact: tools are before the growing conversation, so every order change invalidates downstream prefix reuse.
-Fix: sort tools by stable name and serialize schemas with sorted keys.
-Verify: compare prefix fingerprints across three requests and confirm provider cached-token fields increase on repeated calls.
+path/to/file.py:42 | critical | OpenAI | tool schema order changes between calls | tools are before the growing conversation, so every order change invalidates downstream prefix reuse | sort tools by stable name and serialize schemas with sorted keys | compare prefix fingerprints across three requests and confirm cached-token fields increase
 
 ### Clean Checks
 

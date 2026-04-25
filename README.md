@@ -14,6 +14,7 @@ The skill is based on a Habr article series about prompt-cache economics, common
 
 ## What It Audits
 
+- Prompt-cache applicability before recommending changes
 - Stable prompt prefix layout
 - Volatile data in system prompts and early messages
 - Non-deterministic tool/schema serialization
@@ -25,6 +26,8 @@ The skill is based on a Habr article series about prompt-cache economics, common
 - Prefill vs decode latency and output-token cost share
 - KV-cache budget, eviction, and deployment config
 - Provider-specific usage fields and docs freshness
+- ROI assumptions across static, dynamic, and output tokens
+- CI/smoke-test readiness for stable prefix drift
 
 ## Install Or Share
 
@@ -82,14 +85,41 @@ audit-prompt-caching/
     gemini.md
     mechanics.md
     predeploy-checklist.md
+    report-template.md
     qwen.md
     yandexgpt.md
     zai.md
     use-cases.md
+  scripts/
+    analyze_usage_logs.py
+    estimate_cache_roi.py
+    prefix_stability_check.py
   evals/
     evals.json
     trigger_eval.json
 ```
+
+## Bundled Scripts
+
+The skill includes small dependency-free helpers for repeatable audits:
+
+```bash
+python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
+python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
+  --static-tokens 9000 \
+  --dynamic-tokens 300 \
+  --output-tokens 2000 \
+  --requests 100 \
+  --hit-rate 0.8 \
+  --input-price-per-mtok 2.0 \
+  --cached-input-price-per-mtok 0.2 \
+  --output-price-per-mtok 8.0
+```
+
+`prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
+
+Provider usage metadata and billing exports remain authoritative; these scripts are audit aids.
 
 ## Validation
 
@@ -103,6 +133,12 @@ The repository also includes JSON eval prompts:
 
 - `audit-prompt-caching/evals/evals.json`: behavioral audit scenarios
 - `audit-prompt-caching/evals/trigger_eval.json`: should-trigger and should-not-trigger queries
+
+Run the local script/package tests:
+
+```bash
+python3 -m unittest tests/test_prompt_cache_scripts.py
+```
 
 These evals are a starting point. A full proof cycle should still compare baseline agent behavior against behavior with the skill enabled.
 

@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-04-25.
 
 Verify before exact claims:
 - supported models and whether extended prompt cache retention is available
@@ -31,15 +31,15 @@ Cacheable content can include:
 - tool definitions
 - structured output schemas
 
-As of the last review, OpenAI docs state that prompts below the minimum threshold still expose `usage.prompt_tokens_details.cached_tokens`, but the value is zero. Confirm current details before relying on the exact threshold or increment.
+As of the last review, OpenAI docs state that caching is available for prompts containing 1024 tokens or more. Requests below the threshold still expose a cached-token usage field, but the value is zero. Confirm current details before relying on the exact threshold, model list, or retention support.
 
 ## Provider Checks
 
 ### Cache Key And Retention
 
-Check whether repeated long-prefix traffic should use `prompt_cache_key`. This is a routing hint; choose a granularity that groups true shared prefixes without creating hot spots.
+Check whether repeated long-prefix traffic should use `prompt_cache_key`. It is combined with the initial prefix hash for routing, so choose a granularity that groups true shared prefixes without creating hot spots or cache overflow.
 
-Check `prompt_cache_retention` only after verifying current model support. Do not add it blindly: unsupported models or SDK versions may reject the parameter.
+Check `prompt_cache_retention` only after verifying current model support. Do not add it blindly: unsupported models, API surfaces, or SDK versions may reject the parameter. When extended retention is relevant, check data residency and ZDR implications in current docs.
 
 ### Structured Outputs
 
@@ -61,10 +61,19 @@ For reasoning models, compare Responses API vs Chat Completions behavior using c
 
 ## Diagnostics
 
-For Responses API or Chat Completions, inspect:
+For Responses API, inspect:
 
 ```python
 usage = response.usage
+cached = usage.input_tokens_details.cached_tokens
+total = usage.input_tokens
+ratio = cached / total if total else 0
+```
+
+For Chat Completions, inspect:
+
+```python
+usage = completion.usage
 cached = usage.prompt_tokens_details.cached_tokens
 total = usage.prompt_tokens
 ratio = cached / total if total else 0
@@ -81,9 +90,11 @@ If `cached == 0` for repeated long prompts, check:
 ## Monitoring
 
 Track:
-- `usage.prompt_tokens_details.cached_tokens`
-- `cached_tokens / prompt_tokens`
+- Responses: `usage.input_tokens_details.cached_tokens`
+- Chat Completions: `usage.prompt_tokens_details.cached_tokens`
+- `cached_tokens / input_tokens` for Responses or `cached_tokens / prompt_tokens` for Chat Completions
 - model, `prompt_cache_key`, prompt version, tool hash, schema hash
+- `prompt_cache_retention` policy when used
 - TTFT or prefill latency by route
 
 Alert on cache ratio drops after prompt, SDK, model, tool, schema, or routing changes.
