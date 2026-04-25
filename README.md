@@ -93,7 +93,10 @@ audit-prompt-caching/
   scripts/
     analyze_usage_logs.py
     estimate_cache_roi.py
+    extract_llm_calls.py
     prefix_stability_check.py
+    validate_skill_package.py
+    run_trigger_eval.py
   evals/
     evals.json
     trigger_eval.json
@@ -104,6 +107,7 @@ audit-prompt-caching/
 The skill includes small dependency-free helpers for repeatable audits:
 
 ```bash
+python3 audit-prompt-caching/scripts/extract_llm_calls.py .
 python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
 python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
 python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
@@ -115,6 +119,8 @@ python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
   --input-price-per-mtok 2.0 \
   --cached-input-price-per-mtok 0.2 \
   --output-price-per-mtok 8.0
+python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
+python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 ```
 
 `prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
@@ -123,10 +129,11 @@ Provider usage metadata and billing exports remain authoritative; these scripts 
 
 ## Validation
 
-Validate the skill package with the Anthropic/Codex skill validator when available:
+Validate the skill package with the bundled validator:
 
 ```bash
-python3 quick_validate.py audit-prompt-caching
+python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
+python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 ```
 
 The repository also includes JSON eval prompts:

@@ -91,6 +91,9 @@ Use scripts when deterministic evidence is better than prose:
 - `scripts/prefix_stability_check.py`: compare two rendered prompts or JSON request payloads as raw bytes by default and find the first divergent prefix location; use `--canonical-json` only when sorted-key normalization is intentional.
 - `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage logs across OpenAI, Anthropic-compatible, Bedrock-style, and OpenAI-compatible cache fields.
 - `scripts/estimate_cache_roi.py`: estimate input-only and total-cost impact from static/dynamic/output tokens, hit rate, request count, and explicit pricing assumptions.
+- `scripts/extract_llm_calls.py`: scan a repository for likely LLM provider calls, cache-control fields, routing signals, and self-hosted engine hints before choosing provider references.
+- `scripts/validate_skill_package.py`: validate frontmatter, referenced files, JSON evals, and Python helper syntax before sharing or publishing the skill.
+- `scripts/run_trigger_eval.py`: summarize positive and negative trigger-eval coverage from `evals/trigger_eval.json`.
 
 Do not treat these scripts as provider tokenizers or billing truth. Provider usage and billing exports remain authoritative.
 

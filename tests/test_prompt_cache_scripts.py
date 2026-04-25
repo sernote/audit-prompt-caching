@@ -233,12 +233,90 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["input_savings"], 1.296)
         self.assertEqual(output["total_savings_pct"], 37.46)
 
+    def test_extract_llm_calls_finds_provider_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "src" / "llm.py"
+            source.parent.mkdir()
+            source.write_text(
+                "\n".join(
+                    [
+                        "from openai import OpenAI",
+                        "client = OpenAI()",
+                        "def call(messages):",
+                        "    return client.responses.create(model='gpt-5.4', input=messages)",
+                    ]
+                )
+            )
+            ignored = tmp_path / ".git" / "ignored.py"
+            ignored.parent.mkdir()
+            ignored.write_text("client.responses.create(model='gpt-5.4', input='x')")
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            self.assertEqual(output["files_scanned"], 1)
+            self.assertEqual(output["matches"], 2)
+            self.assertEqual(output["providers"]["openai"], 2)
+            self.assertEqual(output["findings"][0]["path"], "src/llm.py")
+
+    def test_validate_skill_package_checks_required_files_and_references(self):
+        result = run_script("validate_skill_package.py", ROOT / "audit-prompt-caching")
+
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "ok")
+        self.assertIn("SKILL.md", output["checks"])
+        self.assertIn("evals", output["checks"])
+        self.assertEqual(output["errors"], [])
+
+    def test_validate_skill_package_reports_missing_references(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            skill_dir = tmp_path / "bad-skill"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(
+                "\n".join(
+                    [
+                        "---",
+                        "name: bad-skill",
+                        "description: Use when testing bad references",
+                        "---",
+                        "",
+                        "Load `references/missing.md`.",
+                    ]
+                )
+            )
+
+            result = run_script("validate_skill_package.py", skill_dir)
+
+            self.assertEqual(result.returncode, 1)
+            output = json.loads(result.stdout)
+            self.assertEqual(output["status"], "error")
+            self.assertTrue(
+                any("references/missing.md" in error for error in output["errors"])
+            )
+
+    def test_run_trigger_eval_summarizes_coverage(self):
+        result = run_script("run_trigger_eval.py", ROOT / "audit-prompt-caching")
+
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "ok")
+        self.assertGreater(output["positive_cases"], 0)
+        self.assertGreater(output["negative_cases"], 0)
+        self.assertEqual(output["errors"], [])
+
     def test_skill_package_has_report_template_and_actionable_sections(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
 
         self.assertIn("When to use", skill)
         self.assertIn("When not to use", skill)
         self.assertIn("Applicability Gate", skill)
+        self.assertIn("extract_llm_calls.py", skill)
+        self.assertIn("validate_skill_package.py", skill)
+        self.assertIn("run_trigger_eval.py", skill)
         self.assertIn("file:line | severity | provider/engine | issue", skill)
         self.assertTrue(
             (ROOT / "audit-prompt-caching" / "references" / "report-template.md").exists()
