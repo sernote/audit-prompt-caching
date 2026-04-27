@@ -4,6 +4,22 @@
     "should_trigger": true
   },
   {
+    "query": "OpenAI prompt_cache_retention 24h versus in_memory is changing our prompt cache behavior",
+    "should_trigger": true
+  },
+  {
+    "query": "Our OpenAI prompt_cache_key is too hot and cache hits drop around 15 requests per minute",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenAI extended prompt caching with Zero Data Retention and Data Residency needs an audit",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenAI cached_tokens is high but TPM rate limits did not improve",
+    "should_trigger": true
+  },
+  {
     "query": "Our Claude cache_control prompt is writing cache_creation_input_tokens on every request but cache_read_input_tokens stays zero",
     "should_trigger": true
   },

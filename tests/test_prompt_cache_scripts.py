@@ -407,6 +407,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 2)
             self.assertEqual(output["findings"][0]["path"], "src/llm.py")
 
+    def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = tmp_path / "llm-config.json"
+            config.write_text('{"prompt_cache_retention": "24h"}')
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            self.assertEqual(output["files_scanned"], 1)
+            self.assertEqual(output["providers"]["openai"], 1)
+            self.assertEqual(output["findings"][0]["path"], "llm-config.json")
+
     def test_extract_llm_calls_scans_dockerfile_for_vllm_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -623,6 +637,26 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "longer TTL",
             "thinking blocks",
             "workspace-level isolation",
+        ]:
+            self.assertIn(required, reference)
+
+    def test_openai_reference_covers_current_prompt_cache_semantics(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "openai.md"
+        ).read_text()
+
+        for required in [
+            "prefix hash",
+            "prompt_cache_key",
+            "15 requests per minute",
+            "prompt_cache_retention",
+            "in_memory",
+            '"24h"',
+            "gpt-5.5",
+            "Zero Data Retention",
+            "Regional Inference",
+            "TPM rate limits",
+            "GPU-local storage",
         ]:
             self.assertIn(required, reference)
 

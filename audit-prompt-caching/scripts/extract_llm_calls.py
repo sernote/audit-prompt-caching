@@ -60,6 +60,7 @@ PROVIDER_PATTERNS = {
         r"\bresponses\.create\s*\(",
         r"\bchat\.completions\.create\s*\(",
         r"\bprompt_cache_key\b",
+        r"\bprompt_cache_retention\b",
     ],
     "anthropic": [
         r"\banthropic\b",

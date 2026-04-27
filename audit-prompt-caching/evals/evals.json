@@ -156,6 +156,30 @@
       "prompt": "A Claude extended-thinking tool workflow passes previous assistant thinking blocks back in the conversation. The team tries to mark thinking blocks with cache_control and sees message-cache behavior change when a normal user text block follows tool results.",
       "expected_output": "Loads Anthropic reference; explains that thinking blocks cannot be directly marked with cache_control but can be cached as part of previous assistant content when passed back; notes that cached thinking blocks count as input tokens and that non-tool-result user content can strip prior thinking blocks from context, invalidating message-cache assumptions; recommends caching surrounding eligible blocks and validating with usage fields.",
       "files": []
+    },
+    {
+      "id": 27,
+      "prompt": "Our OpenAI Responses API app uses one global prompt_cache_key for all traffic. The prompt prefix is stable, but at high traffic cached_tokens and TTFT get worse around bursts over 15 requests per minute for the same shared policy prompt.",
+      "expected_output": "Loads OpenAI reference; explains that prompt_cache_key is combined with the initial prefix hash for routing and that too-hot prefix/key combinations can overflow to additional machines, reducing cache effectiveness; recommends choosing a prefix-family key granularity that avoids per-request fragmentation and global hot spots, measuring request rate per prefix/key, and verifying with cached_tokens plus TTFT.",
+      "files": []
+    },
+    {
+      "id": 28,
+      "prompt": "We set prompt_cache_retention='in_memory' on gpt-5.5 because we want low-cost cache reuse. Some requests are rejected or do not behave like older models. What should the audit check?",
+      "expected_output": "Loads OpenAI reference; checks current model support for prompt_cache_retention; explains that gpt-5.5 and future models default to 24h retention and do not support in_memory according to current docs; warns not to add retention parameters blindly, notes retention policy does not add separate prompt-cache pricing in current docs, and verifies with model/API surface and cached_tokens.",
+      "files": []
+    },
+    {
+      "id": 29,
+      "prompt": "Security review for OpenAI Extended Prompt Caching: project has Zero Data Retention enabled and strict Data Residency. The team wants prompt_cache_retention='24h' for shared legal documents.",
+      "expected_output": "Loads OpenAI reference; distinguishes in-memory from extended retention; explains that extended retention can temporarily store derived key/value tensors on GPU-local storage, that ZDR requests are not blocked but other ZDR restrictions still apply, and that Data Residency for extended retention depends on Regional Inference; recommends documenting org isolation, retention policy, region, and compliance trade-offs before enabling it.",
+      "files": []
+    },
+    {
+      "id": 30,
+      "prompt": "OpenAI cached_tokens is high and input cost is lower, but our TPM rate limit errors did not improve. We assumed cached prompt tokens would not count toward rate limits.",
+      "expected_output": "Loads OpenAI reference; explains that cached prompt tokens still count toward TPM rate limits, so prompt caching can reduce latency/cost without increasing TPM headroom; recommends measuring cached_tokens, prompt_tokens/input_tokens, request rate, and output tokens separately, then addressing rate limits through batching, traffic shaping, model limits, or quota rather than prompt-cache tuning alone.",
+      "files": []
     }
   ]
 }

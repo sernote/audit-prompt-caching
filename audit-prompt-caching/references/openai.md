@@ -2,15 +2,16 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-25.
+Last reviewed: 2026-04-27.
 
 Verify before exact claims:
 - supported models and whether extended prompt cache retention is available
-- pricing and cache discounts
-- minimum cacheable token count and cache increment size
+- pricing, cache discounts, and whether retention policy changes pricing
+- minimum cacheable token count and cache granularity
 - request parameters such as `prompt_cache_key` and `prompt_cache_retention`
 - usage object shape for Responses API vs Chat Completions
 - tool, image, and structured-output caching semantics
+- ZDR, Data Residency, Regional Inference, and retention behavior
 - reasoning-model and Chat Completions caveats
 
 Official sources:
@@ -23,23 +24,58 @@ Official sources:
 
 ## Stable Mechanics
 
-OpenAI prompt caching is automatic for supported models. Cache hits require exact prefix matches, so static content should be at the beginning and dynamic content at the end.
+OpenAI prompt caching is automatic for supported recent models. Cache hits require exact prefix matches, so static content should be at the beginning and dynamic content at the end.
+
+Caching is available for prompts containing 1024 tokens or more. Requests below the threshold still expose a cached-token usage field, but the value is zero.
 
 Cacheable content can include:
 - messages
 - images, with identical representation and `detail`
 - tool definitions
-- structured output schemas
+- structured output schemas, which serve as a prefix to the system message
 
-As of the last review, OpenAI docs state that caching is available for prompts containing 1024 tokens or more. Requests below the threshold still expose a cached-token usage field, but the value is zero. Confirm current details before relying on the exact threshold, model list, or retention support.
+OpenAI routing is cache-aware:
+- requests are routed to a machine based on a hash of the initial prompt prefix
+- the hash typically uses the first 256 tokens, but the exact length can vary by model
+- `prompt_cache_key` is combined with the prefix hash, so it can improve locality when many requests share long common prefixes
+- if requests for the same prefix and `prompt_cache_key` combination exceed roughly **15 requests per minute**, some can overflow to additional machines, reducing cache effectiveness
+- a cache miss processes the full prompt and caches the prefix afterward on the selected machine
 
 ## Provider Checks
 
-### Cache Key And Retention
+### Prefix Layout
 
-Check whether repeated long-prefix traffic should use `prompt_cache_key`. It is combined with the initial prefix hash for routing, so choose a granularity that groups true shared prefixes without creating hot spots or cache overflow.
+Place stable instructions, examples, tools, schemas, and reusable documents before dynamic user-specific content. Any difference before the shared prefix boundary can drop `cached_tokens` to zero.
 
-Check `prompt_cache_retention` only after verifying current model support. Do not add it blindly: unsupported models, API surfaces, or SDK versions may reject the parameter. When extended retention is relevant, check data residency and ZDR implications in current docs.
+### Cache Key
+
+Use `prompt_cache_key` consistently only for requests that truly share common prefixes. Choose a granularity that avoids both over-fragmentation and hot spots:
+- too fine-grained, such as per-request or per-user keys for shared public content, can destroy reuse
+- too broad, such as one global key for very high traffic, can exceed the approximate 15 requests per minute prefix/key locality envelope and cause overflow routing
+
+Do not use `prompt_cache_key` as a privacy boundary. Treat it as a routing locality hint whose behavior still depends on the initial prefix hash and provider routing.
+
+### Cache Retention
+
+Use `prompt_cache_retention` only after checking current model and API-surface support. Allowed values in the current public docs are:
+
+```json
+{ "prompt_cache_retention": "in_memory" }
+```
+
+```json
+{ "prompt_cache_retention": "24h" }
+```
+
+For most supported models, the default is `in_memory`. For `gpt-5.5`, `gpt-5.5-pro`, and future models, the default is `"24h"` and `in_memory` is not supported. Extended retention can keep cached prefixes active longer, up to 24 hours.
+
+Prompt cache pricing is the same for both retention policies in the current docs. OpenAI prompt caching does not add a separate cache-write fee, but cached prompt tokens still count toward TPM rate limits.
+
+### ZDR And Data Residency
+
+Prompt caches are not shared between organizations. In-memory retention keeps cached prefixes in volatile GPU memory. Extended retention can temporarily store key/value tensors on GPU-local storage; those tensors are derived from customer content, while the original prompt text remains only in memory.
+
+Extended prompt caching can be used when Zero Data Retention is enabled for the project, but other Zero Data Retention restrictions still apply, such as restrictions around `store=True`. For Data Residency, in-memory caching does not store data; extended retention locality depends on using Regional Inference.
 
 ### Structured Outputs
 
@@ -55,7 +91,7 @@ Keep image representation stable. Changing `detail`, signed URL query strings, o
 
 ### Reasoning Or Model Settings
 
-Changing model, reasoning effort, or request settings can create separate cache buckets. Verify current docs and measure by route/model/settings.
+Changing model, reasoning effort, retention policy, or request settings can create separate cache buckets. Verify current docs and measure by route/model/settings.
 
 For reasoning models, compare Responses API vs Chat Completions behavior using current OpenAI docs. If troubleshooting mentions lower caching for a given API/model combination, report it as provider-specific and verify with usage metadata before changing architecture.
 
@@ -85,7 +121,15 @@ If `cached == 0` for repeated long prompts, check:
 - image representation changed
 - request reached a different cache route
 - prompt is below the current cacheable threshold
+- `prompt_cache_key` is missing, inconsistent, too fine-grained, or too hot
+- `prompt_cache_retention` is unsupported or changed across otherwise comparable calls
 - reasoning effort, API surface, or request settings changed
+
+If `cached_tokens` is high but latency or cost did not improve as expected, check:
+- output token share and decode/final-token latency
+- TPM rate limits, because cached prompt tokens still count
+- traffic cadence versus retention policy
+- overflow from a hot prefix/key combination
 
 ## Monitoring
 
@@ -93,8 +137,10 @@ Track:
 - Responses: `usage.input_tokens_details.cached_tokens`
 - Chat Completions: `usage.prompt_tokens_details.cached_tokens`
 - `cached_tokens / input_tokens` for Responses or `cached_tokens / prompt_tokens` for Chat Completions
-- model, `prompt_cache_key`, prompt version, tool hash, schema hash
-- `prompt_cache_retention` policy when used
+- model, API surface, `prompt_cache_key`, `prompt_cache_retention`, prompt version, tool hash, schema hash
+- route family or workload bucket that maps to the prefix/key combination
+- approximate request rate per prefix/key combination
 - TTFT or prefill latency by route
+- ZDR, Data Residency, and Regional Inference posture when extended retention is used
 
-Alert on cache ratio drops after prompt, SDK, model, tool, schema, or routing changes.
+Alert on cache ratio drops after prompt, SDK, model, tool, schema, retention, or routing changes.
