@@ -41,7 +41,7 @@ Copy that folder into the target agent's skills directory. Keep the folder name 
 
 ## Works With
 
-This package is authored as a Codex skill, but the folder is intentionally portable: `SKILL.md` is the entry point, `references/` holds selectively loaded context, and `scripts/` are dependency-free helpers. Manual `$audit-prompt-caching` invocation is optional; the frontmatter description and trigger evals are designed for natural prompts such as `cached_tokens у меня нулевой`.
+This package is authored as a Codex skill and currently documents support for Codex and Claude Code only. The folder is intentionally portable: `SKILL.md` is the entry point, `references/` holds selectively loaded context, and `scripts/` are dependency-free helpers. Manual `$audit-prompt-caching` invocation is optional; the frontmatter description and trigger evals are designed for natural prompts such as `cached_tokens у меня нулевой`.
 
 ### Codex
 
@@ -63,14 +63,6 @@ cp -R audit-prompt-caching <claude-code-skills-dir>/audit-prompt-caching
 ```
 
 If your setup uses project-local instructions instead of a global skills directory, reference `audit-prompt-caching/SKILL.md` from the project instructions and keep `references/` plus `scripts/` next to it.
-
-### Cursor
-
-Use the skill as a project-local rule pack: copy `audit-prompt-caching/` into the repository and point Cursor rules or agent instructions at `audit-prompt-caching/SKILL.md`. Keep the folder layout intact so references and scripts resolve by relative path.
-
-### Continue
-
-Use the skill as reusable agent context: copy `audit-prompt-caching/` into a shared prompts/rules directory and include `audit-prompt-caching/SKILL.md` in the Continue assistant configuration. Keep `references/` and `scripts/` available beside the skill file.
 
 ## Example Prompts
 

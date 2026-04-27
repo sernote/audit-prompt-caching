@@ -628,8 +628,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
 
         self.assertIn("## Works With", readme)
-        for host in ("Codex", "Claude Code", "Cursor", "Continue"):
+        for host in ("Codex", "Claude Code"):
             self.assertIn(f"### {host}", readme)
+        for unsupported_host in ("### Cursor", "### Continue"):
+            self.assertNotIn(unsupported_host, readme)
         self.assertIn("~/.codex/skills/audit-prompt-caching", readme)
         self.assertIn("Natural trigger", readme)
         self.assertIn("cached_tokens у меня нулевой", readme)
