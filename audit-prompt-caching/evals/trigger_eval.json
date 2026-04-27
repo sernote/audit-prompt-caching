@@ -100,6 +100,22 @@
     "should_trigger": true
   },
   {
+    "query": "Claude automatic top-level cache_control writes cache every request but reads stay zero because the final user block changes",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude prompt caching stopped hitting after our conversation grew more than 20 blocks past the previous breakpoint",
+    "should_trigger": true
+  },
+  {
+    "query": "Anthropic mixed ttl cache_control with 1h after 5m is rejected and cache_creation details are confusing",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude extended thinking blocks with tool results are changing cache_read_input_tokens behavior",
+    "should_trigger": true
+  },
+  {
     "query": "vLLM prefix cache hit rate drops under KV block pressure and LRU eviction even though prompts are stable",
     "should_trigger": true
   },

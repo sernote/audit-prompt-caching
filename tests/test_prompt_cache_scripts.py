@@ -608,6 +608,24 @@ class PromptCacheScriptsTest(unittest.TestCase):
             (ROOT / "audit-prompt-caching" / "references" / "report-template.md").exists()
         )
 
+    def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
+        ).read_text()
+
+        for required in [
+            "Automatic caching",
+            "top-level",
+            "Explicit cache breakpoints",
+            "20-block lookback",
+            "dynamic suffix",
+            'ttl": "1h"',
+            "longer TTL",
+            "thinking blocks",
+            "workspace-level isolation",
+        ]:
+            self.assertIn(required, reference)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,7 +94,7 @@
     {
       "id": 16,
       "prompt": "A Claude API app has long reusable tool docs and system instructions, but usage shows input_tokens only; cache_read_input_tokens and cache_creation_input_tokens are both zero. The code never sets cache_control.",
-      "expected_output": "Loads Anthropic reference; identifies missing cache_control as the likely activation issue; recommends placing cache_control breakpoints after reusable static content, verifying model/minimum token and TTL docs, checking cache_creation_input_tokens then cache_read_input_tokens on repeated calls, and avoiding dynamic content in cached blocks.",
+      "expected_output": "Loads Anthropic reference; identifies missing cache_control as the likely activation issue; distinguishes top-level automatic cache_control for append-only multi-turn conversations from explicit block-level breakpoints for static prefixes; verifies model/minimum token and TTL docs, checks cache_creation_input_tokens then cache_read_input_tokens on repeated calls, and avoids dynamic content in cached blocks.",
       "files": []
     },
     {
@@ -131,6 +131,30 @@
       "id": 22,
       "prompt": "We run many concurrent self-hosted agent workflows. Prefixes are stable and routed to the same workers, but useful agent KV blocks are evicted while agents wait on tools and then get recomputed right before reuse. Should we tune LRU or think about workflow-aware caching?",
       "expected_output": "Classifies this as advanced self-hosted agent-serving audit; checks prompt stability and routing first, then treats LRU eviction as potentially mismatched to workflow reuse; references workflow-aware eviction/prefetching as an advanced serving-design opportunity; asks for scheduler, future step graph, KV eviction traces, CPU/GPU transfer timings, and TTFT by resumed agent step.",
+      "files": []
+    },
+    {
+      "id": 23,
+      "prompt": "Our Claude API app added top-level `cache_control` for automatic caching. It has a stable 18k-token policy prompt, then each request appends a timestamp and the new user question as the final content block. Usage shows cache_creation_input_tokens on every request but cache_read_input_tokens stays zero.",
+      "expected_output": "Loads Anthropic reference; explains that automatic caching places the breakpoint on the last eligible cacheable block, so a changing final block can write a fresh cache entry every request without reads; recommends an explicit block-level breakpoint at the end of the stable policy prefix, moving volatile timestamp/user content after the cached prefix, and verifying with cache_creation_input_tokens, cache_read_input_tokens, and stable-prefix hashes.",
+      "files": []
+    },
+    {
+      "id": 24,
+      "prompt": "A Claude coding assistant uses explicit cache_control on the final message of a growing conversation. Turns append many tool_use and tool_result blocks. It worked until late in the run, then cache reads vanished when the latest breakpoint was about 25 blocks past the previous cache write.",
+      "expected_output": "Loads Anthropic reference; identifies the 20-block lookback limit for breakpoint search as a likely cause, explains that lookback finds prior writes rather than stable earlier content, and recommends adding additional explicit breakpoints before the conversation grows beyond the window, tracking block counts between writes, and verifying cache_read_input_tokens by step.",
+      "files": []
+    },
+    {
+      "id": 25,
+      "prompt": "Review this Claude cache_control layout: the first system block has ttl 5m, a later document block has ttl 1h, and the final conversation block uses the default 5m. The API sometimes rejects the request and cost attribution is confusing.",
+      "expected_output": "Loads Anthropic reference; checks current TTL docs; flags that longer TTL entries must appear before shorter TTL entries when mixing 1-hour and 5-minute cache controls; recommends reordering breakpoints so 1h sections precede 5m sections, checking the four-breakpoint limit, and monitoring cache_creation_input_tokens plus usage.cache_creation 5m/1h buckets when present.",
+      "files": []
+    },
+    {
+      "id": 26,
+      "prompt": "A Claude extended-thinking tool workflow passes previous assistant thinking blocks back in the conversation. The team tries to mark thinking blocks with cache_control and sees message-cache behavior change when a normal user text block follows tool results.",
+      "expected_output": "Loads Anthropic reference; explains that thinking blocks cannot be directly marked with cache_control but can be cached as part of previous assistant content when passed back; notes that cached thinking blocks count as input tokens and that non-tool-result user content can strip prior thinking blocks from context, invalidating message-cache assumptions; recommends caching surrounding eligible blocks and validating with usage fields.",
       "files": []
     }
   ]
