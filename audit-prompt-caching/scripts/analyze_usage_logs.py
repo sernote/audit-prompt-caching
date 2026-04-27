@@ -87,6 +87,57 @@ def normalize_record(record):
     return row
 
 
+def infer_provider(record):
+    provider = record.get("provider") if isinstance(record, dict) else None
+    if isinstance(provider, str) and provider:
+        return provider
+    text = json.dumps(record, ensure_ascii=False)
+    if "CacheReadInputTokens" in text or "CacheWriteInputTokens" in text:
+        return "bedrock"
+    if "cache_read_input_tokens" in text or "cache_creation_input_tokens" in text:
+        return "anthropic-compatible"
+    if "prompt_cache_hit_tokens" in text:
+        return "deepseek-compatible"
+    if "cached_tokens" in text:
+        return "openai-compatible"
+    return "unknown"
+
+
+def metadata_value(record, name):
+    if not isinstance(record, dict):
+        return None
+    value = record.get(name)
+    if isinstance(value, (str, int, float)):
+        return value
+    return None
+
+
+def normalize_event(record, index):
+    row = normalize_record(record)
+    event = {
+        "index": index,
+        "provider": infer_provider(record),
+        "model": metadata_value(record, "model"),
+        "route": metadata_value(record, "route"),
+        "request_id": metadata_value(record, "request_id"),
+        "prefix_hash": metadata_value(record, "prefix_hash"),
+        "input_tokens": row["input_tokens"],
+        "cached_tokens": row["cached_tokens"],
+        "cache_read_input_tokens": row["cache_read_input_tokens"],
+        "cache_creation_input_tokens": row["cache_creation_input_tokens"],
+        "cache_benefit_tokens": (
+            row["cached_tokens"] + row["cache_read_input_tokens"]
+        ),
+        "total_input_tokens": row["total_input_tokens"],
+        "output_tokens": row["output_tokens"],
+    }
+    return event
+
+
+def normalized_events(records):
+    return [normalize_event(record, index) for index, record in enumerate(records)]
+
+
 def read_json_records(path):
     text = Path(path).read_text().strip()
     if not text:
@@ -160,9 +211,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Analyze LLM prompt-cache usage logs."
     )
+    parser.add_argument(
+        "--jsonl-normalized",
+        action="store_true",
+        help="Emit one canonical usage event per input record as JSONL.",
+    )
     parser.add_argument("path", help="JSON, JSONL, or CSV usage log")
     args = parser.parse_args(argv)
     records = read_records(Path(args.path))
+    if args.jsonl_normalized:
+        for event in normalized_events(records):
+            print(json.dumps(event, ensure_ascii=False, sort_keys=True))
+        return 0
     print(json.dumps(summarize(records), ensure_ascii=False, indent=2))
     return 0
 

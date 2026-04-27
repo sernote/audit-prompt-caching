@@ -1,0 +1,13 @@
+{
+  "engine": "vllm",
+  "model": "example-org/long-context-model",
+  "prefix_caching_enabled": true,
+  "replicas": 4,
+  "routing": "round-robin",
+  "expected_issue": "cache-blind routing fragments prefix reuse across replicas",
+  "metrics": {
+    "prefix_cache_hit_rate": 0.22,
+    "p95_ttft_ms": 1850,
+    "available_kv_blocks": 128
+  }
+}

@@ -83,15 +83,18 @@ Load only the reference needed for the detected scenario:
 - **Agents, coding assistants, MCP, or dynamic tools**: `references/agent-tools.md` for tool strategy selection, mode switching, and context compaction.
 - **Self-hosted SGLang**: `references/sglang.md` for RadixAttention, SGLang router, HiCache, tokenizer/chat-template drift, and cache-aware deployment checks.
 - **Full audit deliverable**: `references/report-template.md` when the user asks for a written report or when findings need a reusable handoff artifact.
+- **Machine-readable rules**: `references/rules.json` when scripting, rendering, or validating findings by anti-pattern ID.
 
 ## Bundled Scripts
 
 Use scripts when deterministic evidence is better than prose:
 
 - `scripts/prefix_stability_check.py`: compare two rendered prompts or JSON request payloads as raw bytes by default and find the first divergent prefix location; use `--canonical-json` only when sorted-key normalization is intentional.
-- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage logs across OpenAI, Anthropic-compatible, Bedrock-style, and OpenAI-compatible cache fields.
+- `scripts/layout_linter.py`: inspect JSON request payloads for volatile early messages, unsorted tools, and dynamic schema fields before doing deeper manual layout review.
+- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage logs across OpenAI, Anthropic-compatible, Bedrock-style, and OpenAI-compatible cache fields; use `--jsonl-normalized` when a downstream report or dashboard needs per-record canonical events.
 - `scripts/estimate_cache_roi.py`: estimate input-only and total-cost impact from static/dynamic/output tokens, hit rate, request count, and explicit pricing assumptions.
 - `scripts/extract_llm_calls.py`: scan a repository for likely LLM provider calls, cache-control fields, routing signals, and self-hosted engine hints before choosing provider references.
+- `scripts/render_audit_report.py`: combine usage-log summaries and one-line findings into a reusable Markdown or JSON audit report.
 - `scripts/validate_skill_package.py`: validate frontmatter, referenced files, JSON evals, and Python helper syntax before sharing or publishing the skill.
 - `scripts/run_trigger_eval.py`: summarize positive and negative trigger-eval coverage from `evals/trigger_eval.json`.
 

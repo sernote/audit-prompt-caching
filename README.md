@@ -94,12 +94,21 @@ audit-prompt-caching/
     analyze_usage_logs.py
     estimate_cache_roi.py
     extract_llm_calls.py
+    layout_linter.py
     prefix_stability_check.py
+    render_audit_report.py
     validate_skill_package.py
     run_trigger_eval.py
   evals/
     evals.json
     trigger_eval.json
+fixtures/
+  openai/
+  anthropic/
+  bedrock/
+  openrouter/
+  vllm/
+  expected/
 ```
 
 ## Bundled Scripts
@@ -108,8 +117,10 @@ The skill includes small dependency-free helpers for repeatable audits:
 
 ```bash
 python3 audit-prompt-caching/scripts/extract_llm_calls.py .
+python3 audit-prompt-caching/scripts/layout_linter.py fixtures/layout/good_openai_request.json
 python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
 python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py --jsonl-normalized usage.jsonl
 python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
   --static-tokens 9000 \
   --dynamic-tokens 300 \
@@ -119,6 +130,11 @@ python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
   --input-price-per-mtok 2.0 \
   --cached-input-price-per-mtok 0.2 \
   --output-price-per-mtok 8.0
+python3 audit-prompt-caching/scripts/render_audit_report.py \
+  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
+  --provider openai \
+  --engine "Responses API" \
+  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
 python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
 python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 ```
@@ -126,6 +142,30 @@ python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 `prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
 
 Provider usage metadata and billing exports remain authoritative; these scripts are audit aids.
+
+## Five-Minute Demo
+
+Run the bundled fixture pack to see the audit loop without production logs:
+
+```bash
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py \
+  fixtures/openai/repeated_prefix_usage.jsonl
+
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py \
+  --jsonl-normalized \
+  fixtures/openai/repeated_prefix_usage.jsonl
+
+python3 audit-prompt-caching/scripts/render_audit_report.py \
+  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
+  --provider openai \
+  --engine "Responses API" \
+  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
+
+python3 audit-prompt-caching/scripts/layout_linter.py \
+  fixtures/layout/good_openai_request.json
+```
+
+Compare the rendered Markdown with `fixtures/expected/report_openai.md` for the expected report shape.
 
 ## Validation
 
@@ -148,6 +188,14 @@ python3 -m unittest tests/test_prompt_cache_scripts.py
 ```
 
 These evals are a starting point. A full proof cycle should still compare baseline agent behavior against behavior with the skill enabled.
+
+## Project Quality Gates
+
+CI runs the unittest suite, package validator, trigger eval, Python syntax compile, whitespace check, and generated-bytecode guard. Keep new scripts stdlib-only and add fixture-backed tests for behavior changes.
+
+## License
+
+MIT. See `LICENSE`.
 
 ## Freshness Policy
 

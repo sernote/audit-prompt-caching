@@ -1,0 +1,2 @@
+{"provider":"openrouter","model":"anthropic/claude-sonnet-4.5","route":"openrouter:anthropic/us","request_id":"req_or_write","usage":{"input_tokens":6000,"cache_write_tokens":5000,"cached_tokens":0,"output_tokens":240},"prefix_hash":"or-policy-v1","routed_provider":"anthropic"}
+{"provider":"openrouter","model":"anthropic/claude-sonnet-4.5","route":"openrouter:anthropic/us","request_id":"req_or_read","usage":{"input_tokens":6000,"cache_write_tokens":0,"cached_tokens":5000,"output_tokens":230},"prefix_hash":"or-policy-v1","routed_provider":"anthropic"}

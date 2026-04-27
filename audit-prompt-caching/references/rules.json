@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "rules": [
+    {
+      "id": "AP-1",
+      "category": "prefix-stability",
+      "default_severity": "high",
+      "summary": "Volatile data appears before reusable prompt content.",
+      "validation": "Render representative requests and confirm the cacheable prefix hash stays stable across users, timestamps, and request IDs."
+    },
+    {
+      "id": "AP-2",
+      "category": "tool-schema-stability",
+      "default_severity": "high",
+      "summary": "Tool definitions, schemas, or serialized JSON change across otherwise reusable calls.",
+      "validation": "Sort tools and schemas deterministically, then compare rendered request bytes or canonical hashes across repeated calls."
+    },
+    {
+      "id": "AP-3",
+      "category": "rendering-stability",
+      "default_severity": "medium",
+      "summary": "Template, whitespace, media, or SDK path drift changes the effective prefix.",
+      "validation": "Compare raw rendered payloads from each code path and pin one canonical renderer for the cacheable prefix."
+    },
+    {
+      "id": "AP-4",
+      "category": "agent-tools",
+      "default_severity": "high",
+      "summary": "Dynamic tool sets inside an agent loop rewrite early prompt content.",
+      "validation": "Log tools_count, sorted tool-name hash, prefix hash, and cache usage for every agent step."
+    },
+    {
+      "id": "AP-5",
+      "category": "history-stability",
+      "default_severity": "high",
+      "summary": "Compaction, truncation, or summarization mutates early conversation messages.",
+      "validation": "Confirm system, tools, and early stable anchor messages survive context management unchanged."
+    },
+    {
+      "id": "AP-6",
+      "category": "framework-injection",
+      "default_severity": "medium",
+      "summary": "Mode switching or framework metadata mutates the cacheable prefix.",
+      "validation": "Compare prefix hashes before and after mode changes, tracing dynamic metadata placement."
+    },
+    {
+      "id": "AP-7",
+      "category": "routing-locality",
+      "default_severity": "high",
+      "summary": "Stable prefixes are routed across replicas or providers without cache locality.",
+      "validation": "Measure cache reads and TTFT by route, provider, region, and replica for each prefix family."
+    },
+    {
+      "id": "AP-8",
+      "category": "cold-prefix-fanout",
+      "default_severity": "medium",
+      "summary": "Parallel fan-out starts before a shared prefix is warm or visible to the cache.",
+      "validation": "Compare cache telemetry for a safe warm-up sequence versus immediate parallel fan-out."
+    },
+    {
+      "id": "AP-9",
+      "category": "cache-lifetime",
+      "default_severity": "medium",
+      "summary": "Cache TTL, KV capacity, or eviction behavior does not match request cadence.",
+      "validation": "Correlate reuse cadence, TTL, KV pressure, eviction metrics, and warm-call TTFT."
+    },
+    {
+      "id": "AP-9b",
+      "category": "cache-isolation",
+      "default_severity": "medium",
+      "summary": "Security isolation or per-request salts fragment otherwise shareable prefixes.",
+      "validation": "Document the intended trust boundary and estimate the cache-efficiency loss of the chosen isolation level."
+    },
+    {
+      "id": "AP-10",
+      "category": "experiment-fragmentation",
+      "default_severity": "medium",
+      "summary": "Experiments, prompt variants, model settings, or router settings split reuse into small cache families.",
+      "validation": "Bucket cache metrics by prompt version, model settings, route, provider, and experiment assignment."
+    }
+  ]
+}
