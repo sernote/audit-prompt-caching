@@ -513,6 +513,36 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertGreater(output["negative_cases"], 0)
         self.assertEqual(output["errors"], [])
 
+    def test_trigger_eval_covers_natural_skill_invocation(self):
+        path = ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json"
+        cases = json.loads(path.read_text())
+        positive_queries = [
+            item["query"]
+            for item in cases
+            if item.get("should_trigger") is True
+        ]
+        natural_queries = [
+            query
+            for query in positive_queries
+            if "$audit-prompt-caching" not in query
+            and "audit-prompt-caching" not in query
+            and "Use $" not in query
+        ]
+
+        self.assertGreaterEqual(len(natural_queries), 8)
+        self.assertTrue(
+            any("cached_tokens у меня нулевой" in query for query in natural_queries),
+            "missing Russian natural cached_tokens trigger",
+        )
+        self.assertTrue(
+            any("cache writes" in query and "reads" in query for query in natural_queries),
+            "missing natural writes-without-reads trigger",
+        )
+        self.assertTrue(
+            any("TTFT" in query and "vLLM" in query for query in natural_queries),
+            "missing natural self-hosted TTFT trigger",
+        )
+
     def test_rules_reference_is_machine_readable(self):
         path = ROOT / "audit-prompt-caching" / "references" / "rules.json"
 
@@ -593,6 +623,16 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "  fixtures/layout/bad_openai_request.json",
             readme,
         )
+
+    def test_readme_documents_supported_agent_hosts(self):
+        readme = (ROOT / "README.md").read_text()
+
+        self.assertIn("## Works With", readme)
+        for host in ("Codex", "Claude Code", "Cursor", "Continue"):
+            self.assertIn(f"### {host}", readme)
+        self.assertIn("~/.codex/skills/audit-prompt-caching", readme)
+        self.assertIn("Natural trigger", readme)
+        self.assertIn("cached_tokens у меня нулевой", readme)
 
     def test_skill_package_has_report_template_and_actionable_sections(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()

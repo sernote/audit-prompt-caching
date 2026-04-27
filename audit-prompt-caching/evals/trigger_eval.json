@@ -4,6 +4,22 @@
     "should_trigger": true
   },
   {
+    "query": "cached_tokens у меня нулевой, хотя system prompt повторяется в каждом запросе OpenAI Responses API",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenRouter cache writes are present, but cache reads stay zero after we changed provider routing",
+    "should_trigger": true
+  },
+  {
+    "query": "Why did TTFT get worse after scaling vLLM replicas if the prompt prefix is identical?",
+    "should_trigger": true
+  },
+  {
+    "query": "Our agent cost increased after dynamic tool selection started changing the tools list every step",
+    "should_trigger": true
+  },
+  {
     "query": "Our Claude cache_control prompt is writing cache_creation_input_tokens on every request but cache_read_input_tokens stays zero",
     "should_trigger": true
   },

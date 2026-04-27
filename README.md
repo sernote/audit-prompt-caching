@@ -1,6 +1,6 @@
 # Audit Prompt Caching Skill
 
-`audit-prompt-caching` is a Codex/agent skill for auditing LLM prompt and prefix cache behavior: cache misses, `cached_tokens=0`, TTFT regressions, OpenRouter routing issues, Bedrock cache checkpoints, agent tool-routing costs, provider migration risk, and vLLM/SGLang deployment issues.
+`audit-prompt-caching` is a portable agent skill for auditing LLM prompt and prefix cache behavior: cache misses, `cached_tokens=0`, TTFT regressions, OpenRouter routing issues, Bedrock cache checkpoints, agent tool-routing costs, provider migration risk, and vLLM/SGLang deployment issues.
 
 The skill is based on a Habr article series about prompt-cache economics, common anti-patterns, and dynamic tools in agent loops.
 
@@ -39,30 +39,63 @@ audit-prompt-caching/
 
 Copy that folder into the target agent's skills directory. Keep the folder name aligned with the `name` field in `audit-prompt-caching/SKILL.md`.
 
+## Works With
+
+This package is authored as a Codex skill, but the folder is intentionally portable: `SKILL.md` is the entry point, `references/` holds selectively loaded context, and `scripts/` are dependency-free helpers. Manual `$audit-prompt-caching` invocation is optional; the frontmatter description and trigger evals are designed for natural prompts such as `cached_tokens у меня нулевой`.
+
+### Codex
+
+Install:
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R audit-prompt-caching ~/.codex/skills/audit-prompt-caching
+```
+
+Restart Codex so it reloads installed skills. Natural trigger: `cached_tokens у меня нулевой, хотя system prompt повторяется`.
+
+### Claude Code
+
+Install by copying the portable folder into the local skills directory used by your Claude Code setup, preserving the folder name:
+
+```bash
+cp -R audit-prompt-caching <claude-code-skills-dir>/audit-prompt-caching
+```
+
+If your setup uses project-local instructions instead of a global skills directory, reference `audit-prompt-caching/SKILL.md` from the project instructions and keep `references/` plus `scripts/` next to it.
+
+### Cursor
+
+Use the skill as a project-local rule pack: copy `audit-prompt-caching/` into the repository and point Cursor rules or agent instructions at `audit-prompt-caching/SKILL.md`. Keep the folder layout intact so references and scripts resolve by relative path.
+
+### Continue
+
+Use the skill as reusable agent context: copy `audit-prompt-caching/` into a shared prompts/rules directory and include `audit-prompt-caching/SKILL.md` in the Continue assistant configuration. Keep `references/` and `scripts/` available beside the skill file.
+
 ## Example Prompts
 
 ```text
-Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
+cached_tokens у меня нулевой, хотя system prompt на 8k токенов повторяется в каждом OpenAI Responses API request.
 ```
 
 ```text
-Use $audit-prompt-caching to review our coding agent. We started selecting only 5 tools per step and total cost went up.
+Our coding agent started selecting only 5 tools per step, and total cost went up instead of down.
 ```
 
 ```text
-Use $audit-prompt-caching to inspect this vLLM deployment. TTFT spiked after scaling from 1 to 4 pods.
+TTFT spiked after scaling vLLM from 1 to 4 pods; prefix cache hit rate collapsed.
 ```
 
 ```text
-Use $audit-prompt-caching to audit our OpenRouter app. cache_write_tokens appears, but cached_tokens stays zero after we added provider.order and openrouter/auto.
+OpenRouter shows cache_write_tokens, but cached_tokens stays zero after we added provider.order and openrouter/auto.
 ```
 
 ```text
-Use $audit-prompt-caching to review this Bedrock Converse request. CacheWriteInputTokens is high but CacheReadInputTokens stays low.
+Bedrock Converse has high CacheWriteInputTokens but low CacheReadInputTokens.
 ```
 
 ```text
-Use $audit-prompt-caching to compare Anthropic and OpenAI for this RAG workload using static tokens, output tokens, hit rate, and migration risk.
+Compare Anthropic and OpenAI for this RAG workload using static tokens, output tokens, hit rate, and migration risk.
 ```
 
 ## Structure
