@@ -1,0 +1,3 @@
+{"provider":"openai","model":"gpt-5.4","route":"responses-api","request_id":"req_openai_cold","usage":{"input_tokens":5200,"input_tokens_details":{"cached_tokens":0},"output_tokens":410},"prefix_hash":"openai-policy-v1"}
+{"provider":"openai","model":"gpt-5.4","route":"responses-api","request_id":"req_openai_warm_1","usage":{"input_tokens":5200,"input_tokens_details":{"cached_tokens":4600},"output_tokens":390},"prefix_hash":"openai-policy-v1"}
+{"provider":"openai","model":"gpt-5.4","route":"responses-api","request_id":"req_openai_warm_2","usage":{"input_tokens":5200,"input_tokens_details":{"cached_tokens":4700},"output_tokens":405},"prefix_hash":"openai-policy-v1"}

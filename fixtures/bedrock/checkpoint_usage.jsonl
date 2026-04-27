@@ -1,0 +1,2 @@
+{"provider":"bedrock","model":"anthropic.claude-sonnet-4-5","region":"us-east-1","route":"converse","request_id":"req_bedrock_write","metrics":{"InputTokens":800,"CacheWriteInputTokens":5000,"CacheReadInputTokens":0,"OutputTokens":190},"prefix_hash":"bedrock-policy-v1"}
+{"provider":"bedrock","model":"anthropic.claude-sonnet-4-5","region":"us-east-1","route":"converse","request_id":"req_bedrock_read","metrics":{"InputTokens":820,"CacheWriteInputTokens":0,"CacheReadInputTokens":5000,"OutputTokens":205},"prefix_hash":"bedrock-policy-v1"}

@@ -1,0 +1,47 @@
+{
+  "model": "gpt-5.4",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Stable reusable policy: apply the same compliance policy and output taxonomy for every request in this workflow."
+    },
+    {
+      "role": "system",
+      "content": "Stable reusable examples and classification instructions."
+    },
+    {
+      "role": "user",
+      "content": "Classify this customer-specific question. Context: request metadata is attached outside the cacheable prefix."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup_policy",
+        "description": "Look up stable policy references."
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Write a classification artifact."
+      }
+    }
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "classification_result",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

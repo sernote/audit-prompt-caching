@@ -2,6 +2,8 @@
 
 Use this template when the user asks for a written audit, a handoff artifact, or a repeatable review format.
 
+For repeatable runs, use `scripts/render_audit_report.py` to generate this Markdown shape and its JSON companion from normalized usage logs plus one-line findings.
+
 ## Executive Summary
 
 - Provider/engine:
@@ -33,6 +35,8 @@ file:line | severity | provider/engine | issue | cache impact | fix | validation
 ```
 
 Severity values: critical, high, medium, low.
+
+Machine-readable companion fields should include `provider`, `engine`, `usage`, `findings`, and `expected_impact`.
 
 ## Before / After Prompt Layout
 

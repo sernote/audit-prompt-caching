@@ -1,0 +1,12 @@
+{
+  "records": 3,
+  "input_tokens": 15600,
+  "cached_tokens": 9300,
+  "cache_read_input_tokens": 0,
+  "cache_creation_input_tokens": 0,
+  "total_input_tokens": 15600,
+  "output_tokens": 1205,
+  "cache_hit_ratio": 0.5962,
+  "cache_write_read_ratio": null,
+  "output_share": 0.0717
+}

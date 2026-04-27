@@ -1,0 +1,2 @@
+{"provider":"anthropic","model":"claude-sonnet-4.5","route":"messages-api","request_id":"req_anthropic_write","usage":{"input_tokens":700,"cache_creation_input_tokens":5200,"cache_read_input_tokens":0,"output_tokens":200},"prefix_hash":"anthropic-policy-v1"}
+{"provider":"anthropic","model":"claude-sonnet-4.5","route":"messages-api","request_id":"req_anthropic_read","usage":{"input_tokens":710,"cache_creation_input_tokens":0,"cache_read_input_tokens":5200,"output_tokens":210},"prefix_hash":"anthropic-policy-v1"}
