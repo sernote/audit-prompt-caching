@@ -622,6 +622,57 @@ class PromptCacheScriptsTest(unittest.TestCase):
             (ROOT / "audit-prompt-caching" / "references" / "report-template.md").exists()
         )
 
+    def test_skill_has_agent_first_contracts_and_playbooks(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "Agent-First Output Contracts",
+            "Quick triage",
+            "Code audit findings",
+            "Provider migration risk",
+            "Agent loop audit",
+            "Not worth caching",
+            "Audit Playbooks",
+            "OpenAI cached_tokens=0",
+            "Claude/Bedrock/OpenRouter writes without reads",
+            "Dynamic tools in long agent loops",
+            "High hit rate but no savings",
+            "OpenAI-compatible wrapper ambiguity",
+            "Agent-First Quality Bar",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_report_template_covers_agent_first_outputs(self):
+        template = (
+            ROOT / "audit-prompt-caching" / "references" / "report-template.md"
+        ).read_text()
+
+        for required in [
+            "Output Contract Selector",
+            "Change Recommendation",
+            "Evidence Needed Next",
+            "Agent Loop Audit",
+            "Not Worth Caching",
+        ]:
+            self.assertIn(required, template)
+
+    def test_agent_first_evals_cover_project_change_and_wrapper_decisions(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        combined_prompts = "\n".join(item["prompt"] for item in evals["evals"])
+        combined_expected = "\n".join(item["expected_output"] for item in evals["evals"])
+
+        for required in [
+            "new OpenAI prompt caching docs",
+            "Do we need to change the project",
+            "OpenAI-compatible",
+            "prompt_cache_key",
+            "MCP tool registry",
+            "not worth changing the cache setup",
+        ]:
+            self.assertIn(required, combined_prompts + "\n" + combined_expected)
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"

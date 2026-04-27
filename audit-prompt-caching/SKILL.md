@@ -58,6 +58,19 @@ Before recommending prompt-cache changes, check:
 
 If the gate fails, report why caching is not the right lever yet and recommend measurement, prompt restructuring, routing fixes, or a different optimization.
 
+## Agent-First Output Contracts
+
+Pick the smallest contract that answers the user's actual request. Do not bury the decision under general prompt-cache advice.
+
+- **Quick triage**: use when artifacts are incomplete. Answer with provider/engine guess, most likely cache blocker, evidence needed next, and one safe next command or artifact request.
+- **Code audit findings**: use when code is available. Lead with file-line findings in the report format, then clean checks, then verification commands.
+- **Provider migration risk**: use when moving between OpenAI, Anthropic, Bedrock, OpenRouter, Azure OpenAI, Gemini, Qwen, DeepSeek, or self-hosted engines. Compare cache semantics, usage fields, prefix layout risk, routing risk, and cost assumptions before recommending edits.
+- **Agent loop audit**: use for coding assistants, MCP clients, tool-using agents, compaction, mode switching, or long multi-step workflows. Always inspect stable tools, early messages, per-step prefix hashes, cache fields, output tokens, and compaction events.
+- **Deployment audit**: use for vLLM, SGLang, Kubernetes, Docker Compose, gateways, autoscaling, or multi-replica inference. Treat routing locality and KV budget as first-class causes, not secondary deployment details.
+- **Not worth caching**: use when the Applicability Gate fails or the evidence shows output decode, external tool latency, rate limits, or privacy isolation dominate. Say what should change instead and what evidence would reopen prompt-cache work.
+
+For "do we need to change the project?" questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>`. Then list exact files/settings to change or explicitly state that no project change is justified yet.
+
 ## Use-Case Map
 
 Classify the work before auditing so you inspect the right artifacts. For a deeper role/artifact matrix, load `references/use-cases.md`.
@@ -148,6 +161,18 @@ Load only the relevant provider files. If OpenRouter, Azure, or Bedrock signals 
 10. Apply provider-specific checks from the loaded reference.
 11. Report findings with evidence, severity, concrete fix, and validation steps.
 12. When making code changes, verify prefix stability before claiming success.
+
+## Audit Playbooks
+
+Use these as starting paths for common support and review requests. Still run provider detection and the Freshness Gate before exact claims.
+
+- **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, `responses.create` vs Chat usage fields, `prompt_cache_key` granularity, `prompt_cache_retention`, output-token dominance, and whether an OpenAI-compatible wrapper is actually in use.
+- **Claude/Bedrock/OpenRouter writes without reads**: distinguish cache creation/write fields from read/hit fields, then inspect cache breakpoint placement, dynamic content before the breakpoint, TTL/retention, model/region/API support, fallback routing, and actual routed provider/model.
+- **Dynamic tools in long agent loops**: compare `tools_count`, sorted tool-name hash, `prefix_hash`, mode state, and cache fields per step. Prefer stable route-level tool bundles, sorted schemas, provider-supported allowed tools/tool search/deferred loading, or self-hosted masking after checking current docs.
+- **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate-limit behavior, and cache read/write pricing assumptions before changing prompt layout.
+- **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first and do not recommend direct OpenAI-only parameters until the wrapper docs support them.
+- **Self-hosted multi-replica miss**: inspect gateway/service routing, prefix-aware hashing, tokenizer/chat-template drift, `max_model_len`, KV block pressure, eviction metrics, and route/replica-level hit metrics.
+- **New provider docs project-change audit**: compare the new provider facts against current code, references, evals, and tests. Recommend no code change when the project already encodes the behavior or when the fact is not applicable to this provider path.
 
 ## Rule Categories
 
@@ -376,6 +401,17 @@ path/to/file.py:42 | critical | OpenAI | tool schema order changes between calls
 - prefix hash dimensions
 - deploy/change correlation to watch
 ```
+
+## Agent-First Quality Bar
+
+Before finalizing an audit response:
+
+- Answer the decision the user asked for: change needed, no change, or evidence missing.
+- Prefer wrapper/router references over generic provider references when both signals exist.
+- Do not make exact provider claims without loading the relevant reference and applying the Freshness Gate.
+- Distinguish cache miss, cache write-without-read, uneconomic cache hit, decode-bound latency, rate-limit pressure, and privacy-driven isolation.
+- Include validation that can falsify the recommendation: prefix fingerprints, provider usage fields, route/replica metrics, or cost/latency split.
+- Do not propose cache controls, cache keys, or routing hints when the Not worth caching contract applies.
 
 ## Verification
 

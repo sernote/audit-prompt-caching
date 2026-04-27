@@ -16,6 +16,10 @@
     "should_trigger": true
   },
   {
+    "query": "Analyze the new OpenAI prompt caching docs and tell us if the project needs changes",
+    "should_trigger": true
+  },
+  {
     "query": "OpenAI cached_tokens is high but TPM rate limits did not improve",
     "should_trigger": true
   },
@@ -89,6 +93,10 @@
   },
   {
     "query": "Our agent summarizes early turns and cache reads reset after compaction. Audit the context strategy.",
+    "should_trigger": true
+  },
+  {
+    "query": "Give a concise agent loop audit for an MCP tool registry that changes tools every step",
     "should_trigger": true
   },
   {

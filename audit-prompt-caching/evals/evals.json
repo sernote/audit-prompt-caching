@@ -180,6 +180,24 @@
       "prompt": "OpenAI cached_tokens is high and input cost is lower, but our TPM rate limit errors did not improve. We assumed cached prompt tokens would not count toward rate limits.",
       "expected_output": "Loads OpenAI reference; explains that cached prompt tokens still count toward TPM rate limits, so prompt caching can reduce latency/cost without increasing TPM headroom; recommends measuring cached_tokens, prompt_tokens/input_tokens, request rate, and output tokens separately, then addressing rate limits through batching, traffic shaping, model limits, or quota rather than prompt-cache tuning alone.",
       "files": []
+    },
+    {
+      "id": 31,
+      "prompt": "Analyze the new OpenAI prompt caching docs. Do we need to change the project? The repo already has an OpenAI reference, evals, and an extractor that detects prompt_cache_retention.",
+      "expected_output": "Uses the project-change output contract: answers Change needed: yes/no/unknown first; compares new OpenAI prompt caching docs against current SKILL.md, references, evals, and tests; recommends only exact project changes that are missing; says no change when behavior is already encoded; includes validation commands and avoids speculative provider claims without the Freshness Gate.",
+      "files": []
+    },
+    {
+      "id": 32,
+      "prompt": "Our coding assistant loads tools from an MCP tool registry on every step. The MCP tool registry order can change, mode switches remove write tools, and compaction rewrites the first user turn. Give a concise agent loop audit.",
+      "expected_output": "Uses the Agent loop audit contract; identifies dynamic MCP tool registry order, changing tool availability, and early compaction as prefix stability risks; asks for per-step prefix_hash, tools_count, sorted tool-name hash, cache read/write fields, mode state, and compaction events; recommends stable route-level tool bundles, sorted schemas, provider-supported allowed tools or deferred loading after docs verification, and append-only anchors.",
+      "files": []
+    },
+    {
+      "id": 33,
+      "prompt": "The app uses the OpenAI SDK but points base_url to an OpenAI-compatible Azure or gateway endpoint. A reviewer wants us to add prompt_cache_key everywhere. Also, cached_tokens is high but output tokens dominate, so this may be not worth changing the cache setup.",
+      "expected_output": "Uses the OpenAI-compatible wrapper ambiguity playbook; loads the wrapper or Azure reference before generic OpenAI; does not recommend prompt_cache_key unless the wrapper supports it; applies the Not worth caching contract when output tokens dominate total cost or latency; answers whether a project change is justified, what evidence is missing, and how to validate with usage fields and cost/latency split.",
+      "files": []
     }
   ]
 }
