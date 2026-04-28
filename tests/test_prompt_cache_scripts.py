@@ -598,6 +598,103 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertIn(expected, ci)
         self.assertNotIn("rm -rf", ci)
 
+    def test_install_script_installs_full_skill_from_local_source(self):
+        installer = ROOT / "install.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            install_parent = Path(tmp) / "skills"
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(installer),
+                    "--source-dir",
+                    str(ROOT),
+                    "--dir",
+                    str(install_parent),
+                    "--force",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed = install_parent / "audit-prompt-caching"
+            for required in [
+                "SKILL.md",
+                "references/openai.md",
+                "scripts/analyze_usage_logs.py",
+                "evals/evals.json",
+            ]:
+                self.assertTrue(
+                    (installed / required).exists(),
+                    f"missing installed path: {required}",
+                )
+            self.assertIn(str(installed), result.stdout)
+
+    def test_install_script_refuses_existing_target_without_force(self):
+        installer = ROOT / "install.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            install_parent = Path(tmp) / "skills"
+            existing = install_parent / "audit-prompt-caching"
+            existing.mkdir(parents=True)
+            marker = existing / "user-file.txt"
+            marker.write_text("keep me")
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(installer),
+                    "--source-dir",
+                    str(ROOT),
+                    "--dir",
+                    str(install_parent),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(marker.read_text(), "keep me")
+            self.assertIn("--force", result.stderr)
+
+    def test_install_script_exposes_simple_install_contract(self):
+        installer = ROOT / "install.sh"
+        readme = (ROOT / "README.md").read_text()
+
+        self.assertTrue(installer.exists(), "missing install.sh")
+        syntax = subprocess.run(
+            ["bash", "-n", str(installer)],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
+
+        install_text = installer.read_text()
+        for expected in [
+            "--agent codex",
+            "--agent claude",
+            "--agent both",
+            "--dir",
+            "--source-dir",
+            "--force",
+            "~/.codex/skills/audit-prompt-caching",
+        ]:
+            self.assertIn(expected, install_text)
+
+        self.assertIn(
+            "curl -fsSL https://raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh | bash",
+            readme,
+        )
+        self.assertIn("Manual Install", readme)
+
     def test_readme_demo_uses_successful_linter_command(self):
         readme = (ROOT / "README.md").read_text()
 

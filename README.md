@@ -16,6 +16,26 @@ That failure is expensive because it often looks like a generic "LLM cost went u
 
 ## Quick Start
 
+Install as a Codex skill:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh | bash
+```
+
+Then start a new Codex session and ask:
+
+```text
+Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
+```
+
+Install into Claude's skill directory instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh | bash -s -- --agent claude
+```
+
+## Local Demo
+
 Run the fixture audit locally:
 
 ```bash
@@ -35,21 +55,20 @@ python3 audit-prompt-caching/scripts/render_audit_report.py \
   --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
 ```
 
-Install as a Codex skill from GitHub:
+## Manual Install
+
+Use this when you do not want to pipe a script into `bash`:
 
 ```bash
-tmp="$(mktemp -d)" && \
-git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git "$tmp" && \
-mkdir -p ~/.codex/skills && \
-rm -rf ~/.codex/skills/audit-prompt-caching && \
-cp -R "$tmp/audit-prompt-caching" ~/.codex/skills/audit-prompt-caching && \
-rm -rf "$tmp"
+git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git
+cd audit-prompt-caching
+bash install.sh --source-dir . --force
 ```
 
-Then start a new Codex session and ask:
+Custom skill directory:
 
-```text
-Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
+```bash
+bash install.sh --source-dir . --dir ~/.codex/skills --force
 ```
 
 ## Audit Hero Shot
