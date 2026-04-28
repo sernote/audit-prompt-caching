@@ -80,6 +80,22 @@
     "should_trigger": true
   },
   {
+    "query": "PR only changes the system prompt wording for our long shared policy classifier; check whether cacheable prefix stability is affected",
+    "should_trigger": true
+  },
+  {
+    "query": "We moved the shared policy document after the user question in a repeated RAG request and want a pre-merge cache review",
+    "should_trigger": true
+  },
+  {
+    "query": "This release changes tool registry order and response_format serialization in our LLM request builder",
+    "should_trigger": true
+  },
+  {
+    "query": "We switched from direct Anthropic to OpenRouter but visible prompt text is identical; review cache and routing risk",
+    "should_trigger": true
+  },
+  {
     "query": "Our cache hit rate is 90 percent but the LLM bill did not drop because output tokens may dominate",
     "should_trigger": true
   },
@@ -113,6 +129,14 @@
   },
   {
     "query": "Identical vLLM prompts stopped hitting cache after tokenizer chat_template and BOS token changes",
+    "should_trigger": true
+  },
+  {
+    "query": "We scaled vLLM pods and did not touch prompts, but repeated long-request TTFT increased after the deploy",
+    "should_trigger": true
+  },
+  {
+    "query": "LLM cost increased after an agent refactor even though nobody mentioned prompt caching; repeated long tool loops are involved",
     "should_trigger": true
   },
   {
@@ -181,6 +205,10 @@
   },
   {
     "query": "Write a friendly system prompt for a customer support bot",
+    "should_trigger": false
+  },
+  {
+    "query": "Rewrite this short greeting prompt to sound warmer; no repeated long context, cache metrics, or latency issue",
     "should_trigger": false
   },
   {

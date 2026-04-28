@@ -652,6 +652,39 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, skill)
 
+    def test_skill_triggers_on_llm_request_shape_changes(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "LLM request shape",
+            "prompt text",
+            "message order",
+            "request builders",
+            "provider API surface",
+            "model/router settings",
+            "context compaction",
+            "repeated long prompts, TTFT, cached-token telemetry, or LLM cost",
+            "ordinary short prompt edits",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_trigger_eval_covers_request_shape_change_cases(self):
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        queries = "\n".join(item["query"] for item in trigger_eval)
+
+        for required in [
+            "PR only changes the system prompt wording",
+            "moved the shared policy document after the user question",
+            "changes tool registry order and response_format serialization",
+            "switched from direct Anthropic to OpenRouter",
+            "scaled vLLM pods and did not touch prompts",
+            "LLM cost increased after an agent refactor",
+            "Rewrite this short greeting prompt",
+        ]:
+            self.assertIn(required, queries)
+
     def test_skill_package_has_report_template_and_actionable_sections(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
 

@@ -5,8 +5,11 @@ description: >
   cached_tokens=0, cache_read_input_tokens/cache_creation_input_tokens,
   prompt_cache_key, cache_control/cachePoint placement, stable prefixes,
   tool/schema stability, TTFT/prefill latency, OpenAI/Claude/Bedrock/OpenRouter
-  routing, vLLM/SGLang KV reuse, or says LLM cost or speed regressed for
-  repeated long prompts. Use for speeding up agents only when prompt-cache
+  routing, vLLM/SGLang KV reuse, or LLM cost/speed regressions on repeated long
+  prompts. Use when reviewing LLM request shape changes: prompt text, message
+  order, request builders, tools, schemas, response_format, provider API
+  surface, model/router settings, agent loop structure, context compaction, or
+  inference deployment. Use for speeding up agents only when prompt-cache
   stability, TTFT, or cache cost is central. Do not use for generic prompt
   writing, generic RAG design, token counting, or non-LLM performance.
 ---
@@ -24,6 +27,9 @@ Use this skill when reviewing or designing LLM calls where repeated prompt prefi
 Typical triggers:
 - `cached_tokens=0`, `cache_read_input_tokens=0`, or cache writes without reads.
 - Cache hit rate, TTFT, prefill latency, or input-token cost regressed.
+- User says LLM cost or speed regressed around repeated long prompts, long-context agents, or shared static context.
+- LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter.
+- Prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loop structure, context compaction, or inference deployment changed.
 - The request uses long system prompts, tool catalogs, schemas, static documents, few-shot examples, or repeated RAG/CAG context.
 - The app uses OpenAI `prompt_cache_key`, Anthropic `cache_control`, Bedrock `cachePoint`, OpenRouter routing, Gemini/Qwen/DeepSeek cache fields, or Azure OpenAI cached-token telemetry.
 - An agent changes tools, compacts history, mutates early messages, or switches modes across steps.
@@ -33,6 +39,7 @@ Typical triggers:
 
 Do not use this skill for:
 - generic prompt writing or prompt-quality editing without a caching concern
+- ordinary short prompt edits where no repeated long prefix, TTFT, cache telemetry, or LLM cost concern exists
 - generic RAG design unless repeated context placement/cacheability is part of the task
 - token counting or context-window sizing only
 - response caching only, unless comparing it with prompt prefix caching
