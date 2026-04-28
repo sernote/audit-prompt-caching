@@ -198,6 +198,12 @@
       "prompt": "The app uses the OpenAI SDK but points base_url to an OpenAI-compatible Azure or gateway endpoint. A reviewer wants us to add prompt_cache_key everywhere. Also, cached_tokens is high but output tokens dominate, so this may be not worth changing the cache setup.",
       "expected_output": "Uses the OpenAI-compatible wrapper ambiguity playbook; loads the wrapper or Azure reference before generic OpenAI; does not recommend prompt_cache_key unless the wrapper supports it; applies the Not worth caching contract when output tokens dominate total cost or latency; answers whether a project change is justified, what evidence is missing, and how to validate with usage fields and cost/latency split.",
       "files": []
+    },
+    {
+      "id": 34,
+      "prompt": "Use $audit-prompt-caching. Сделай ревью.",
+      "expected_output": "Treats the explicit skill invocation plus generic review wording as a cache-focused review, not a general code review; detects provider/engine signals from available files or diff; inspects LLM request shape, tools, schemas, message order, routing, agent loops, and deployment/KV locality; leads with cache-impact findings and validation steps; asks for specific artifacts if no code, diff, usage logs, or deployment files are available.",
+      "files": []
     }
   ]
 }

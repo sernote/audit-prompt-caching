@@ -79,6 +79,10 @@ Pick the smallest contract that answers the user's actual request. Do not bury t
 
 For "do we need to change the project?" questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>`. Then list exact files/settings to change or explicitly state that no project change is justified yet.
 
+## Explicit Review Default
+
+If this skill is explicitly invoked and the user asks only "review", "do a review", "сделай ревью", or equivalent, default to a cache-focused review of the available diff or repository. Treat the request as a prompt/prefix/KV cache audit: detect provider and engine signals, inspect LLM request shape, and report cache-impact findings first. Do not perform a general code review unless the user explicitly asks for one.
+
 ## Use-Case Map
 
 Classify the work before auditing so you inspect the right artifacts. For a deeper role/artifact matrix, load `references/use-cases.md`.

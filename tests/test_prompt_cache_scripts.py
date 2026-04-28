@@ -668,6 +668,17 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, skill)
 
+    def test_skill_defines_explicit_review_default(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "Explicit Review Default",
+            'asks only "review"',
+            "cache-focused review",
+            "Do not perform a general code review",
+        ]:
+            self.assertIn(required, skill)
+
     def test_trigger_eval_covers_request_shape_change_cases(self):
         trigger_eval = json.loads(
             (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
@@ -684,6 +695,22 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "Rewrite this short greeting prompt",
         ]:
             self.assertIn(required, queries)
+
+    def test_evals_cover_explicit_review_request(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        prompts = "\n".join(item["prompt"] for item in evals["evals"])
+        expected = "\n".join(item["expected_output"] for item in evals["evals"])
+        trigger_queries = "\n".join(item["query"] for item in trigger_eval)
+
+        self.assertIn("Use $audit-prompt-caching. Сделай ревью.", prompts)
+        self.assertIn("cache-focused review", expected)
+        self.assertIn("not a general code review", expected)
+        self.assertIn("Use $audit-prompt-caching. Сделай ревью.", trigger_queries)
 
     def test_skill_package_has_report_template_and_actionable_sections(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()

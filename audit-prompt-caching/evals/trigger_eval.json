@@ -76,6 +76,10 @@
     "should_trigger": true
   },
   {
+    "query": "Use $audit-prompt-caching. Сделай ревью.",
+    "should_trigger": true
+  },
+  {
     "query": "Review this prompt layout for a document classifier: system, user question, long shared policy, JSON schema",
     "should_trigger": true
   },
