@@ -407,6 +407,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 2)
             self.assertEqual(output["findings"][0]["path"], "src/llm.py")
 
+    def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = tmp_path / "llm-config.json"
+            config.write_text('{"prompt_cache_retention": "24h"}')
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            self.assertEqual(output["files_scanned"], 1)
+            self.assertEqual(output["providers"]["openai"], 1)
+            self.assertEqual(output["findings"][0]["path"], "llm-config.json")
+
     def test_extract_llm_calls_scans_dockerfile_for_vllm_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -594,6 +608,110 @@ class PromptCacheScriptsTest(unittest.TestCase):
             readme,
         )
 
+    def test_readme_front_door_has_adoption_assets(self):
+        readme = (ROOT / "README.md").read_text()
+
+        for required in [
+            "[![CI]",
+            "LLM Cache Audit Skill",
+            "Why This Exists",
+            "Quick Start",
+            "Audit Hero Shot",
+            "LLM CACHE AUDIT",
+            "Fixture Signal",
+            "Cache Flow",
+            "Positioning",
+            "59.62%",
+            "$34.60 -> $23.10",
+            "git clone --depth 1",
+        ]:
+            self.assertIn(required, readme)
+        self.assertNotIn("Prompt Cache Doctor", readme)
+
+    def test_readme_examples_cover_non_obvious_audit_scenarios(self):
+        readme = (ROOT / "README.md").read_text()
+
+        for required in [
+            "OpenAI-compatible wrapper ambiguity",
+            "Claude automatic caching writes every request",
+            "Bedrock Converse cross-region cachePoint",
+            "MCP tool registry drift",
+            "vLLM/SGLang multi-replica KV",
+            "High cached tokens, low savings",
+        ]:
+            self.assertIn(required, readme)
+
+    def test_skill_description_has_stronger_trigger_surface(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "Use whenever the user mentions",
+            "LLM cost or speed regressed",
+            "repeated long prompts",
+            "speeding up agents",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_triggers_on_llm_request_shape_changes(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "LLM request shape",
+            "prompt text",
+            "message order",
+            "request builders",
+            "provider API surface",
+            "model/router settings",
+            "context compaction",
+            "repeated long prompts, TTFT, cached-token telemetry, or LLM cost",
+            "ordinary short prompt edits",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_defines_explicit_review_default(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "Explicit Review Default",
+            'asks only "review"',
+            "cache-focused review",
+            "Do not perform a general code review",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_trigger_eval_covers_request_shape_change_cases(self):
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        queries = "\n".join(item["query"] for item in trigger_eval)
+
+        for required in [
+            "PR only changes the system prompt wording",
+            "moved the shared policy document after the user question",
+            "changes tool registry order and response_format serialization",
+            "switched from direct Anthropic to OpenRouter",
+            "scaled vLLM pods and did not touch prompts",
+            "LLM cost increased after an agent refactor",
+            "Rewrite this short greeting prompt",
+        ]:
+            self.assertIn(required, queries)
+
+    def test_evals_cover_explicit_review_request(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        prompts = "\n".join(item["prompt"] for item in evals["evals"])
+        expected = "\n".join(item["expected_output"] for item in evals["evals"])
+        trigger_queries = "\n".join(item["query"] for item in trigger_eval)
+
+        self.assertIn("Use $audit-prompt-caching. Сделай ревью.", prompts)
+        self.assertIn("cache-focused review", expected)
+        self.assertIn("not a general code review", expected)
+        self.assertIn("Use $audit-prompt-caching. Сделай ревью.", trigger_queries)
+
     def test_skill_package_has_report_template_and_actionable_sections(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
 
@@ -607,6 +725,95 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertTrue(
             (ROOT / "audit-prompt-caching" / "references" / "report-template.md").exists()
         )
+
+    def test_skill_has_agent_first_contracts_and_playbooks(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "Agent-First Output Contracts",
+            "Quick triage",
+            "Code audit findings",
+            "Provider migration risk",
+            "Agent loop audit",
+            "Not worth caching",
+            "Audit Playbooks",
+            "OpenAI cached_tokens=0",
+            "Claude/Bedrock/OpenRouter writes without reads",
+            "Dynamic tools in long agent loops",
+            "High hit rate but no savings",
+            "OpenAI-compatible wrapper ambiguity",
+            "Agent-First Quality Bar",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_report_template_covers_agent_first_outputs(self):
+        template = (
+            ROOT / "audit-prompt-caching" / "references" / "report-template.md"
+        ).read_text()
+
+        for required in [
+            "Output Contract Selector",
+            "Change Recommendation",
+            "Evidence Needed Next",
+            "Agent Loop Audit",
+            "Not Worth Caching",
+        ]:
+            self.assertIn(required, template)
+
+    def test_agent_first_evals_cover_project_change_and_wrapper_decisions(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        combined_prompts = "\n".join(item["prompt"] for item in evals["evals"])
+        combined_expected = "\n".join(item["expected_output"] for item in evals["evals"])
+
+        for required in [
+            "new OpenAI prompt caching docs",
+            "Do we need to change the project",
+            "OpenAI-compatible",
+            "prompt_cache_key",
+            "MCP tool registry",
+            "not worth changing the cache setup",
+        ]:
+            self.assertIn(required, combined_prompts + "\n" + combined_expected)
+
+    def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
+        ).read_text()
+
+        for required in [
+            "Automatic caching",
+            "top-level",
+            "Explicit cache breakpoints",
+            "20-block lookback",
+            "dynamic suffix",
+            'ttl": "1h"',
+            "longer TTL",
+            "thinking blocks",
+            "workspace-level isolation",
+        ]:
+            self.assertIn(required, reference)
+
+    def test_openai_reference_covers_current_prompt_cache_semantics(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "openai.md"
+        ).read_text()
+
+        for required in [
+            "prefix hash",
+            "prompt_cache_key",
+            "15 requests per minute",
+            "prompt_cache_retention",
+            "in_memory",
+            '"24h"',
+            "gpt-5.5",
+            "Zero Data Retention",
+            "Regional Inference",
+            "TPM rate limits",
+            "GPU-local storage",
+        ]:
+            self.assertIn(required, reference)
 
 
 if __name__ == "__main__":

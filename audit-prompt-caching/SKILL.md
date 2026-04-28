@@ -1,13 +1,17 @@
 ---
 name: audit-prompt-caching
 description: >
-  Use when auditing LLM prompt/prefix caching, cached_tokens,
-  cache_read_input_tokens/cache_creation_input_tokens, prompt_cache_key,
-  cache_control/cachePoint placement, stable prefixes, tool/schema stability,
-  TTFT/prefill latency, OpenAI/Claude/Bedrock/OpenRouter routing, vLLM/SGLang KV
-  reuse, cache hit rate, or prompt-cache cost. Do not use for generic prompt
-  writing, generic RAG design, token counting, or non-LLM performance unless
-  prompt caching is central.
+  Use whenever the user mentions LLM prompt/prefix cache misses,
+  cached_tokens=0, cache_read_input_tokens/cache_creation_input_tokens,
+  prompt_cache_key, cache_control/cachePoint placement, stable prefixes,
+  tool/schema stability, TTFT/prefill latency, OpenAI/Claude/Bedrock/OpenRouter
+  routing, vLLM/SGLang KV reuse, or LLM cost/speed regressions on repeated long
+  prompts. Use when reviewing LLM request shape changes: prompt text, message
+  order, request builders, tools, schemas, response_format, provider API
+  surface, model/router settings, agent loop structure, context compaction, or
+  inference deployment. Use for speeding up agents only when prompt-cache
+  stability, TTFT, or cache cost is central. Do not use for generic prompt
+  writing, generic RAG design, token counting, or non-LLM performance.
 ---
 
 # Prompt Cache Audit
@@ -23,6 +27,9 @@ Use this skill when reviewing or designing LLM calls where repeated prompt prefi
 Typical triggers:
 - `cached_tokens=0`, `cache_read_input_tokens=0`, or cache writes without reads.
 - Cache hit rate, TTFT, prefill latency, or input-token cost regressed.
+- User says LLM cost or speed regressed around repeated long prompts, long-context agents, or shared static context.
+- LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter.
+- Prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loop structure, context compaction, or inference deployment changed.
 - The request uses long system prompts, tool catalogs, schemas, static documents, few-shot examples, or repeated RAG/CAG context.
 - The app uses OpenAI `prompt_cache_key`, Anthropic `cache_control`, Bedrock `cachePoint`, OpenRouter routing, Gemini/Qwen/DeepSeek cache fields, or Azure OpenAI cached-token telemetry.
 - An agent changes tools, compacts history, mutates early messages, or switches modes across steps.
@@ -32,6 +39,7 @@ Typical triggers:
 
 Do not use this skill for:
 - generic prompt writing or prompt-quality editing without a caching concern
+- ordinary short prompt edits where no repeated long prefix, TTFT, cache telemetry, or LLM cost concern exists
 - generic RAG design unless repeated context placement/cacheability is part of the task
 - token counting or context-window sizing only
 - response caching only, unless comparing it with prompt prefix caching
@@ -57,6 +65,23 @@ Before recommending prompt-cache changes, check:
 6. **Safety boundary**: Would broader cache reuse violate tenant, privacy, data residency, ZDR, or side-channel requirements?
 
 If the gate fails, report why caching is not the right lever yet and recommend measurement, prompt restructuring, routing fixes, or a different optimization.
+
+## Agent-First Output Contracts
+
+Pick the smallest contract that answers the user's actual request. Do not bury the decision under general prompt-cache advice.
+
+- **Quick triage**: use when artifacts are incomplete. Answer with provider/engine guess, most likely cache blocker, evidence needed next, and one safe next command or artifact request.
+- **Code audit findings**: use when code is available. Lead with file-line findings in the report format, then clean checks, then verification commands.
+- **Provider migration risk**: use when moving between OpenAI, Anthropic, Bedrock, OpenRouter, Azure OpenAI, Gemini, Qwen, DeepSeek, or self-hosted engines. Compare cache semantics, usage fields, prefix layout risk, routing risk, and cost assumptions before recommending edits.
+- **Agent loop audit**: use for coding assistants, MCP clients, tool-using agents, compaction, mode switching, or long multi-step workflows. Always inspect stable tools, early messages, per-step prefix hashes, cache fields, output tokens, and compaction events.
+- **Deployment audit**: use for vLLM, SGLang, Kubernetes, Docker Compose, gateways, autoscaling, or multi-replica inference. Treat routing locality and KV budget as first-class causes, not secondary deployment details.
+- **Not worth caching**: use when the Applicability Gate fails or the evidence shows output decode, external tool latency, rate limits, or privacy isolation dominate. Say what should change instead and what evidence would reopen prompt-cache work.
+
+For "do we need to change the project?" questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>`. Then list exact files/settings to change or explicitly state that no project change is justified yet.
+
+## Explicit Review Default
+
+If this skill is explicitly invoked and the user asks only "review", "do a review", "сделай ревью", or equivalent, default to a cache-focused review of the available diff or repository. Treat the request as a prompt/prefix/KV cache audit: detect provider and engine signals, inspect LLM request shape, and report cache-impact findings first. Do not perform a general code review unless the user explicitly asks for one.
 
 ## Use-Case Map
 
@@ -121,7 +146,7 @@ Search SDK imports, API base URLs, model names, deployment manifests, and config
 |---|---|---|
 | `openrouter`, `openrouter.ai/api/v1`, `OPENROUTER_API_KEY`, `@openrouter/sdk`, `OpenRouter`, `openrouter/auto` | OpenRouter | `references/openrouter.md` |
 | `AzureOpenAI`, `AZURE_OPENAI_ENDPOINT`, `azure.ai.openai`, `api-version`, Azure OpenAI endpoint URLs | Azure OpenAI | `references/azure-openai.md` |
-| `openai`, `responses.create`, `chat.completions`, `prompt_cache_key` | OpenAI | `references/openai.md` |
+| `openai`, `responses.create`, `chat.completions`, `prompt_cache_key`, `prompt_cache_retention` | OpenAI | `references/openai.md` |
 | `bedrock-runtime`, `BedrockRuntime`, `boto3.client("bedrock-runtime")`, `client.converse`, `converse_stream`, `InvokeModelCommand`, `ConverseCommand`, `invoke_model`, `cachePoint`, `CacheReadInputTokens`, `CacheWriteInputTokens` | Amazon Bedrock | `references/bedrock.md` |
 | `anthropic`, `messages.create`, `cache_control` | Anthropic | `references/anthropic.md` |
 | `vllm`, `--enable-prefix-caching`, `AsyncLLMEngine`, `LLM(` | vLLM | `references/vllm.md` |
@@ -148,6 +173,18 @@ Load only the relevant provider files. If OpenRouter, Azure, or Bedrock signals 
 10. Apply provider-specific checks from the loaded reference.
 11. Report findings with evidence, severity, concrete fix, and validation steps.
 12. When making code changes, verify prefix stability before claiming success.
+
+## Audit Playbooks
+
+Use these as starting paths for common support and review requests. Still run provider detection and the Freshness Gate before exact claims.
+
+- **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, `responses.create` vs Chat usage fields, `prompt_cache_key` granularity, `prompt_cache_retention`, output-token dominance, and whether an OpenAI-compatible wrapper is actually in use.
+- **Claude/Bedrock/OpenRouter writes without reads**: distinguish cache creation/write fields from read/hit fields, then inspect cache breakpoint placement, dynamic content before the breakpoint, TTL/retention, model/region/API support, fallback routing, and actual routed provider/model.
+- **Dynamic tools in long agent loops**: compare `tools_count`, sorted tool-name hash, `prefix_hash`, mode state, and cache fields per step. Prefer stable route-level tool bundles, sorted schemas, provider-supported allowed tools/tool search/deferred loading, or self-hosted masking after checking current docs.
+- **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate-limit behavior, and cache read/write pricing assumptions before changing prompt layout.
+- **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first and do not recommend direct OpenAI-only parameters until the wrapper docs support them.
+- **Self-hosted multi-replica miss**: inspect gateway/service routing, prefix-aware hashing, tokenizer/chat-template drift, `max_model_len`, KV block pressure, eviction metrics, and route/replica-level hit metrics.
+- **New provider docs project-change audit**: compare the new provider facts against current code, references, evals, and tests. Recommend no code change when the project already encodes the behavior or when the fact is not applicable to this provider path.
 
 ## Rule Categories
 
@@ -376,6 +413,17 @@ path/to/file.py:42 | critical | OpenAI | tool schema order changes between calls
 - prefix hash dimensions
 - deploy/change correlation to watch
 ```
+
+## Agent-First Quality Bar
+
+Before finalizing an audit response:
+
+- Answer the decision the user asked for: change needed, no change, or evidence missing.
+- Prefer wrapper/router references over generic provider references when both signals exist.
+- Do not make exact provider claims without loading the relevant reference and applying the Freshness Gate.
+- Distinguish cache miss, cache write-without-read, uneconomic cache hit, decode-bound latency, rate-limit pressure, and privacy-driven isolation.
+- Include validation that can falsify the recommendation: prefix fingerprints, provider usage fields, route/replica metrics, or cost/latency split.
+- Do not propose cache controls, cache keys, or routing hints when the Not worth caching contract applies.
 
 ## Verification
 

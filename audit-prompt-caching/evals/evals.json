@@ -94,7 +94,7 @@
     {
       "id": 16,
       "prompt": "A Claude API app has long reusable tool docs and system instructions, but usage shows input_tokens only; cache_read_input_tokens and cache_creation_input_tokens are both zero. The code never sets cache_control.",
-      "expected_output": "Loads Anthropic reference; identifies missing cache_control as the likely activation issue; recommends placing cache_control breakpoints after reusable static content, verifying model/minimum token and TTL docs, checking cache_creation_input_tokens then cache_read_input_tokens on repeated calls, and avoiding dynamic content in cached blocks.",
+      "expected_output": "Loads Anthropic reference; identifies missing cache_control as the likely activation issue; distinguishes top-level automatic cache_control for append-only multi-turn conversations from explicit block-level breakpoints for static prefixes; verifies model/minimum token and TTL docs, checks cache_creation_input_tokens then cache_read_input_tokens on repeated calls, and avoids dynamic content in cached blocks.",
       "files": []
     },
     {
@@ -131,6 +131,78 @@
       "id": 22,
       "prompt": "We run many concurrent self-hosted agent workflows. Prefixes are stable and routed to the same workers, but useful agent KV blocks are evicted while agents wait on tools and then get recomputed right before reuse. Should we tune LRU or think about workflow-aware caching?",
       "expected_output": "Classifies this as advanced self-hosted agent-serving audit; checks prompt stability and routing first, then treats LRU eviction as potentially mismatched to workflow reuse; references workflow-aware eviction/prefetching as an advanced serving-design opportunity; asks for scheduler, future step graph, KV eviction traces, CPU/GPU transfer timings, and TTFT by resumed agent step.",
+      "files": []
+    },
+    {
+      "id": 23,
+      "prompt": "Our Claude API app added top-level `cache_control` for automatic caching. It has a stable 18k-token policy prompt, then each request appends a timestamp and the new user question as the final content block. Usage shows cache_creation_input_tokens on every request but cache_read_input_tokens stays zero.",
+      "expected_output": "Loads Anthropic reference; explains that automatic caching places the breakpoint on the last eligible cacheable block, so a changing final block can write a fresh cache entry every request without reads; recommends an explicit block-level breakpoint at the end of the stable policy prefix, moving volatile timestamp/user content after the cached prefix, and verifying with cache_creation_input_tokens, cache_read_input_tokens, and stable-prefix hashes.",
+      "files": []
+    },
+    {
+      "id": 24,
+      "prompt": "A Claude coding assistant uses explicit cache_control on the final message of a growing conversation. Turns append many tool_use and tool_result blocks. It worked until late in the run, then cache reads vanished when the latest breakpoint was about 25 blocks past the previous cache write.",
+      "expected_output": "Loads Anthropic reference; identifies the 20-block lookback limit for breakpoint search as a likely cause, explains that lookback finds prior writes rather than stable earlier content, and recommends adding additional explicit breakpoints before the conversation grows beyond the window, tracking block counts between writes, and verifying cache_read_input_tokens by step.",
+      "files": []
+    },
+    {
+      "id": 25,
+      "prompt": "Review this Claude cache_control layout: the first system block has ttl 5m, a later document block has ttl 1h, and the final conversation block uses the default 5m. The API sometimes rejects the request and cost attribution is confusing.",
+      "expected_output": "Loads Anthropic reference; checks current TTL docs; flags that longer TTL entries must appear before shorter TTL entries when mixing 1-hour and 5-minute cache controls; recommends reordering breakpoints so 1h sections precede 5m sections, checking the four-breakpoint limit, and monitoring cache_creation_input_tokens plus usage.cache_creation 5m/1h buckets when present.",
+      "files": []
+    },
+    {
+      "id": 26,
+      "prompt": "A Claude extended-thinking tool workflow passes previous assistant thinking blocks back in the conversation. The team tries to mark thinking blocks with cache_control and sees message-cache behavior change when a normal user text block follows tool results.",
+      "expected_output": "Loads Anthropic reference; explains that thinking blocks cannot be directly marked with cache_control but can be cached as part of previous assistant content when passed back; notes that cached thinking blocks count as input tokens and that non-tool-result user content can strip prior thinking blocks from context, invalidating message-cache assumptions; recommends caching surrounding eligible blocks and validating with usage fields.",
+      "files": []
+    },
+    {
+      "id": 27,
+      "prompt": "Our OpenAI Responses API app uses one global prompt_cache_key for all traffic. The prompt prefix is stable, but at high traffic cached_tokens and TTFT get worse around bursts over 15 requests per minute for the same shared policy prompt.",
+      "expected_output": "Loads OpenAI reference; explains that prompt_cache_key is combined with the initial prefix hash for routing and that too-hot prefix/key combinations can overflow to additional machines, reducing cache effectiveness; recommends choosing a prefix-family key granularity that avoids per-request fragmentation and global hot spots, measuring request rate per prefix/key, and verifying with cached_tokens plus TTFT.",
+      "files": []
+    },
+    {
+      "id": 28,
+      "prompt": "We set prompt_cache_retention='in_memory' on gpt-5.5 because we want low-cost cache reuse. Some requests are rejected or do not behave like older models. What should the audit check?",
+      "expected_output": "Loads OpenAI reference; checks current model support for prompt_cache_retention; explains that gpt-5.5 and future models default to 24h retention and do not support in_memory according to current docs; warns not to add retention parameters blindly, notes retention policy does not add separate prompt-cache pricing in current docs, and verifies with model/API surface and cached_tokens.",
+      "files": []
+    },
+    {
+      "id": 29,
+      "prompt": "Security review for OpenAI Extended Prompt Caching: project has Zero Data Retention enabled and strict Data Residency. The team wants prompt_cache_retention='24h' for shared legal documents.",
+      "expected_output": "Loads OpenAI reference; distinguishes in-memory from extended retention; explains that extended retention can temporarily store derived key/value tensors on GPU-local storage, that ZDR requests are not blocked but other ZDR restrictions still apply, and that Data Residency for extended retention depends on Regional Inference; recommends documenting org isolation, retention policy, region, and compliance trade-offs before enabling it.",
+      "files": []
+    },
+    {
+      "id": 30,
+      "prompt": "OpenAI cached_tokens is high and input cost is lower, but our TPM rate limit errors did not improve. We assumed cached prompt tokens would not count toward rate limits.",
+      "expected_output": "Loads OpenAI reference; explains that cached prompt tokens still count toward TPM rate limits, so prompt caching can reduce latency/cost without increasing TPM headroom; recommends measuring cached_tokens, prompt_tokens/input_tokens, request rate, and output tokens separately, then addressing rate limits through batching, traffic shaping, model limits, or quota rather than prompt-cache tuning alone.",
+      "files": []
+    },
+    {
+      "id": 31,
+      "prompt": "Analyze the new OpenAI prompt caching docs. Do we need to change the project? The repo already has an OpenAI reference, evals, and an extractor that detects prompt_cache_retention.",
+      "expected_output": "Uses the project-change output contract: answers Change needed: yes/no/unknown first; compares new OpenAI prompt caching docs against current SKILL.md, references, evals, and tests; recommends only exact project changes that are missing; says no change when behavior is already encoded; includes validation commands and avoids speculative provider claims without the Freshness Gate.",
+      "files": []
+    },
+    {
+      "id": 32,
+      "prompt": "Our coding assistant loads tools from an MCP tool registry on every step. The MCP tool registry order can change, mode switches remove write tools, and compaction rewrites the first user turn. Give a concise agent loop audit.",
+      "expected_output": "Uses the Agent loop audit contract; identifies dynamic MCP tool registry order, changing tool availability, and early compaction as prefix stability risks; asks for per-step prefix_hash, tools_count, sorted tool-name hash, cache read/write fields, mode state, and compaction events; recommends stable route-level tool bundles, sorted schemas, provider-supported allowed tools or deferred loading after docs verification, and append-only anchors.",
+      "files": []
+    },
+    {
+      "id": 33,
+      "prompt": "The app uses the OpenAI SDK but points base_url to an OpenAI-compatible Azure or gateway endpoint. A reviewer wants us to add prompt_cache_key everywhere. Also, cached_tokens is high but output tokens dominate, so this may be not worth changing the cache setup.",
+      "expected_output": "Uses the OpenAI-compatible wrapper ambiguity playbook; loads the wrapper or Azure reference before generic OpenAI; does not recommend prompt_cache_key unless the wrapper supports it; applies the Not worth caching contract when output tokens dominate total cost or latency; answers whether a project change is justified, what evidence is missing, and how to validate with usage fields and cost/latency split.",
+      "files": []
+    },
+    {
+      "id": 34,
+      "prompt": "Use $audit-prompt-caching. Сделай ревью.",
+      "expected_output": "Treats the explicit skill invocation plus generic review wording as a cache-focused review, not a general code review; detects provider/engine signals from available files or diff; inspects LLM request shape, tools, schemas, message order, routing, agent loops, and deployment/KV locality; leads with cache-impact findings and validation steps; asks for specific artifacts if no code, diff, usage logs, or deployment files are available.",
       "files": []
     }
   ]

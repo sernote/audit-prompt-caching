@@ -4,6 +4,26 @@
     "should_trigger": true
   },
   {
+    "query": "OpenAI prompt_cache_retention 24h versus in_memory is changing our prompt cache behavior",
+    "should_trigger": true
+  },
+  {
+    "query": "Our OpenAI prompt_cache_key is too hot and cache hits drop around 15 requests per minute",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenAI extended prompt caching with Zero Data Retention and Data Residency needs an audit",
+    "should_trigger": true
+  },
+  {
+    "query": "Analyze the new OpenAI prompt caching docs and tell us if the project needs changes",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenAI cached_tokens is high but TPM rate limits did not improve",
+    "should_trigger": true
+  },
+  {
     "query": "Our Claude cache_control prompt is writing cache_creation_input_tokens on every request but cache_read_input_tokens stays zero",
     "should_trigger": true
   },
@@ -56,7 +76,27 @@
     "should_trigger": true
   },
   {
+    "query": "Use $audit-prompt-caching. Сделай ревью.",
+    "should_trigger": true
+  },
+  {
     "query": "Review this prompt layout for a document classifier: system, user question, long shared policy, JSON schema",
+    "should_trigger": true
+  },
+  {
+    "query": "PR only changes the system prompt wording for our long shared policy classifier; check whether cacheable prefix stability is affected",
+    "should_trigger": true
+  },
+  {
+    "query": "We moved the shared policy document after the user question in a repeated RAG request and want a pre-merge cache review",
+    "should_trigger": true
+  },
+  {
+    "query": "This release changes tool registry order and response_format serialization in our LLM request builder",
+    "should_trigger": true
+  },
+  {
+    "query": "We switched from direct Anthropic to OpenRouter but visible prompt text is identical; review cache and routing risk",
     "should_trigger": true
   },
   {
@@ -76,6 +116,10 @@
     "should_trigger": true
   },
   {
+    "query": "Give a concise agent loop audit for an MCP tool registry that changes tools every step",
+    "should_trigger": true
+  },
+  {
     "query": "Calculate effective prompt-cache cost from static tokens, dynamic tokens, output tokens, hit rate, and cache write premium",
     "should_trigger": true
   },
@@ -92,11 +136,35 @@
     "should_trigger": true
   },
   {
+    "query": "We scaled vLLM pods and did not touch prompts, but repeated long-request TTFT increased after the deploy",
+    "should_trigger": true
+  },
+  {
+    "query": "LLM cost increased after an agent refactor even though nobody mentioned prompt caching; repeated long tool loops are involved",
+    "should_trigger": true
+  },
+  {
     "query": "cache_salt is random per request and shared prefixes no longer reuse KV cache",
     "should_trigger": true
   },
   {
     "query": "Claude cache_read_input_tokens and cache_creation_input_tokens are zero because we forgot cache_control",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude automatic top-level cache_control writes cache every request but reads stay zero because the final user block changes",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude prompt caching stopped hitting after our conversation grew more than 20 blocks past the previous breakpoint",
+    "should_trigger": true
+  },
+  {
+    "query": "Anthropic mixed ttl cache_control with 1h after 5m is rejected and cache_creation details are confusing",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude extended thinking blocks with tool results are changing cache_read_input_tokens behavior",
     "should_trigger": true
   },
   {
@@ -141,6 +209,10 @@
   },
   {
     "query": "Write a friendly system prompt for a customer support bot",
+    "should_trigger": false
+  },
+  {
+    "query": "Rewrite this short greeting prompt to sound warmer; no repeated long context, cache metrics, or latency issue",
     "should_trigger": false
   },
   {
