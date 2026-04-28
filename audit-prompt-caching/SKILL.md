@@ -1,13 +1,14 @@
 ---
 name: audit-prompt-caching
 description: >
-  Use when auditing LLM prompt/prefix caching, cached_tokens,
-  cache_read_input_tokens/cache_creation_input_tokens, prompt_cache_key,
-  cache_control/cachePoint placement, stable prefixes, tool/schema stability,
-  TTFT/prefill latency, OpenAI/Claude/Bedrock/OpenRouter routing, vLLM/SGLang KV
-  reuse, cache hit rate, or prompt-cache cost. Do not use for generic prompt
-  writing, generic RAG design, token counting, or non-LLM performance unless
-  prompt caching is central.
+  Use whenever the user mentions LLM prompt/prefix cache misses,
+  cached_tokens=0, cache_read_input_tokens/cache_creation_input_tokens,
+  prompt_cache_key, cache_control/cachePoint placement, stable prefixes,
+  tool/schema stability, TTFT/prefill latency, OpenAI/Claude/Bedrock/OpenRouter
+  routing, vLLM/SGLang KV reuse, or says LLM cost or speed regressed for
+  repeated long prompts. Use for speeding up agents only when prompt-cache
+  stability, TTFT, or cache cost is central. Do not use for generic prompt
+  writing, generic RAG design, token counting, or non-LLM performance.
 ---
 
 # Prompt Cache Audit

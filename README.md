@@ -1,68 +1,215 @@
-# Audit Prompt Caching Skill
+# LLM Cache Audit Skill
 
-`audit-prompt-caching` is a Codex/agent skill for auditing LLM prompt and prefix cache behavior: cache misses, `cached_tokens=0`, TTFT regressions, OpenRouter routing issues, Bedrock cache checkpoints, agent tool-routing costs, provider migration risk, and vLLM/SGLang deployment issues.
+[![CI](https://github.com/sernote/audit-prompt-caching/actions/workflows/ci.yml/badge.svg)](https://github.com/sernote/audit-prompt-caching/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+![Stdlib only](https://img.shields.io/badge/scripts-stdlib--only-green)
+![Codex skill](https://img.shields.io/badge/Codex-skill-compatible-black)
 
-The skill is based on a Habr article series about prompt-cache economics, common anti-patterns, and dynamic tools in agent loops.
+`audit-prompt-caching` is a portable Codex/agent skill for finding why LLM cache reuse fails across the request path: prompt/prefix caches, provider cache telemetry, cache-aware routing, agent tool stability, Bedrock checkpoints, OpenRouter routing drift, provider migration risk, and vLLM/SGLang KV reuse.
 
-## Who It Is For
+## Why This Exists
 
-- AI engineers debugging prompt-cache misses or long TTFT
-- backend engineers building LLM request paths
-- agent developers working with tools, MCP, compaction, or coding assistants
-- platform/SRE engineers running vLLM, SGLang, or multi-replica inference
-- teams comparing providers or estimating effective LLM cost
+LLM cache reuse usually fails silently. A timestamp in the system prompt, shuffled tool schemas, a changed first user message, an OpenRouter fallback, or a new vLLM replica can turn repeated 20k-token requests into cold prefill again.
 
-## What It Audits
+That failure is expensive because it often looks like a generic "LLM cost went up" or "agents got slower" incident. This skill gives agents a cache-specific audit path: inspect prefix stability, provider semantics, cache telemetry, routing locality, KV pressure, and whether caching is even the right lever.
 
-- Prompt-cache applicability before recommending changes
-- Stable prompt prefix layout
-- Volatile data in system prompts and early messages
-- Non-deterministic tool/schema serialization
-- Dynamic tool sets inside agent loops
-- History truncation, compaction, and summarization
-- Cache-aware routing for managed and self-hosted inference
-- OpenRouter sticky routing, provider fallback, and cache read/write fields
-- Amazon Bedrock cache checkpoints and read/write fields
-- Prefill vs decode latency and output-token cost share
-- KV-cache budget, eviction, and deployment config
-- Provider-specific usage fields and docs freshness
-- ROI assumptions across static, dynamic, and output tokens
-- CI/smoke-test readiness for stable prefix drift
+## Quick Start
 
-## Install Or Share
+Run the fixture audit locally:
 
-The portable skill folder is:
-
-```text
-audit-prompt-caching/
+```bash
+git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git
+cd audit-prompt-caching
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py \
+  fixtures/openai/repeated_prefix_usage.jsonl
 ```
 
-Copy that folder into the target agent's skills directory. Keep the folder name aligned with the `name` field in `audit-prompt-caching/SKILL.md`.
+Render a report from the same fixture:
 
-## Example Prompts
+```bash
+python3 audit-prompt-caching/scripts/render_audit_report.py \
+  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
+  --provider openai \
+  --engine "Responses API" \
+  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
+```
+
+Install as a Codex skill from GitHub:
+
+```bash
+tmp="$(mktemp -d)" && \
+git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git "$tmp" && \
+mkdir -p ~/.codex/skills && \
+rm -rf ~/.codex/skills/audit-prompt-caching && \
+cp -R "$tmp/audit-prompt-caching" ~/.codex/skills/audit-prompt-caching && \
+rm -rf "$tmp"
+```
+
+Then start a new Codex session and ask:
 
 ```text
 Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
 ```
 
-```text
-Use $audit-prompt-caching to review our coding agent. We started selecting only 5 tools per step and total cost went up.
-```
+## Audit Hero Shot
 
 ```text
-Use $audit-prompt-caching to inspect this vLLM deployment. TTFT spiked after scaling from 1 to 4 pods.
++------------------------------------------------------------+
+| LLM CACHE AUDIT                                            |
++------------------------------------------------------------+
+| Provider/API: openai / Responses API                       |
+| Cache hit ratio: 59.62%                                    |
+| Output share: 7.17%                                        |
+| Main blocker: cold request has zero cached tokens           |
+| Cache impact: first request pays full prefill               |
+| Fix: warm repeated prefix before measuring steady state     |
+| Validate: confirm cached-token fields and TTFT improve      |
++------------------------------------------------------------+
 ```
 
-```text
-Use $audit-prompt-caching to audit our OpenRouter app. cache_write_tokens appears, but cached_tokens stays zero after we added provider.order and openrouter/auto.
-```
+## Fixture Signal
+
+The bundled OpenAI fixture is synthetic and safe to share, but it is still executable evidence:
+
+| Signal | Value |
+|---|---:|
+| Records reviewed | 3 |
+| Input tokens | 15,600 |
+| Cached tokens | 9,300 |
+| Cache hit ratio | 59.62% |
+| Output share | 7.17% |
+
+Example ROI model for 1,000 requests with 9k static input tokens, 300 dynamic input tokens, 2k output tokens, 71% cache hit rate, and explicit sample prices:
 
 ```text
-Use $audit-prompt-caching to review this Bedrock Converse request. CacheWriteInputTokens is high but CacheReadInputTokens stays low.
+Total cost: $34.60 -> $23.10
+Total savings: 33.24%
+Input savings: 61.84%
 ```
 
+These are fixture numbers, not a production guarantee. Always validate with your provider usage fields and billing export.
+
+## Cache Flow
+
+```mermaid
+flowchart LR
+  A["stable tools / schemas"] --> B["stable system / developer instructions"]
+  B --> C["few-shot examples / static docs"]
+  C --> D["append-only conversation anchor"]
+  D --> E["late dynamic user data"]
+  A --> H["prefix + tool + schema hash"]
+  H --> I["provider cache read/write fields"]
+  I --> J["TTFT / cost / route metrics"]
+```
+
+## Positioning
+
+This project is a static audit skill plus dependency-free local scripts. It complements runtime observability and gateway tools rather than replacing them.
+
+| Project | Primary job | Static cache-path audit | Portable agent skill | Stdlib-only local scripts |
+|---|---|---:|---:|---:|
+| `audit-prompt-caching` | Cross-provider prompt/prefix/KV cache audit | yes | yes | yes |
+| [ussumant/cache-audit](https://github.com/ussumant/cache-audit) | Claude Code cache-rules skill | Claude-focused | Claude Code-focused | single skill |
+| [Helicone](https://github.com/Helicone/helicone) | LLM observability and gateway | runtime-oriented | no | no |
+| [Langfuse](https://github.com/langfuse/langfuse) | LLM observability, evals, prompt management | runtime-oriented | no | no |
+| [LiteLLM](https://github.com/BerriAI/litellm) | LLM gateway/proxy | runtime/gateway-oriented | no | no |
+
+## Who It Is For
+
+- AI engineers debugging prompt-cache misses or long TTFT.
+- Backend engineers building LLM request paths.
+- Agent developers working with tools, MCP, compaction, or coding assistants.
+- Platform/SRE engineers running vLLM, SGLang, or multi-replica inference.
+- Teams comparing providers or estimating effective LLM cost.
+
+## What It Audits
+
+- Prompt-cache applicability before recommending changes.
+- Stable prompt prefix layout.
+- Volatile data in system prompts and early messages.
+- Non-deterministic tool/schema serialization.
+- Dynamic tool sets inside agent loops.
+- History truncation, compaction, and summarization.
+- Cache-aware routing for managed and self-hosted inference.
+- OpenRouter sticky routing, provider fallback, and cache read/write fields.
+- Amazon Bedrock cache checkpoints and read/write fields.
+- Prefill vs decode latency and output-token cost share.
+- KV-cache budget, eviction, and deployment config.
+- Provider-specific usage fields and docs freshness.
+- ROI assumptions across static, dynamic, and output tokens.
+- CI/smoke-test readiness for stable prefix drift.
+
+## Bundled Scripts
+
+The skill includes small dependency-free helpers for repeatable audits:
+
+```bash
+python3 audit-prompt-caching/scripts/extract_llm_calls.py .
+python3 audit-prompt-caching/scripts/layout_linter.py fixtures/layout/good_openai_request.json
+python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py --jsonl-normalized usage.jsonl
+python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
+  --static-tokens 9000 \
+  --dynamic-tokens 300 \
+  --output-tokens 2000 \
+  --requests 100 \
+  --hit-rate 0.8 \
+  --input-price-per-mtok 2.0 \
+  --cached-input-price-per-mtok 0.2 \
+  --output-price-per-mtok 8.0
+python3 audit-prompt-caching/scripts/render_audit_report.py \
+  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
+  --provider openai \
+  --engine "Responses API" \
+  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
+python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
+python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
+```
+
+`prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
+
+Provider usage metadata and billing exports remain authoritative; these scripts are audit aids.
+
+## Example Prompts
+
+Use these as pressure scenarios, not generic smoke tests.
+
+OpenAI-compatible wrapper ambiguity:
+
 ```text
-Use $audit-prompt-caching to compare Anthropic and OpenAI for this RAG workload using static tokens, output tokens, hit rate, and migration risk.
+Use $audit-prompt-caching to review this app. It imports the OpenAI SDK, but base_url points to https://openrouter.ai/api/v1. We added prompt_cache_key, provider.order, and openrouter/auto; cache_write_tokens appears, but cached_tokens stays zero. Decide whether this is an OpenAI issue or a router/cache-locality issue.
+```
+
+Claude automatic caching writes every request:
+
+```text
+Use $audit-prompt-caching to audit our Claude layout. We added top-level cache_control to an 18k-token policy prompt, then append timestamp and user question as the final content block. usage.cache_creation_input_tokens increments every request, but cache_read_input_tokens stays zero.
+```
+
+Bedrock Converse cross-region cachePoint:
+
+```text
+Use $audit-prompt-caching to review this Bedrock Converse request. cachePoint is placed after a user-specific intro, tools differ by route, CacheWriteInputTokens is high, CacheReadInputTokens is near zero, and some traffic uses cross-region inference.
+```
+
+MCP tool registry drift:
+
+```text
+Use $audit-prompt-caching to audit our coding agent. The MCP tool registry is queried every step, tool order changes with plugin load timing, read-only mode removes write tools, and compaction rewrites the first user turn. Costs rose even though each step sends fewer tools.
+```
+
+vLLM/SGLang multi-replica KV:
+
+```text
+Use $audit-prompt-caching to inspect this self-hosted deployment. vLLM/SGLang replicas sit behind a generic gateway, p99 prompt length is 12k, max_model_len is 128k, prefix hashes look stable, but TTFT spikes after scaling and prefix-cache metrics vary by replica.
+```
+
+High cached tokens, low savings:
+
+```text
+Use $audit-prompt-caching to explain why this workload still costs too much. cached_tokens is high and TTFT improved, but responses average 4k output tokens, tool calls add seconds, TPM errors did not improve, and finance wants to know whether prompt caching is the wrong lever.
 ```
 
 ## Structure
@@ -111,62 +258,6 @@ fixtures/
   expected/
 ```
 
-## Bundled Scripts
-
-The skill includes small dependency-free helpers for repeatable audits:
-
-```bash
-python3 audit-prompt-caching/scripts/extract_llm_calls.py .
-python3 audit-prompt-caching/scripts/layout_linter.py fixtures/layout/good_openai_request.json
-python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py --jsonl-normalized usage.jsonl
-python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
-  --static-tokens 9000 \
-  --dynamic-tokens 300 \
-  --output-tokens 2000 \
-  --requests 100 \
-  --hit-rate 0.8 \
-  --input-price-per-mtok 2.0 \
-  --cached-input-price-per-mtok 0.2 \
-  --output-price-per-mtok 8.0
-python3 audit-prompt-caching/scripts/render_audit_report.py \
-  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
-  --provider openai \
-  --engine "Responses API" \
-  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
-python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
-python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
-```
-
-`prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
-
-Provider usage metadata and billing exports remain authoritative; these scripts are audit aids.
-
-## Five-Minute Demo
-
-Run the bundled fixture pack to see the audit loop without production logs:
-
-```bash
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py \
-  fixtures/openai/repeated_prefix_usage.jsonl
-
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py \
-  --jsonl-normalized \
-  fixtures/openai/repeated_prefix_usage.jsonl
-
-python3 audit-prompt-caching/scripts/render_audit_report.py \
-  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
-  --provider openai \
-  --engine "Responses API" \
-  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
-
-python3 audit-prompt-caching/scripts/layout_linter.py \
-  fixtures/layout/good_openai_request.json
-```
-
-Compare the rendered Markdown with `fixtures/expected/report_openai.md` for the expected report shape.
-
 ## Validation
 
 Validate the skill package with the bundled validator:
@@ -178,8 +269,8 @@ python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 
 The repository also includes JSON eval prompts:
 
-- `audit-prompt-caching/evals/evals.json`: behavioral audit scenarios
-- `audit-prompt-caching/evals/trigger_eval.json`: should-trigger and should-not-trigger queries
+- `audit-prompt-caching/evals/evals.json`: behavioral audit scenarios.
+- `audit-prompt-caching/evals/trigger_eval.json`: should-trigger and should-not-trigger queries.
 
 Run the local script/package tests:
 
@@ -193,10 +284,10 @@ These evals are a starting point. A full proof cycle should still compare baseli
 
 CI runs the unittest suite, package validator, trigger eval, Python syntax compile, whitespace check, and generated-bytecode guard. Keep new scripts stdlib-only and add fixture-backed tests for behavior changes.
 
-## License
-
-MIT. See `LICENSE`.
-
 ## Freshness Policy
 
 Provider cache behavior changes. The skill treats bundled provider references as heuristics and instructs the agent to verify official docs before exact claims about pricing, TTL, model support, field names, cache-control semantics, or routing hints.
+
+## License
+
+MIT. See `LICENSE`.

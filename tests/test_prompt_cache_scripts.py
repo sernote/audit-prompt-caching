@@ -608,6 +608,50 @@ class PromptCacheScriptsTest(unittest.TestCase):
             readme,
         )
 
+    def test_readme_front_door_has_adoption_assets(self):
+        readme = (ROOT / "README.md").read_text()
+
+        for required in [
+            "[![CI]",
+            "LLM Cache Audit Skill",
+            "Why This Exists",
+            "Quick Start",
+            "Audit Hero Shot",
+            "LLM CACHE AUDIT",
+            "Fixture Signal",
+            "Cache Flow",
+            "Positioning",
+            "59.62%",
+            "$34.60 -> $23.10",
+            "git clone --depth 1",
+        ]:
+            self.assertIn(required, readme)
+        self.assertNotIn("Prompt Cache Doctor", readme)
+
+    def test_readme_examples_cover_non_obvious_audit_scenarios(self):
+        readme = (ROOT / "README.md").read_text()
+
+        for required in [
+            "OpenAI-compatible wrapper ambiguity",
+            "Claude automatic caching writes every request",
+            "Bedrock Converse cross-region cachePoint",
+            "MCP tool registry drift",
+            "vLLM/SGLang multi-replica KV",
+            "High cached tokens, low savings",
+        ]:
+            self.assertIn(required, readme)
+
+    def test_skill_description_has_stronger_trigger_surface(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "Use whenever the user mentions",
+            "LLM cost or speed regressed",
+            "repeated long prompts",
+            "speeding up agents",
+        ]:
+            self.assertIn(required, skill)
+
     def test_skill_package_has_report_template_and_actionable_sections(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
 
