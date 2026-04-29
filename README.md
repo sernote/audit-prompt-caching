@@ -25,6 +25,10 @@ curl -fsSL https://raw.githubusercontent.com/sernote/audit-prompt-caching/main/i
 Then start a new Codex session and ask:
 
 ```text
+Use $audit-prompt-caching to audit this repo for prompt-cache misses, unstable prompt prefixes, dynamic tools/schemas, routing issues, and deployment cache-locality problems.
+```
+
+```text
 Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
 ```
 
@@ -53,6 +57,13 @@ python3 audit-prompt-caching/scripts/render_audit_report.py \
   --provider openai \
   --engine "Responses API" \
   --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
+```
+
+Lint a known-good rendered request fixture:
+
+```bash
+python3 audit-prompt-caching/scripts/layout_linter.py \
+  fixtures/layout/good_openai_request.json
 ```
 
 ## Manual Install
@@ -159,13 +170,28 @@ This project is a static audit skill plus dependency-free local scripts. It comp
 - ROI assumptions across static, dynamic, and output tokens.
 - CI/smoke-test readiness for stable prefix drift.
 
+## Primary Workflow: Audit A Project
+
+The main use case is an agent working inside a project repository. The skill should first inspect source code and configuration, then use logs or rendered payloads as evidence when they are available.
+
+The agent should start with project artifacts such as:
+
+- prompt builders, prompt templates, and request renderers
+- provider SDK calls and cache-control parameters
+- tool registries, JSON schemas, structured-output definitions, and serialization code
+- conversation history, compaction, truncation, and agent-loop logic
+- environment config, feature flags, router/gateway config, and provider selection
+- Docker Compose, Kubernetes, Helm, vLLM, SGLang, or other inference deployment files
+
+Usage logs, billing exports, rendered JSON request payloads, prefix hashes, traces, and latency data are supporting evidence. They help confirm symptoms, compare before/after prefixes, calculate cache read/write ratios, and estimate ROI, but they are not the primary entry point for the skill.
+
 ## Bundled Scripts
 
 The skill includes small dependency-free helpers for repeatable audits:
 
 ```bash
 python3 audit-prompt-caching/scripts/extract_llm_calls.py .
-python3 audit-prompt-caching/scripts/layout_linter.py fixtures/layout/good_openai_request.json
+python3 audit-prompt-caching/scripts/layout_linter.py path/to/rendered_request.json
 python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
 python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
 python3 audit-prompt-caching/scripts/analyze_usage_logs.py --jsonl-normalized usage.jsonl
@@ -179,10 +205,10 @@ python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
   --cached-input-price-per-mtok 0.2 \
   --output-price-per-mtok 8.0
 python3 audit-prompt-caching/scripts/render_audit_report.py \
-  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
+  --usage-log path/to/usage.jsonl \
   --provider openai \
   --engine "Responses API" \
-  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
+  --finding "src/llm/request.py:42 | high | openai | dynamic timestamp in system prompt | timestamp changes the cacheable prefix on every call | move volatile metadata after the stable prefix | compare rendered request bytes across repeated calls"
 python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
 python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 ```
@@ -190,6 +216,27 @@ python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 `prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
 
 Provider usage metadata and billing exports remain authoritative; these scripts are audit aids.
+
+## Evidence Artifacts
+
+Fixtures are not required for a real audit. They are bundled demo and regression-test data that show expected file shapes without needing a production project or production logs.
+
+When evidence is needed, point the scripts at exported artifacts from the user's system:
+
+```bash
+python3 audit-prompt-caching/scripts/analyze_usage_logs.py path/to/real_usage.jsonl
+python3 audit-prompt-caching/scripts/layout_linter.py path/to/rendered_request.json
+python3 audit-prompt-caching/scripts/prefix_stability_check.py request_a.json request_b.json
+```
+
+Good real inputs are:
+
+- provider usage logs or billing exports with cache read/write fields
+- one or more rendered JSON request payloads from the hot path
+- normalized per-step agent logs with model, route, prefix hash, tools hash, token usage, and latency
+- deployment or router config when cache locality or self-hosted KV reuse is part of the issue
+
+The skill does not capture live traffic by itself. Export or redact representative records first when telemetry evidence is needed. Keep bundled fixtures for demos, tests, and examples of the expected schema.
 
 ## Example Prompts
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Prefix Cache Audit"
-  short_description: "Audit LLM prompt-cache efficiency"
-  default_prompt: "Use $audit-prompt-caching to audit this LLM app for prompt-cache misses, TTFT regressions, and ROI."
+  short_description: "Audit project prompt-cache risks"
+  default_prompt: "Use $audit-prompt-caching to audit this repo's prompt builders, provider calls, routing, and deployment config for prompt-cache misses."
