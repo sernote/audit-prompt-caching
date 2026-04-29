@@ -53,6 +53,24 @@ Do not use this skill for:
 - **Agent audit**: when tools, tool routing, MCP, agent loops, compaction, or multi-step trajectories are present, always run the agent-specific checks.
 - **Deployment audit**: when vLLM/SGLang, Kubernetes, Docker Compose, gateways, or multiple inference replicas are present, inspect routing and KV-cache capacity as first-class causes.
 
+## Default Project Audit Workflow
+
+When a project or repository is available, start with code and configuration. This is the primary workflow for the skill.
+
+1. Scan the repo for provider calls, cache controls, routing hints, prompt builders, tool/schema registries, and self-hosted engine signals. Use `scripts/extract_llm_calls.py` when useful.
+2. Inspect the request path in code: prompt rendering, system/developer messages, tool ordering, structured-output schemas, history management, compaction, and provider SDK parameters.
+3. Inspect config and deployment files: environment defaults, feature flags, gateway/router settings, Docker Compose, Kubernetes, Helm, vLLM/SGLang flags, and replica topology.
+4. Load only the relevant provider and scenario references, then apply the audit flow and anti-pattern checks.
+5. Ask for usage logs, rendered request payloads, traces, or billing exports only when code/config review needs telemetry evidence, prefix comparison, ROI math, or incident correlation.
+
+## Audit Inputs
+
+Treat the repository, prompt code, and deployment configuration as the main audit inputs. Evidence artifacts such as provider usage logs, billing exports, rendered JSON request payloads, prompt snapshots, per-step agent traces, gateway route logs, and latency traces are supporting inputs for confirmation and measurement.
+
+Bundled fixtures are only demo and regression-test data. Do not require users to convert production data into the repository's fixture layout before auditing. If a user asks whether fixtures are required, say no: the skill audits project code and configs first, and the scripts can also accept normal JSON, JSONL, CSV usage logs, or JSON request payloads directly.
+
+This skill does not capture or intercept live traffic by itself. If telemetry is needed, ask the user to export or redact representative records from their own logging, tracing, provider dashboard, or billing pipeline.
+
 ## Applicability Gate
 
 Before recommending prompt-cache changes, check:
