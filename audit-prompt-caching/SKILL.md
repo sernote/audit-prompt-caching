@@ -71,13 +71,36 @@ If the gate fails, report why caching is not the right lever yet and recommend m
 Pick the smallest contract that answers the user's actual request. Do not bury the decision under general prompt-cache advice.
 
 - **Quick triage**: use when artifacts are incomplete. Answer with provider/engine guess, most likely cache blocker, evidence needed next, and one safe next command or artifact request.
-- **Code audit findings**: use when code is available. Lead with file-line findings in the report format, then clean checks, then verification commands.
+- **Code audit findings**: use when code is available. Lead with a decision summary, then file-line findings in the report format, then clean checks, then verification commands.
 - **Provider migration risk**: use when moving between OpenAI, Anthropic, Bedrock, OpenRouter, Azure OpenAI, Gemini, Qwen, DeepSeek, or self-hosted engines. Compare cache semantics, usage fields, prefix layout risk, routing risk, and cost assumptions before recommending edits.
 - **Agent loop audit**: use for coding assistants, MCP clients, tool-using agents, compaction, mode switching, or long multi-step workflows. Always inspect stable tools, early messages, per-step prefix hashes, cache fields, output tokens, and compaction events.
 - **Deployment audit**: use for vLLM, SGLang, Kubernetes, Docker Compose, gateways, autoscaling, or multi-replica inference. Treat routing locality and KV budget as first-class causes, not secondary deployment details.
 - **Not worth caching**: use when the Applicability Gate fails or the evidence shows output decode, external tool latency, rate limits, or privacy isolation dominate. Say what should change instead and what evidence would reopen prompt-cache work.
 
-For "do we need to change the project?" questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>`. Then list exact files/settings to change or explicitly state that no project change is justified yet.
+When recommending project work, start with this compact decision summary:
+
+```text
+Measurement change:
+Prompt behavior change:
+Provider/routing change:
+Confidence:
+Do first:
+Do not do yet:
+```
+
+Prefer split recommendations over a single broad "yes" when the safe next step is measurement. For example, `Measurement change: yes`, `Prompt behavior change: pilot only after telemetry`, and `Provider/routing change: no, not yet`.
+
+For "do we need to change the project?" questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>` when a single answer is accurate. If the change types differ, use the split decision summary above. Then list exact files/settings to change or explicitly state that no project change is justified yet.
+
+### Evidence-Bearing Findings
+
+Every actionable finding should make uncertainty visible. Include these fields in prose or in the extended report format:
+
+```text
+source | severity | provider/engine | issue | evidence | evidence_type | confidence | impact_condition | cache impact | safe_first_action | fix | validation | do_not_do_yet
+```
+
+Use evidence types such as `confirmed from code`, `confirmed from telemetry`, `provider-doc hypothesis`, or `needs validation`. State impact conditions like "matters if this path is hot, repeated, and has a long stable prefix" instead of implying guaranteed savings. Include one safe first action, one validation metric/command, and one thing not to do yet when the next risky change would be premature.
 
 ## Explicit Review Default
 
@@ -136,7 +159,7 @@ Verify before exact claims about:
 - usage field names and API parameters
 - tool-search, allowed-tools, defer-loading, or cache-control semantics
 
-If official docs cannot be checked, say the provider facts are unverified and avoid exact numbers. Use bundled references as heuristics, not current truth. Never copy prices or model names from articles/posts as current facts.
+If official docs cannot be checked, say the provider facts are unverified and avoid exact numbers. Use bundled references as heuristics, not current truth. If you say "verified today" or similar, cite the official source URLs or page names used in the run. Never copy prices or model names from articles/posts as current facts.
 
 ## Provider Detection
 
@@ -171,7 +194,7 @@ Load only the relevant provider files. If OpenRouter, Azure, or Bedrock signals 
 8. Scan universal anti-patterns below.
 9. If an agent loop or tools are present, run the Agent Tool Stability checks.
 10. Apply provider-specific checks from the loaded reference.
-11. Report findings with evidence, severity, concrete fix, and validation steps.
+11. Report findings with evidence type, confidence, impact condition, safe first action, concrete fix, validation metric, and any premature action to avoid.
 12. When making code changes, verify prefix stability before claiming success.
 
 ## Audit Playbooks
@@ -203,9 +226,11 @@ Use this taxonomy to keep audits consistent:
 Assign severity from impact and evidence, not from the anti-pattern name alone:
 
 - **Critical**: confirmed metric drop or cache miss on a large shared prefix, expensive model, high traffic, long agent trajectory, or multi-replica production path.
-- **High**: likely cache killer found in a hot path but metrics are incomplete.
+- **High**: likely cache killer found in a hot path, or telemetry/traffic/token evidence shows meaningful cache/cost/TTFT impact but metrics are still incomplete.
 - **Medium**: pattern can fragment cache but impact depends on traffic shape.
 - **Low**: defensive cleanup, documentation, or monitoring improvement.
+
+If hotness, prefix length, repeat cadence, or cost impact is unknown, prefer `medium` and state the condition that would escalate it to `high`.
 
 ## Universal Anti-Patterns
 
@@ -377,11 +402,17 @@ def prefix_fingerprint(system, tools=None, response_format=None, early_messages=
     return hashlib.sha256(text.encode()).hexdigest()[:12]
 ```
 
-This is a guardrail, not a provider tokenizer. Provider usage metadata remains the source of truth.
+This is a guardrail, not a provider tokenizer. Provider usage metadata remains the source of truth. For production telemetry or tenant/user-derived prompt fingerprints, use a keyed hash such as HMAC-SHA256 rather than a bare digest.
 
 ## Report Format
 
-Default to terse findings first. Use this one-line format when file/line evidence exists:
+Default to terse findings first. Use the evidence-bearing format for actionable findings:
+
+```text
+source | severity | provider/engine | issue | evidence | evidence_type | confidence | impact_condition | cache impact | safe_first_action | fix | validation | do_not_do_yet
+```
+
+When space is tight, the legacy compact format is acceptable if the surrounding prose still states evidence, confidence, and what not to do yet:
 
 ```text
 file:line | severity | provider/engine | issue | cache impact | fix | validation
@@ -395,11 +426,16 @@ When structure is the issue, include compact before/after prompt layout.
 Provider/engine: ...
 Mode: code audit / advisory / agent audit
 Provider facts: verified on YYYY-MM-DD / unverified
+Measurement change: yes / no / unknown
+Prompt behavior change: yes / no / pilot only / unknown
+Provider/routing change: yes / no / not yet / unknown
 Confidence: high / medium / low
+Do first: ...
+Do not do yet: ...
 
 ### Findings
 
-path/to/file.py:42 | critical | OpenAI | tool schema order changes between calls | tools are before the growing conversation, so every order change invalidates downstream prefix reuse | sort tools by stable name and serialize schemas with sorted keys | compare prefix fingerprints across three requests and confirm cached-token fields increase
+path/to/file.py:42 | medium | OpenAI | tool schema order changes between calls | registry iteration is unsorted in the request builder | confirmed from code | medium-high | matters on hot repeated routes with long tool schemas | every order change can invalidate downstream prefix reuse | add tool/schema hash logging first | sort tools by stable name and serialize schemas with sorted keys | compare prefix fingerprints across three requests and confirm cached-token fields increase | do not change provider routing yet
 
 ### Clean Checks
 

@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-04-30.
 
 Verify before exact claims:
 - which model/provider endpoints support prompt caching
@@ -16,6 +16,8 @@ Verify before exact claims:
 Official sources:
 - Prompt caching: https://openrouter.ai/docs/guides/best-practices/prompt-caching
 - Provider selection and routing: https://openrouter.ai/docs/guides/routing/provider-selection
+- Usage accounting: https://openrouter.ai/docs/guides/administration/usage-accounting
+- Generation metadata: https://openrouter.ai/docs/api/api-reference/generations/get-generation
 - Models/pricing metadata: https://openrouter.ai/docs/models
 - API reference: https://openrouter.ai/docs/api/reference/overview
 - Message transforms/context compression: https://openrouter.ai/docs/guides/features/message-transforms
@@ -24,7 +26,7 @@ Official sources:
 
 OpenRouter is an OpenAI-compatible routing layer, not a single model provider. Prompt caching depends on both the underlying provider/model and OpenRouter's route selection.
 
-As of the last review, OpenRouter documents provider sticky routing for prompt caching. Sticky routing can keep later requests on the same provider endpoint, but manual provider ordering and fallback/model routing can override or fragment that behavior. Treat route stability as part of prefix-cache stability.
+As of the last review, OpenRouter documents provider sticky routing for prompt caching. Sticky routing can keep later requests on the same provider endpoint after a cached request, but manual `provider.order`, sorting, and fallback/model routing can override or fragment that behavior. Treat route stability as part of prefix-cache stability.
 
 OpenRouter's cache metrics are exposed in normalized usage fields when available:
 
@@ -34,7 +36,7 @@ cached = getattr(details, "cached_tokens", 0)
 written = getattr(details, "cache_write_tokens", 0)
 ```
 
-`cache_write_tokens > 0` with repeated `cached_tokens == 0` means the system may be creating cache entries that are not reused.
+`cache_write_tokens > 0` with repeated `cached_tokens == 0` means the system may be creating cache entries that are not reused. `cache_write_tokens` is only returned for models with explicit caching and cache write pricing, so missing fields are not automatically failures.
 
 ## Provider Checks
 
@@ -62,13 +64,15 @@ Inspect:
 - `model: "openrouter/auto"`
 - account-level provider preferences
 
-Manual provider ordering, explicit provider allow/ignore lists, auto-router model selection, or fallback behavior can change the provider endpoint that owns the warm cache. For cache-critical routes, measure cache behavior by actual model/provider route and decide whether fallback resilience or cache locality matters more.
+Manual provider ordering, explicit provider allow/ignore lists, auto-router model selection, provider sorting, or fallback behavior can change the provider endpoint that owns the warm cache. For cache-critical routes, measure cache behavior by actual model/provider route and decide whether fallback resilience or cache locality matters more. Do not pin providers or disable fallback before telemetry shows that routing, not prefix shape or cache lifetime, is the blocker.
 
 ### Conversation Identity
 
 OpenRouter sticky routing is conversation-scoped. Verify the opening messages used for conversation identity are stable. Dynamic timestamps, session IDs, user names, tenant facts, or A/B variants in the first system/developer message or first non-system message can fragment sticky routing even when later content is stable.
 
-Log hashes for:
+A short stable operation anchor as the first non-system message can be a useful OpenRouter experiment for one-shot calls, but it is not a guaranteed prompt-cache fix. It can improve sticky-route locality while leaving the provider-native cacheable prefix too short to matter if a large dynamic payload immediately follows. Recommend it as a measured pilot on hot operations, not as a blanket best practice.
+
+Log keyed hashes such as HMAC-SHA256 for sensitive fingerprints; plain hashes can leak low-entropy prompt or tenant facts by guessing. Log:
 - first system/developer message
 - first non-system message
 - stable prompt prefix
@@ -104,7 +108,8 @@ Ask for:
 - response `usage.prompt_tokens_details.cached_tokens`
 - response `usage.prompt_tokens_details.cache_write_tokens`
 - `cache_discount` or generation/activity cost details when available
-- actual response model and routed provider/endpoint when available
+- response `id` / generation id
+- actual response model and routed provider/endpoint when available; if not present on the completion response, fetch generation metadata for `provider_name`, `router`, `cache_discount`, `native_tokens_cached`, and cost fields
 - first-message and prefix fingerprints
 - account-level provider, ZDR, and data-policy settings
 

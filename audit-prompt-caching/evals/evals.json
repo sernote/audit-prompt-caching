@@ -204,6 +204,12 @@
       "prompt": "Use $audit-prompt-caching. Сделай ревью.",
       "expected_output": "Treats the explicit skill invocation plus generic review wording as a cache-focused review, not a general code review; detects provider/engine signals from available files or diff; inspects LLM request shape, tools, schemas, message order, routing, agent loops, and deployment/KV locality; leads with cache-impact findings and validation steps; asks for specific artifacts if no code, diff, usage logs, or deployment files are available.",
       "files": []
+    },
+    {
+      "id": 35,
+      "prompt": "OpenRouter audit found dynamic user profile data in the first system message and a session_id in the first user message. The reviewer wants to add a stable first user anchor, pin provider.order, and add cache_control everywhere. We have no traffic, token, routed provider, or cached_tokens telemetry yet. What should the audit recommend?",
+      "expected_output": "Uses the evidence-bearing output contract with Measurement change, Prompt behavior change, Provider/routing change, Confidence, Do first, and Do not do yet; marks code findings as confirmed from code but cache impact as needs validation or provider-doc hypothesis until telemetry exists; treats a stable first non-system operation anchor as an OpenRouter A/B experiment for hot repeated operations, not a guaranteed cache fix; recommends observability first with first-message HMAC hashes, routed provider/model or generation metadata, cached_tokens, cache_write_tokens, and usage.cost; does not pin providers, add cache_control everywhere, or overstate high severity without traffic/token evidence.",
+      "files": []
     }
   ]
 }
