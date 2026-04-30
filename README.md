@@ -16,10 +16,10 @@ That failure is expensive because it often looks like a generic "LLM cost went u
 
 ## Quick Start
 
-Install as a Codex skill:
+Install the skill:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh | bash
+npx skills add https://github.com/sernote/audit-prompt-caching --skill audit-prompt-caching
 ```
 
 Then start a new Codex session and ask:
@@ -30,12 +30,6 @@ Use $audit-prompt-caching to audit this repo for prompt-cache misses, unstable p
 
 ```text
 Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
-```
-
-Install into Claude's skill directory instead:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh | bash -s -- --agent claude
 ```
 
 ## Local Demo
@@ -64,22 +58,6 @@ Lint a known-good rendered request fixture:
 ```bash
 python3 audit-prompt-caching/scripts/layout_linter.py \
   fixtures/layout/good_openai_request.json
-```
-
-## Manual Install
-
-Use this when you do not want to pipe a script into `bash`:
-
-```bash
-git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git
-cd audit-prompt-caching
-bash install.sh --source-dir . --force
-```
-
-Custom skill directory:
-
-```bash
-bash install.sh --source-dir . --dir ~/.codex/skills --force
 ```
 
 ## Audit Hero Shot

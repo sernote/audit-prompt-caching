@@ -762,10 +762,11 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertIn(expected, install_text)
 
         self.assertIn(
-            "curl -fsSL https://raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh | bash",
+            "npx skills add https://github.com/sernote/audit-prompt-caching --skill audit-prompt-caching",
             readme,
         )
-        self.assertIn("Manual Install", readme)
+        self.assertNotIn("Manual Install", readme)
+        self.assertNotIn("raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh", readme)
 
     def test_readme_demo_uses_successful_linter_command(self):
         readme = (ROOT / "README.md").read_text()
