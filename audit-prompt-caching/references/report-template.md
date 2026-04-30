@@ -10,10 +10,14 @@ For repeatable runs, use `scripts/render_audit_report.py` to generate this Markd
 - Models:
 - Audit mode:
 - Provider facts: verified on YYYY-MM-DD / unverified
-- Change Recommendation: yes / no / unknown until specific evidence
+- Measurement change: yes / no / unknown
+- Prompt behavior change: yes / no / pilot only / unknown
+- Provider/routing change: yes / no / not yet / unknown
 - Confidence: high / medium / low
 - Main cache blocker:
 - Expected impact:
+- Do first:
+- Do not do yet:
 - Primary validation:
 - Evidence Needed Next:
 
@@ -44,12 +48,16 @@ Use the smallest section set that fits the request:
 Use this format:
 
 ```text
-file:line | severity | provider/engine | issue | cache impact | fix | validation
+source | severity | provider/engine | issue | evidence | evidence_type | confidence | impact_condition | cache impact | safe_first_action | fix | validation | do_not_do_yet
 ```
 
 Severity values: critical, high, medium, low.
 
-Machine-readable companion fields should include `provider`, `engine`, `usage`, `findings`, and `expected_impact`.
+Evidence types: `confirmed from code`, `confirmed from telemetry`, `provider-doc hypothesis`, `needs validation`.
+
+Machine-readable companion fields should include `provider`, `engine`, `usage`, `findings`, and `expected_impact`. Each finding should preserve `evidence`, `evidence_type`, `confidence`, `impact_condition`, `safe_first_action`, and `do_not_do_yet` when available.
+
+Use `medium` when the code shape can fragment cache but traffic, token count, repeat cadence, or cost impact is unknown. Use `high` when telemetry or hot-path evidence supports meaningful impact, or write the escalation condition in `impact_condition`.
 
 ## Before / After Prompt Layout
 
@@ -110,6 +118,9 @@ Use this section when prompt caching is not the right lever.
 - prefix/tool/schema hash:
 - model/provider/region/replica:
 - cache miss reasons:
+- evidence type and confidence:
+- safe first action:
+- premature actions avoided:
 
 ## ROI Assumptions
 

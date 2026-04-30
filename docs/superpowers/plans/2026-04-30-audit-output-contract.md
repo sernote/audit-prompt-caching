@@ -1,0 +1,193 @@
+# Audit Output Contract Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make `audit-prompt-caching` reports more evidence-based, less overconfident, and easier to turn into safe engineering PRs.
+
+**Architecture:** Keep the existing skill package shape. Add a backward-compatible extended finding format to the report renderer, then align `SKILL.md`, `references/report-template.md`, `references/openrouter.md`, and eval prompts with the same evidence/confidence/action contract.
+
+**Tech Stack:** Markdown skill docs, JSON eval fixtures, Python stdlib scripts, `unittest`.
+
+---
+
+### Task 1: Report Renderer Contract
+
+**Files:**
+- Modify: `tests/test_prompt_cache_scripts.py`
+- Modify: `audit-prompt-caching/scripts/render_audit_report.py`
+
+- [x] **Step 1: Write the failing test**
+
+Add a unittest that passes a finding with these pipe-delimited fields:
+
+```text
+source | severity | provider | issue | evidence | evidence_type | confidence | impact_condition | cache_impact | safe_first_action | fix | validation | do_not_do_yet
+```
+
+Assert that JSON output preserves `evidence`, `evidence_type`, `confidence`, `impact_condition`, `safe_first_action`, and `do_not_do_yet`.
+
+- [x] **Step 2: Run the targeted test to verify RED**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_render_audit_report_preserves_extended_finding_contract
+```
+
+Expected: FAIL because the renderer currently parses only the original 7-field finding format.
+
+- [x] **Step 3: Implement minimal parser/rendering support**
+
+Update `parse_finding()` to keep the existing 7-field format working and parse the 13-field extended format when provided.
+
+- [x] **Step 4: Run renderer tests to verify GREEN**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_render_audit_report_outputs_json_from_usage_fixture tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_rendered_openai_report_matches_expected_fixture tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_render_audit_report_preserves_extended_finding_contract
+```
+
+Expected: PASS, with the old fixture unchanged.
+
+### Task 2: Skill Output Guidance
+
+**Files:**
+- Modify: `audit-prompt-caching/SKILL.md`
+- Modify: `audit-prompt-caching/references/report-template.md`
+
+- [x] **Step 1: Add decision summary guidance**
+
+Require audits to start with a compact decision block when they recommend project changes:
+
+```text
+Measurement change:
+Prompt behavior change:
+Provider/routing change:
+Confidence:
+Do first:
+Do not do yet:
+```
+
+- [x] **Step 2: Add finding evidence fields**
+
+Document that actionable findings should include evidence type, confidence, impact condition, safe first action, validation metric, and what not to do yet.
+
+- [x] **Step 3: Tighten severity guidance**
+
+Document that `high` needs hot-path, traffic, token, or metric evidence; otherwise report `medium` with an impact condition that explains when it escalates.
+
+### Task 3: OpenRouter Reference Nuance
+
+**Files:**
+- Modify: `audit-prompt-caching/references/openrouter.md`
+- Modify: `audit-prompt-caching/evals/evals.json`
+
+- [x] **Step 1: Update OpenRouter freshness and diagnostics**
+
+Record the current review date and point readers to prompt caching, usage accounting, and generation metadata sources.
+
+- [x] **Step 2: Clarify sticky routing boundaries**
+
+State that stable first messages can improve sticky-route locality, but a stable first user anchor is an experiment, not a guaranteed prompt-cache fix.
+
+- [x] **Step 3: Add safety and telemetry nuance**
+
+Recommend keyed hashes for sensitive prompt fingerprints, distinguish response usage from generation metadata, and warn that provider/routing changes should wait until telemetry proves need.
+
+- [x] **Step 4: Add an eval pressure case**
+
+Add an eval that expects the skill to avoid guaranteed claims about stable anchors, include confidence/evidence boundaries, and start with observability before behavior changes.
+
+### Task 4: Verification
+
+**Files:**
+- No source modifications expected.
+
+- [x] **Step 1: Run the script test suite**
+
+```bash
+python3 -m unittest tests/test_prompt_cache_scripts.py
+```
+
+- [x] **Step 2: Validate the skill package and trigger eval**
+
+```bash
+python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
+python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
+```
+
+- [x] **Step 3: Check Python syntax**
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+for path in [*Path('audit-prompt-caching/scripts').glob('*.py'), *Path('tests').glob('*.py')]:
+    compile(path.read_text(), str(path), 'exec')
+    print(f'ok {path}')
+PY
+```
+
+- [x] **Step 4: Check whitespace and generated bytecode**
+
+```bash
+git diff --check
+find . -name __pycache__ -type d -prune -exec rm -rf {} +
+find . \( -name __pycache__ -o -name '*.pyc' \) -print
+```
+
+### Task 5: Review Findings Follow-Up
+
+**Files:**
+- Modify: `tests/test_prompt_cache_scripts.py`
+- Modify: `audit-prompt-caching/scripts/render_audit_report.py`
+- Modify: `fixtures/expected/report_openai.md`
+- Modify: `audit-prompt-caching/SKILL.md`
+
+- [x] **Step 1: Write the failing renderer summary test**
+
+Extend the markdown report test to assert that rendered reports include:
+
+```text
+Measurement change:
+Prompt behavior change:
+Provider/routing change:
+Confidence:
+Do first:
+Do not do yet:
+```
+
+- [x] **Step 2: Run the targeted test to verify RED**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_render_audit_report_outputs_markdown_from_usage_fixture
+```
+
+Expected: FAIL because the renderer currently omits the new decision summary fields.
+
+- [x] **Step 3: Implement minimal renderer support**
+
+Add CLI/default decision fields to `render_audit_report.py`, include them in JSON output, and render them in the Executive Summary. Keep defaults conservative:
+
+```text
+Measurement change: unknown
+Prompt behavior change: unknown
+Provider/routing change: unknown
+Confidence: low
+Do first: analyze usage logs and validate prefix stability
+Do not do yet: make provider/routing changes without telemetry
+```
+
+- [x] **Step 4: Update the expected markdown fixture**
+
+Update `fixtures/expected/report_openai.md` to match the new rendered summary.
+
+- [x] **Step 5: Fix the overconfident report example**
+
+Change the `SKILL.md` report example severity from `high` to `medium`, keeping the escalation condition in `impact_condition`.
+
+- [x] **Step 6: Verify**
+
+Run the full repository verification commands from Task 4.

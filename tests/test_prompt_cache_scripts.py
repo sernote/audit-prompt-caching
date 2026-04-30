@@ -338,6 +338,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("## Findings", result.stdout)
         self.assertIn("## Expected Impact", result.stdout)
         self.assertIn("Cache hit ratio: 0.5962", result.stdout)
+        self.assertIn("Measurement change: unknown", result.stdout)
+        self.assertIn("Prompt behavior change: unknown", result.stdout)
+        self.assertIn("Provider/routing change: unknown", result.stdout)
+        self.assertIn("Confidence: low", result.stdout)
+        self.assertIn("Do first: analyze usage logs and validate prefix stability", result.stdout)
+        self.assertIn(
+            "Do not do yet: make provider/routing changes without telemetry",
+            result.stdout,
+        )
         self.assertIn("cold request has zero cached tokens", result.stdout)
 
     def test_render_audit_report_outputs_json_from_usage_fixture(self):
@@ -358,8 +367,71 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertEqual(output["provider"], "openai")
         self.assertEqual(output["engine"], "Responses API")
+        self.assertEqual(output["measurement_change"], "unknown")
+        self.assertEqual(output["prompt_behavior_change"], "unknown")
+        self.assertEqual(output["provider_routing_change"], "unknown")
+        self.assertEqual(output["confidence"], "low")
+        self.assertEqual(
+            output["do_first"],
+            "analyze usage logs and validate prefix stability",
+        )
+        self.assertEqual(
+            output["do_not_do_yet"],
+            "make provider/routing changes without telemetry",
+        )
         self.assertEqual(output["usage"]["cache_hit_ratio"], 0.5962)
         self.assertEqual(output["findings"][0]["severity"], "low")
+
+    def test_render_audit_report_preserves_extended_finding_contract(self):
+        finding = " | ".join(
+            [
+                "app/services/llm/client.py:124",
+                "medium",
+                "openrouter",
+                "dynamic opening message fragments route locality",
+                "code shows session_id in the first user message",
+                "confirmed from code",
+                "medium",
+                "matters when the operation has repeated long prefixes",
+                "can split sticky-route cache families",
+                "add observability without changing prompt behavior",
+                "test a stable operation anchor on one hot path",
+                "compare routed provider/model, cached_tokens, and cache_write_tokens",
+                "do not add cache_control or pin providers yet",
+            ]
+        )
+        result = run_script(
+            "render_audit_report.py",
+            "--json",
+            "--usage-log",
+            FIXTURES / "openai" / "repeated_prefix_usage.jsonl",
+            "--provider",
+            "openrouter",
+            "--engine",
+            "Chat Completions",
+            "--finding",
+            finding,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        parsed = output["findings"][0]
+        self.assertEqual(parsed["source"], "app/services/llm/client.py:124")
+        self.assertEqual(parsed["evidence"], "code shows session_id in the first user message")
+        self.assertEqual(parsed["evidence_type"], "confirmed from code")
+        self.assertEqual(parsed["confidence"], "medium")
+        self.assertEqual(
+            parsed["impact_condition"],
+            "matters when the operation has repeated long prefixes",
+        )
+        self.assertEqual(
+            parsed["safe_first_action"],
+            "add observability without changing prompt behavior",
+        )
+        self.assertEqual(
+            parsed["do_not_do_yet"],
+            "do not add cache_control or pin providers yet",
+        )
 
     def test_rendered_openai_report_matches_expected_fixture(self):
         finding = "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
@@ -850,8 +922,12 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         for required in [
             "Output Contract Selector",
-            "Change Recommendation",
+            "Measurement change",
+            "Prompt behavior change",
+            "Provider/routing change",
             "Evidence Needed Next",
+            "evidence_type",
+            "do_not_do_yet",
             "Agent Loop Audit",
             "Not Worth Caching",
         ]:

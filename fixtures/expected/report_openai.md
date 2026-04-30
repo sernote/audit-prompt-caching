@@ -7,6 +7,12 @@
 - Records reviewed: 3
 - Cache hit ratio: 0.5962
 - Output share: 0.0717
+- Measurement change: unknown
+- Prompt behavior change: unknown
+- Provider/routing change: unknown
+- Confidence: low
+- Do first: analyze usage logs and validate prefix stability
+- Do not do yet: make provider/routing changes without telemetry
 
 ## Findings
 

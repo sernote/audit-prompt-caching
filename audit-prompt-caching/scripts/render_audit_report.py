@@ -10,6 +10,12 @@ import analyze_usage_logs
 
 
 SEVERITIES = {"critical", "high", "medium", "low"}
+DEFAULT_MEASUREMENT_CHANGE = "unknown"
+DEFAULT_PROMPT_BEHAVIOR_CHANGE = "unknown"
+DEFAULT_PROVIDER_ROUTING_CHANGE = "unknown"
+DEFAULT_CONFIDENCE = "low"
+DEFAULT_DO_FIRST = "analyze usage logs and validate prefix stability"
+DEFAULT_DO_NOT_DO_YET = "make provider/routing changes without telemetry"
 
 
 def parse_finding(text):
@@ -21,10 +27,38 @@ def parse_finding(text):
         "severity": "low",
         "provider": None,
         "issue": text,
+        "evidence": "",
+        "evidence_type": "",
+        "confidence": "",
+        "impact_condition": "",
         "cache_impact": "",
+        "safe_first_action": "",
         "fix": "",
         "validation": "",
+        "do_not_do_yet": "",
     }
+    if len(parts) >= 13 and parts[1].lower() in SEVERITIES:
+        if parts[0].startswith("AP-"):
+            finding["rule_id"] = parts[0]
+        else:
+            finding["source"] = parts[0]
+        finding.update(
+            {
+                "severity": parts[1].lower(),
+                "provider": parts[2],
+                "issue": parts[3],
+                "evidence": parts[4],
+                "evidence_type": parts[5],
+                "confidence": parts[6],
+                "impact_condition": parts[7],
+                "cache_impact": parts[8],
+                "safe_first_action": parts[9],
+                "fix": parts[10],
+                "validation": parts[11],
+                "do_not_do_yet": parts[12],
+            }
+        )
+        return finding
     if len(parts) >= 7 and parts[1].lower() in SEVERITIES:
         if parts[0].startswith("AP-"):
             finding["rule_id"] = parts[0]
@@ -43,6 +77,20 @@ def parse_finding(text):
     return finding
 
 
+def has_extended_fields(finding):
+    return any(
+        finding.get(key)
+        for key in (
+            "evidence",
+            "evidence_type",
+            "confidence",
+            "impact_condition",
+            "safe_first_action",
+            "do_not_do_yet",
+        )
+    )
+
+
 def load_usage(path):
     records = analyze_usage_logs.read_records(Path(path))
     return analyze_usage_logs.summarize(records)
@@ -54,6 +102,12 @@ def build_report(args):
     return {
         "provider": args.provider,
         "engine": args.engine,
+        "measurement_change": args.measurement_change,
+        "prompt_behavior_change": args.prompt_behavior_change,
+        "provider_routing_change": args.provider_routing_change,
+        "confidence": args.confidence,
+        "do_first": args.do_first,
+        "do_not_do_yet": args.do_not_do_yet,
         "usage": usage,
         "findings": findings,
         "expected_impact": expected_impact(usage),
@@ -85,6 +139,12 @@ def render_markdown(report):
         f"- Records reviewed: {usage['records']}",
         f"- Cache hit ratio: {usage['cache_hit_ratio']}",
         f"- Output share: {usage['output_share']}",
+        f"- Measurement change: {report['measurement_change']}",
+        f"- Prompt behavior change: {report['prompt_behavior_change']}",
+        f"- Provider/routing change: {report['provider_routing_change']}",
+        f"- Confidence: {report['confidence']}",
+        f"- Do first: {report['do_first']}",
+        f"- Do not do yet: {report['do_not_do_yet']}",
         "",
         "## Findings",
         "",
@@ -92,19 +152,40 @@ def render_markdown(report):
     if report["findings"]:
         for finding in report["findings"]:
             location = finding["source"] or finding["rule_id"] or "advisory"
-            lines.append(
-                " | ".join(
-                    [
-                        location,
-                        finding["severity"],
-                        finding["provider"] or report["provider"],
-                        finding["issue"],
-                        finding["cache_impact"],
-                        finding["fix"],
-                        finding["validation"],
-                    ]
+            if has_extended_fields(finding):
+                lines.append(
+                    " | ".join(
+                        [
+                            location,
+                            finding["severity"],
+                            finding["provider"] or report["provider"],
+                            finding["issue"],
+                            finding["evidence"],
+                            finding["evidence_type"],
+                            finding["confidence"],
+                            finding["impact_condition"],
+                            finding["cache_impact"],
+                            finding["safe_first_action"],
+                            finding["fix"],
+                            finding["validation"],
+                            finding["do_not_do_yet"],
+                        ]
+                    )
                 )
-            )
+            else:
+                lines.append(
+                    " | ".join(
+                        [
+                            location,
+                            finding["severity"],
+                            finding["provider"] or report["provider"],
+                            finding["issue"],
+                            finding["cache_impact"],
+                            finding["fix"],
+                            finding["validation"],
+                        ]
+                    )
+                )
     else:
         lines.append("No findings supplied.")
     lines.extend(
@@ -131,11 +212,21 @@ def main(argv=None):
     parser.add_argument("--usage-log", required=True, help="JSON, JSONL, or CSV usage log")
     parser.add_argument("--provider", default="unknown")
     parser.add_argument("--engine", default="unknown")
+    parser.add_argument("--measurement-change", default=DEFAULT_MEASUREMENT_CHANGE)
+    parser.add_argument("--prompt-behavior-change", default=DEFAULT_PROMPT_BEHAVIOR_CHANGE)
+    parser.add_argument("--provider-routing-change", default=DEFAULT_PROVIDER_ROUTING_CHANGE)
+    parser.add_argument("--confidence", default=DEFAULT_CONFIDENCE)
+    parser.add_argument("--do-first", default=DEFAULT_DO_FIRST)
+    parser.add_argument("--do-not-do-yet", default=DEFAULT_DO_NOT_DO_YET)
     parser.add_argument(
         "--finding",
         action="append",
         default=[],
-        help="Finding in file:line | severity | provider | issue | impact | fix | validation format",
+        help=(
+            "Finding in the 7-field format "
+            "source | severity | provider | issue | impact | fix | validation "
+            "or the 13-field extended evidence format"
+        ),
     )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     args = parser.parse_args(argv)
