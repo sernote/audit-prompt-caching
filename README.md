@@ -53,12 +53,18 @@ python3 audit-prompt-caching/scripts/render_audit_report.py \
   --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
 ```
 
-Lint a known-good rendered request fixture:
+Lint known-good rendered request fixtures:
 
 ```bash
 python3 audit-prompt-caching/scripts/layout_linter.py \
   fixtures/layout/good_openai_request.json
+python3 audit-prompt-caching/scripts/layout_linter.py \
+  fixtures/layout/good_openai_responses_request.json
 ```
+
+`layout_linter.py` accepts Chat-style `messages` payloads and Responses-style
+`input` payloads when checking for volatile early content, unstable tool order,
+and dynamic schema fields.
 
 ## Audit Hero Shot
 
@@ -191,6 +197,9 @@ python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-cach
 python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 ```
 
+`layout_linter.py` accepts rendered Chat-style `messages` payloads and
+Responses-style `input` payloads.
+
 `prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
 
 Provider usage metadata and billing exports remain authoritative; these scripts are audit aids.
@@ -210,7 +219,7 @@ python3 audit-prompt-caching/scripts/prefix_stability_check.py request_a.json re
 Good real inputs are:
 
 - provider usage logs or billing exports with cache read/write fields
-- one or more rendered JSON request payloads from the hot path
+- one or more rendered JSON request payloads from the hot path, such as Chat-style `messages` or Responses-style `input`
 - normalized per-step agent logs with model, route, prefix hash, tools hash, token usage, and latency
 - deployment or router config when cache locality or self-hosted KV reuse is part of the issue
 
@@ -294,6 +303,7 @@ audit-prompt-caching/
     evals.json
     trigger_eval.json
 fixtures/
+  layout/
   openai/
   anthropic/
   bedrock/

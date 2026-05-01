@@ -647,6 +647,54 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("AP-1", output["clean_checks"])
         self.assertIn("AP-2", output["clean_checks"])
 
+    def test_layout_linter_flags_bad_responses_prompt_layout(self):
+        result = run_script(
+            "layout_linter.py",
+            FIXTURES / "layout" / "bad_openai_responses_request.json",
+        )
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "findings")
+        rule_ids = {finding["rule_id"] for finding in output["findings"]}
+        self.assertIn("AP-1", rule_ids)
+
+    def test_layout_linter_passes_good_responses_prompt_layout(self):
+        result = run_script(
+            "layout_linter.py",
+            FIXTURES / "layout" / "good_openai_responses_request.json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "ok")
+        self.assertEqual(output["findings"], [])
+        self.assertIn("AP-1", output["clean_checks"])
+
+    def test_layout_linter_flags_responses_string_input_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "responses-string.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.4",
+                        "input": (
+                            "Today is 2026-05-02. request_id=req_string_123. "
+                            "Stable reusable policy: apply the same compliance "
+                            "taxonomy for every request."
+                        ),
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "findings")
+        self.assertEqual(output["findings"][0]["rule_id"], "AP-1")
+        self.assertIn("input contains", output["findings"][0]["evidence"])
+
     def test_productization_files_cover_ci_and_governance(self):
         ci_path = ROOT / ".github" / "workflows" / "ci.yml"
         license_path = ROOT / "LICENSE"
@@ -772,6 +820,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
 
         self.assertIn("fixtures/layout/good_openai_request.json", readme)
+        self.assertIn("fixtures/layout/good_openai_responses_request.json", readme)
+        self.assertIn("Responses-style", readme)
         self.assertNotIn(
             "python3 audit-prompt-caching/scripts/layout_linter.py \\\n"
             "  fixtures/layout/bad_openai_request.json",
