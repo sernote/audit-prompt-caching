@@ -45,26 +45,57 @@ def finding(rule_id, severity, category, issue, evidence, fix, validation):
     }
 
 
+def serialized_text(value):
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def message_text(message):
     content = message.get("content", "")
-    if isinstance(content, str):
-        return content
-    return json.dumps(content, ensure_ascii=False, sort_keys=True)
+    return serialized_text(content)
+
+
+def input_text(input_item):
+    if isinstance(input_item, dict) and "content" in input_item:
+        return serialized_text(input_item["content"])
+    return serialized_text(input_item)
+
+
+def ordered_prompt_segments(payload):
+    segments = []
+    instructions = payload.get("instructions")
+    if instructions is not None:
+        segments.append(("instructions", serialized_text(instructions)))
+
+    messages = payload.get("messages", [])
+    if isinstance(messages, list):
+        for index, message in enumerate(messages):
+            if isinstance(message, dict):
+                segments.append((f"messages[{index}]", message_text(message)))
+
+    input_value = payload.get("input")
+    if isinstance(input_value, list):
+        for index, item in enumerate(input_value):
+            segments.append((f"input[{index}]", input_text(item)))
+    elif input_value is not None:
+        segments.append(("input", input_text(input_value)))
+
+    return segments
 
 
 def lint_volatile_prefix(payload):
-    messages = payload.get("messages", [])
-    if not isinstance(messages, list):
+    segments = ordered_prompt_segments(payload)
+    if not segments:
         return None
     volatile_index = None
     stable_index = None
+    volatile_label = ""
     volatile_evidence = ""
-    for index, message in enumerate(messages):
-        if not isinstance(message, dict):
-            continue
-        text = message_text(message)
+    for index, (label, text) in enumerate(segments):
         if volatile_index is None and VOLATILE_RE.search(text):
             volatile_index = index
+            volatile_label = label
             volatile_evidence = text[:160]
         if stable_index is None and STABLE_HINT_RE.search(text):
             stable_index = index
@@ -76,7 +107,7 @@ def lint_volatile_prefix(payload):
             "high",
             "prefix-stability",
             "volatile data appears before reusable prompt content",
-            f"messages[{volatile_index}] contains {volatile_evidence!r}",
+            f"{volatile_label} contains {volatile_evidence!r}",
             "move request/user/time metadata after the stable cacheable prefix",
             "render multiple requests and confirm the cacheable prefix hash is stable",
         )

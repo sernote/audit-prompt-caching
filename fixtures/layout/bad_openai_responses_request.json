@@ -1,0 +1,48 @@
+{
+  "model": "gpt-5.4",
+  "input": [
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Today is 2026-05-02. request_id=req_resp_123. You are a document classification assistant."
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Classify this customer-specific question."
+        }
+      ]
+    },
+    {
+      "role": "developer",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Stable reusable policy: apply the same 12k-token compliance policy and output taxonomy for every request in this workflow."
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup_policy",
+        "description": "Look up stable policy references."
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Write a classification artifact."
+      }
+    }
+  ]
+}
