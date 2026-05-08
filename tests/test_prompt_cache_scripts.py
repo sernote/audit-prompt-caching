@@ -1001,6 +1001,36 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, combined_prompts + "\n" + combined_expected)
 
+    def test_skill_requires_project_context_language_and_script_transparency(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "Project Context Gate",
+            "Language Match Rule",
+            "Script Transparency Rule",
+            "Applicability Before Severity",
+            "review hot paths, repeat cadence, prompt families, and cache applicability",
+            "explain what each bundled script reads, writes, and whether it uses network",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_evals_cover_project_context_and_script_transparency_feedback(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        combined = "\n".join(
+            item["prompt"] + "\n" + item["expected_output"] for item in evals["evals"]
+        )
+
+        for required in [
+            "Сделай ревью на русском",
+            "7 prompt families",
+            "once per day",
+            "Script Transparency Rule",
+            "do not mark prefix-cache findings high severity",
+        ]:
+            self.assertIn(required, combined)
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
