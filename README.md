@@ -8,6 +8,10 @@
 
 `audit-prompt-caching` is a portable Codex/agent skill for finding why LLM cache reuse fails across the request path: prompt/prefix caches, provider cache telemetry, cache-aware routing, agent tool stability, Bedrock checkpoints, OpenRouter routing drift, provider migration risk, and vLLM/SGLang KV reuse.
 
+## Updates And Field Notes
+
+I share practical notes on building AI platforms, agent infrastructure, prompt-cache audits, and production lessons in the [Telegram channel](https://t.me/+ymZhCIjiWyYzZTVi).
+
 ## Why This Exists
 
 LLM cache reuse usually fails silently. A timestamp in the system prompt, shuffled tool schemas, a changed first user message, an OpenRouter fallback, or a new vLLM replica can turn repeated 20k-token requests into cold prefill again.
