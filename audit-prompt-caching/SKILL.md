@@ -71,6 +71,19 @@ Bundled fixtures are only demo and regression-test data. Do not require users to
 
 This skill does not capture or intercept live traffic by itself. If telemetry is needed, ask the user to export or redact representative records from their own logging, tracing, provider dashboard, or billing pipeline.
 
+## Project Context Gate
+
+Before assigning severity or recommending project changes, review hot paths, repeat cadence, prompt families, and cache applicability. Identify which LLM routes are frequent enough, long enough, repeated enough, stable enough, and safe enough for prompt/prefix caching to matter.
+
+Do this before deep provider advice:
+
+1. Map prompt families, request builders, model/provider routes, agent loops, deployment paths, and usage frequency.
+2. Separate hot repeated paths from rare jobs, one-off prompts, admin flows, experiments, and prompt families that cannot share a stable prefix.
+3. Mark each finding as applicable, conditionally applicable, or not applicable to the project path under review.
+4. Ask for telemetry only after code/config context shows the evidence needed next.
+
+If project context shows a route runs rarely, changes prompt families often, has no stable long prefix, or is dominated by output/tool latency, say prompt caching is not the right lever for that route. Do not keep generic cache warnings in the findings list after they are known to be not applicable.
+
 ## Applicability Gate
 
 Before recommending prompt-cache changes, check:
@@ -83,6 +96,10 @@ Before recommending prompt-cache changes, check:
 6. **Safety boundary**: Would broader cache reuse violate tenant, privacy, data residency, ZDR, or side-channel requirements?
 
 If the gate fails, report why caching is not the right lever yet and recommend measurement, prompt restructuring, routing fixes, or a different optimization.
+
+## Language Match Rule
+
+Answer in the user's language by default. Preserve provider/API field names exactly, such as `cached_tokens`, `cache_control`, `cachePoint`, `TTFT`, `prompt_cache_key`, and `response_format`, but explain their meaning in the user's language instead of switching the report into English. If the user asks in Russian, headings, severity explanations, and recommendations should be in Russian unless they are literal API names or quoted code.
 
 ## Agent-First Output Contracts
 
@@ -119,6 +136,12 @@ source | severity | provider/engine | issue | evidence | evidence_type | confide
 ```
 
 Use evidence types such as `confirmed from code`, `confirmed from telemetry`, `provider-doc hypothesis`, or `needs validation`. State impact conditions like "matters if this path is hot, repeated, and has a long stable prefix" instead of implying guaranteed savings. Include one safe first action, one validation metric/command, and one thing not to do yet when the next risky change would be premature.
+
+For review-style responses, keep the result compact and project-specific:
+
+1. **Confirmed findings**: issues supported by code/config/telemetry and applicable to the project path.
+2. **Hypotheses**: plausible cache risks that need usage logs, rendered payloads, route metrics, or provider docs before severity can rise.
+3. **Not applicable**: generic cache advice that the project context rules out, such as prefix-cache work for a once-daily prompt family with no meaningful repeated stable prefix.
 
 ## Explicit Review Default
 
@@ -165,6 +188,12 @@ Use scripts when deterministic evidence is better than prose:
 - `scripts/run_trigger_eval.py`: summarize positive and negative trigger-eval coverage from `evals/trigger_eval.json`.
 
 Do not treat these scripts as provider tokenizers or billing truth. Provider usage and billing exports remain authoritative.
+
+### Script Transparency Rule
+
+Before running any bundled script, explain what each bundled script reads, writes, and whether it uses network. Also state why the script is needed, whether it scans the whole repository or a targeted path, and the expected runtime class: seconds, tens of seconds, or minutes.
+
+Default to a targeted scan when the repo is large or the user asked a narrow question. If a script may read secrets, environment files, generated artifacts, large logs, or production exports, say that explicitly and ask for approval unless the user has already requested that exact scan. Do not send files to a network service from these scripts. If network access is needed for provider docs or package installation, treat it as a separate explicit action.
 
 ## Freshness Gate
 
@@ -240,6 +269,12 @@ Use this taxonomy to keep audits consistent:
 | P4 | Reporting | file-line findings, before/after prompt layout, ROI assumptions, validation commands |
 
 ## Severity
+
+### Applicability Before Severity
+
+Assign severity only after the Project Context Gate and Applicability Gate. A real anti-pattern in cold, sparse, single-run, output-bound, or non-cacheable routes is not automatically a high-severity cache finding.
+
+Do not mark prefix-cache findings high severity without evidence that the affected route is hot, repeated within cache lifetime, has a long stable prefix, and has meaningful input-cost or TTFT impact. If those conditions are unknown, use `medium`, `low`, or `needs validation`, and state exactly what telemetry would raise or lower the severity.
 
 Assign severity from impact and evidence, not from the anti-pattern name alone:
 

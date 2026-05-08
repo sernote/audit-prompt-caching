@@ -210,6 +210,18 @@
       "prompt": "OpenRouter audit found dynamic user profile data in the first system message and a session_id in the first user message. The reviewer wants to add a stable first user anchor, pin provider.order, and add cache_control everywhere. We have no traffic, token, routed provider, or cached_tokens telemetry yet. What should the audit recommend?",
       "expected_output": "Uses the evidence-bearing output contract with Measurement change, Prompt behavior change, Provider/routing change, Confidence, Do first, and Do not do yet; marks code findings as confirmed from code but cache impact as needs validation or provider-doc hypothesis until telemetry exists; treats a stable first non-system operation anchor as an OpenRouter A/B experiment for hot repeated operations, not a guaranteed cache fix; recommends observability first with first-message HMAC hashes, routed provider/model or generation metadata, cached_tokens, cache_write_tokens, and usage.cost; does not pin providers, add cache_control everywhere, or overstate high severity without traffic/token evidence.",
       "files": []
+    },
+    {
+      "id": 36,
+      "prompt": "Use $audit-prompt-caching. Сделай ревью на русском. В проекте 7 prompt families, большинство запросов запускается once per day, часть промптов вообще не имеет длинного стабильного prefix. Предыдущий аудит нашел high risk по prefix cache, но не изучил специфику проекта. Что нужно сказать пользователю?",
+      "expected_output": "Answers in Russian and keeps API/provider fields literal; starts with the Project Context Gate by mapping prompt families, hot paths, repeat cadence, and where prefix caching is applicable; separates confirmed findings from hypotheses and not applicable generic advice; preserves valid telemetry findings when code confirms missing cache metrics; do not mark prefix-cache findings high severity until a route is hot, repeated, long-prefix, and cost/TTFT-relevant; says once per day jobs and prompt families without stable repeated prefixes are likely not worth prompt-cache work except for measurement or documentation.",
+      "files": []
+    },
+    {
+      "id": 37,
+      "prompt": "The user is worried that the audit skill ran a repository script for a minute or two and did not explain what it was doing. They now ask whether to run extract_llm_calls.py and layout_linter.py on a large private repo. How should the skill behave?",
+      "expected_output": "Uses the Script Transparency Rule before running scripts; explains what each script reads, what it writes, whether it uses network, expected runtime, and why the scan is needed; prefers targeted paths or a small first scan before whole-repo scans; states that bundled audit scripts must not send repo files to a network service; asks for approval before scans that may read secrets, environment files, generated artifacts, large logs, or production exports.",
+      "files": []
     }
   ]
 }
