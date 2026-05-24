@@ -34,6 +34,7 @@ Typical triggers:
 - The app uses OpenAI `prompt_cache_key`, Anthropic `cache_control`, Bedrock `cachePoint`, OpenRouter routing, Gemini/Qwen/DeepSeek cache fields, or Azure OpenAI cached-token telemetry.
 - An agent changes tools, compacts history, mutates early messages, or switches modes across steps.
 - vLLM/SGLang/self-hosted deployments have multi-replica routing, KV pressure, tokenizer/chat-template drift, or cache-aware routing questions.
+- vLLM benchmark workflows use `vllm bench serve`, `prefix_repetition`, or `benchmark_prefix_caching.py` to validate APC behavior.
 
 ## When not to use
 
@@ -222,7 +223,7 @@ Search SDK imports, API base URLs, model names, deployment manifests, and config
 | `openai`, `responses.create`, `chat.completions`, `prompt_cache_key`, `prompt_cache_retention` | OpenAI | `references/openai.md` |
 | `bedrock-runtime`, `BedrockRuntime`, `boto3.client("bedrock-runtime")`, `client.converse`, `converse_stream`, `InvokeModelCommand`, `ConverseCommand`, `invoke_model`, `cachePoint`, `CacheReadInputTokens`, `CacheWriteInputTokens` | Amazon Bedrock | `references/bedrock.md` |
 | `anthropic`, `messages.create`, `cache_control` | Anthropic | `references/anthropic.md` |
-| `vllm`, `--enable-prefix-caching`, `AsyncLLMEngine`, `LLM(` | vLLM | `references/vllm.md` |
+| `vllm`, `--enable-prefix-caching`, `vllm bench serve`, `prefix_repetition`, `benchmark_prefix_caching.py`, `AsyncLLMEngine`, `LLM(` | vLLM | `references/vllm.md` |
 | `sglang`, `sglang_router`, `RadixAttention`, `--disable-radix-cache`, `HiCache` | SGLang | `references/sglang.md` |
 | `deepseek`, `api.deepseek.com`, `prompt_cache_hit_tokens` | DeepSeek | `references/deepseek.md` |
 | `google.genai`, `google.generativeai`, `vertexai`, `CachedContent` | Gemini | `references/gemini.md` |

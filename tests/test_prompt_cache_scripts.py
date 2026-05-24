@@ -1090,6 +1090,62 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, combined_evals + "\n" + trigger_queries)
 
+    def test_vllm_reference_covers_benchmark_validation(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "vllm.md"
+        ).read_text()
+
+        for required in [
+            "Benchmark Validation",
+            "Applicability Gate",
+            "benchmarks/benchmark_prefix_caching.py",
+            "vllm bench serve",
+            "prefix_repetition",
+            "--save-result",
+            "--save-detailed",
+            "vllm:prefix_cache_hits",
+            "vllm:prefix_cache_queries",
+            "vllm:prompt_tokens_cached",
+            "synthetic benchmark speedup",
+            "production ROI",
+        ]:
+            self.assertIn(required, reference)
+
+    def test_skill_detects_vllm_benchmark_workflows(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "vllm bench serve",
+            "prefix_repetition",
+            "benchmark_prefix_caching.py",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_evals_cover_vllm_benchmark_validation(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        combined = "\n".join(
+            item["prompt"] + "\n" + item["expected_output"] for item in evals["evals"]
+        )
+        trigger_queries = "\n".join(item["query"] for item in trigger_eval)
+
+        for required in [
+            "benchmark vLLM APC",
+            "vllm bench serve",
+            "prefix_repetition",
+            "vllm:prefix_cache_hits",
+            "vllm:prefix_cache_queries",
+            "do not claim production ROI",
+        ]:
+            self.assertIn(required, combined)
+
+        self.assertIn("vllm bench serve", trigger_queries)
+        self.assertIn("prefix_repetition", trigger_queries)
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
