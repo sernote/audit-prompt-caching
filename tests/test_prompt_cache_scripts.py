@@ -714,6 +714,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "git diff --check \"${BASE_SHA}...HEAD\"",
             "git diff-tree --check --no-commit-id --root -r HEAD",
             "find . \\( -name __pycache__ -o -name '*.pyc' \\) -print",
+            "PYTHONDONTWRITEBYTECODE",
         ):
             self.assertIn(expected, ci)
         self.assertNotIn("rm -rf", ci)
