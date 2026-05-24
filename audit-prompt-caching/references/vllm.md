@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-05-25.
 
 Verify before exact claims:
 - whether prefix caching is enabled by default in the deployed vLLM version
@@ -20,6 +20,8 @@ Official sources:
 - Automatic Prefix Caching feature docs: https://docs.vllm.ai/en/stable/features/automatic_prefix_caching/
 - Cache configuration API: https://docs.vllm.ai/en/stable/api/vllm/config/cache/
 - Engine/server arguments: https://docs.vllm.ai/en/stable/configuration/engine_args.html
+- vLLM bench serve CLI: https://docs.vllm.ai/en/stable/cli/bench/serve/
+- Production metrics: https://docs.vllm.ai/en/stable/usage/metrics/
 - Production stack docs: https://docs.vllm.ai/en/stable/serving/production_stack/
 
 ## Stable Mechanics
@@ -73,6 +75,50 @@ If `cache_salt` is set per request or per user, cross-user reuse can disappear. 
 ### APC On Unique Prompts
 
 If every request is unique, APC can add overhead without benefit. Measure prefix hit metrics before forcing it on all workloads.
+
+## Benchmark Validation
+
+Use vLLM benchmarks only after the Applicability Gate shows a route has a repeated, stable, long-enough prefix and meaningful TTFT or prefill cost. A benchmark should validate engine behavior and workload shape; it should not replace production cache metrics.
+
+For a local engine sanity check, run from the vLLM repository root and compare the same workload with and without APC:
+
+```bash
+python3 benchmarks/benchmark_prefix_caching.py \
+  --model <model-or-local-path> \
+  --enable-prefix-caching \
+  --num-prompts 1 \
+  --repeat-count 100 \
+  --input-length-range 512:1024 \
+  --output-len 128
+```
+
+Then run the same command with `--no-enable-prefix-caching`. Keep model, tokenizer, input length range, output length, tensor parallelism, and repeat count fixed. Use `--prefix-len` when the synthetic workload needs a controlled shared prefix, `--sort` only when length-sorted batches represent the target workload, and `--disable-detokenize` only when deliberately excluding detokenization overhead.
+
+For serving-path validation, use `vllm bench serve` with the `prefix_repetition` dataset against a running server:
+
+```bash
+vllm bench serve \
+  --backend openai \
+  --model <served-model-name> \
+  --dataset-name prefix_repetition \
+  --num-prompts 100 \
+  --prefix-repetition-prefix-len 512 \
+  --prefix-repetition-suffix-len 128 \
+  --prefix-repetition-num-prefixes 5 \
+  --prefix-repetition-output-len 128 \
+  --num-warmups 10 \
+  --request-rate <requests-per-second-or-inf> \
+  --max-concurrency <concurrency-limit> \
+  --save-result \
+  --save-detailed \
+  --metadata prompt_family=<family> deployment=<version>
+```
+
+Vary `--prefix-repetition-prefix-len`, `--prefix-repetition-suffix-len`, `--prefix-repetition-num-prefixes`, `--prefix-repetition-output-len`, request rate, and concurrency to match the route being audited. If a gateway or multiple replicas sit in front of vLLM, record the routed worker or replica with the benchmark result.
+
+Treat these as validation evidence only when they are paired with vLLM metrics and logs. Watch `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:prompt_tokens_cached`, `vllm:kv_cache_usage_perc`, TTFT/prefill latency, final latency, and route or replica labels where available. For external KV connectors, also check the external prefix-cache hit/query metrics documented for the deployed version.
+
+Do not claim production ROI from synthetic benchmark speedup alone. Reopen prompt, routing, or capacity changes only when the benchmark and production telemetry agree on the same cacheable route, prefix family, worker locality, KV pressure, and output-token share.
 
 ## Diagnostics
 

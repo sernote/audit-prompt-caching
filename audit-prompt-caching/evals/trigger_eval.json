@@ -32,6 +32,10 @@
     "should_trigger": true
   },
   {
+    "query": "Please benchmark vLLM APC with vllm bench serve prefix_repetition and compare it to benchmark_prefix_caching.py output without overclaiming production ROI.",
+    "should_trigger": true
+  },
+  {
     "query": "The agent got more expensive after we started selecting only 5 tools per step instead of sending all 40 tools",
     "should_trigger": true
   },

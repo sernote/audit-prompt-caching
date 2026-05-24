@@ -234,6 +234,12 @@
       "prompt": "Design a minimum telemetry contract for prompt caching. The team wants prefix_hash, first_256_token_hash, cache_read_tokens, cache_write_tokens, dashboards, and alerts, but compliance says Do not log raw prompts.",
       "expected_output": "Loads the observability reference; defines a minimum telemetry contract with provider/model/route, cache_read_tokens, cache_write_tokens, uncached input, output tokens, TTFT or prefill latency, total latency, prefix_hash, system_prompt_hash, tools_hash, schema_hash, first_256_token_hash when useful, compaction events, and routed worker; explicitly says Do not log raw prompts and recommends HMAC or keyed hashes for sensitive small prompt sets; proposes dashboards and alerts by route/prompt family/deploy before recommending prompt or routing changes.",
       "files": []
+    },
+    {
+      "id": 40,
+      "prompt": "We need to benchmark vLLM APC. The team wants to run benchmark_prefix_caching.py and vllm bench serve with prefix_repetition, then publish the synthetic speedup as expected production savings.",
+      "expected_output": "Loads the vLLM reference and treats this as benchmark validation, not a guaranteed savings claim; starts with the Applicability Gate for a hot repeated stable-prefix route; recommends comparing APC on/off with benchmarks/benchmark_prefix_caching.py for local engine sanity and vllm bench serve using prefix_repetition, --save-result, and --save-detailed for serving-path evidence; requires vllm:prefix_cache_hits, vllm:prefix_cache_queries, vllm:prompt_tokens_cached, TTFT/prefill latency, final latency, KV pressure, and route or replica labels where available; says do not claim production ROI from synthetic benchmark speedup until production telemetry agrees on the same prefix family, routing locality, workload shape, and output-token share.",
+      "files": []
     }
   ]
 }
