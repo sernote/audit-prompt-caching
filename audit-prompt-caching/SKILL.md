@@ -160,13 +160,16 @@ Classify the work before auditing so you inspect the right artifacts. For a deep
 | Agent/coding-assistant audit | agent got more expensive, dynamic tools, MCP routing, compaction | agent loop, tool registry, tool selection, history compaction, per-step cache logs |
 | Deployment audit | vLLM/SGLang cache misses, TTFT after scaling, multi-replica routing | `docker-compose.yml`, Helm values, Kubernetes manifests, gateway config, engine flags |
 | Observability/CI audit | need cache dashboard, release guardrail, prefix smoke test | traces, dashboards, rendered prompt snapshots, prefix/tool/schema hashes |
+| Quick operational triage | low cache hit rate, high bill, migration regression, TTL confusion, provider wrapper ambiguity | `references/operational-playbook.md`, usage fields, rendered request pair, provider reference |
 
 ## Scenario References
 
 Load only the reference needed for the detected scenario:
 
+- **Quick operational triage or playbook request**: `references/operational-playbook.md` for a concise decision path, stable-prefix layout, multi-turn/sliding behavior, and safe first actions.
 - **Cost or migration**: `references/economics.md` for effective-cost variables, output-share checks, TTL/write-premium break-even, and migration cache risk.
 - **Mechanics, latency, or self-hosted compute**: `references/mechanics.md` for prefill vs decode, KV reuse, and what cache hits can and cannot improve.
+- **Observability, telemetry, dashboards, alerts, or CI guardrails**: `references/observability.md` for the minimum telemetry contract, derived metrics, dashboard dimensions, privacy-safe hashes, and release checks.
 - **Release, incident, deploy, or monitoring**: `references/predeploy-checklist.md` for blocking checks, triage order, and observability dimensions.
 - **OpenRouter or managed provider routing**: `references/openrouter.md` for sticky routing, provider fallback/order, cache usage fields, and provider-specific cache controls through OpenRouter.
 - **Agents, coding assistants, MCP, or dynamic tools**: `references/agent-tools.md` for tool strategy selection, mode switching, and context compaction.

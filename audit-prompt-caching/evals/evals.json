@@ -222,6 +222,18 @@
       "prompt": "The user is worried that the audit skill ran a repository script for a minute or two and did not explain what it was doing. They now ask whether to run extract_llm_calls.py and layout_linter.py on a large private repo. How should the skill behave?",
       "expected_output": "Uses the Script Transparency Rule before running scripts; explains what each script reads, what it writes, whether it uses network, expected runtime, and why the scan is needed; prefers targeted paths or a small first scan before whole-repo scans; states that bundled audit scripts must not send repo files to a network service; asks for approval before scans that may read secrets, environment files, generated artifacts, large logs, or production exports.",
       "files": []
+    },
+    {
+      "id": 38,
+      "prompt": "We need a quick operational playbook for a prompt-cache incident. Symptoms include low cache hit rate, high bill despite some cached tokens, provider wrapper ambiguity, and confusion about TTL. What should the skill do first?",
+      "expected_output": "Loads the operational playbook and starts with route classification before provider tuning; separates low cache hit rate from high output-token share, migration or wrapper issues, and TTL/cadence mismatch; asks for a representative rendered request pair, provider cache read/write fields, route/provider/model, prompt family, TTFT, output tokens, and prefix/tool/schema hashes; recommends measurement first, then stable prefix layout, then routing or provider settings only after official docs are checked.",
+      "files": []
+    },
+    {
+      "id": 39,
+      "prompt": "Design a minimum telemetry contract for prompt caching. The team wants prefix_hash, first_256_token_hash, cache_read_tokens, cache_write_tokens, dashboards, and alerts, but compliance says Do not log raw prompts.",
+      "expected_output": "Loads the observability reference; defines a minimum telemetry contract with provider/model/route, cache_read_tokens, cache_write_tokens, uncached input, output tokens, TTFT or prefill latency, total latency, prefix_hash, system_prompt_hash, tools_hash, schema_hash, first_256_token_hash when useful, compaction events, and routed worker; explicitly says Do not log raw prompts and recommends HMAC or keyed hashes for sensitive small prompt sets; proposes dashboards and alerts by route/prompt family/deploy before recommending prompt or routing changes.",
+      "files": []
     }
   ]
 }
