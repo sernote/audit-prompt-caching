@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
 jobs:
   validate:
     runs-on: ubuntu-latest

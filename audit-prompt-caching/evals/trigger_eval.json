@@ -76,6 +76,14 @@
     "should_trigger": true
   },
   {
+    "query": "Give me a quick operational playbook for low cache hit rate, provider wrapper ambiguity, and prompt-cache TTL decisions",
+    "should_trigger": true
+  },
+  {
+    "query": "Define the minimum telemetry contract for prompt caching with prefix_hash, first_256_token_hash, cache_read_tokens, and no raw prompt logging",
+    "should_trigger": true
+  },
+  {
     "query": "Use $audit-prompt-caching. Сделай ревью.",
     "should_trigger": true
   },

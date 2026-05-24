@@ -714,6 +714,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "git diff --check \"${BASE_SHA}...HEAD\"",
             "git diff-tree --check --no-commit-id --root -r HEAD",
             "find . \\( -name __pycache__ -o -name '*.pyc' \\) -print",
+            "PYTHONDONTWRITEBYTECODE",
         ):
             self.assertIn(expected, ci)
         self.assertNotIn("rm -rf", ci)
@@ -1014,6 +1015,41 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, skill)
 
+    def test_skill_links_operational_playbook_and_observability_references(self):
+        skill_dir = ROOT / "audit-prompt-caching"
+        skill = (skill_dir / "SKILL.md").read_text()
+        operational = skill_dir / "references" / "operational-playbook.md"
+        observability = skill_dir / "references" / "observability.md"
+
+        self.assertTrue(operational.exists(), "missing operational playbook reference")
+        self.assertTrue(observability.exists(), "missing observability reference")
+        self.assertIn("references/operational-playbook.md", skill)
+        self.assertIn("references/observability.md", skill)
+
+        operational_text = operational.read_text()
+        for required in [
+            "Quick Operational Playbook",
+            "low cache hit rate",
+            "stable prefix",
+            "sliding",
+            "provider wrapper",
+            "official docs",
+        ]:
+            self.assertIn(required, operational_text)
+
+        observability_text = observability.read_text()
+        for required in [
+            "Minimum Telemetry Contract",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "prefix_hash",
+            "first_256_token_hash",
+            "Do not log raw prompts",
+            "dashboard",
+            "alert",
+        ]:
+            self.assertIn(required, observability_text)
+
     def test_evals_cover_project_context_and_script_transparency_feedback(self):
         evals = json.loads(
             (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
@@ -1030,6 +1066,29 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "do not mark prefix-cache findings high severity",
         ]:
             self.assertIn(required, combined)
+
+    def test_evals_cover_operational_playbook_and_telemetry_contract(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        combined_evals = "\n".join(
+            item["prompt"] + "\n" + item["expected_output"] for item in evals["evals"]
+        )
+        trigger_queries = "\n".join(item["query"] for item in trigger_eval)
+
+        for required in [
+            "quick operational playbook",
+            "low cache hit rate",
+            "provider wrapper ambiguity",
+            "minimum telemetry contract",
+            "prefix_hash",
+            "first_256_token_hash",
+            "Do not log raw prompts",
+        ]:
+            self.assertIn(required, combined_evals + "\n" + trigger_queries)
 
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
