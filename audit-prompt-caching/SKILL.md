@@ -230,6 +230,8 @@ Search SDK imports, API base URLs, model names, deployment manifests, and config
 | `dashscope`, `qwen`, `bailian`, `aliyun` | Qwen/DashScope | `references/qwen.md` |
 | `yandexgpt`, `foundationModels`, `llm.api.cloud.yandex.net` | YandexGPT | `references/yandexgpt.md` |
 | `z.ai`, `zai`, `glm-`, `api.z.ai` | z.ai | `references/zai.md` |
+| `@mastra/core`, `@mastra/memory`, `@mastra/ai-sdk`, `mastra.ai`, `agent.generate`, `agent.stream`, `workingMemory`, `semanticRecall`, `MCPClient` | Mastra | `references/mastra.md` |
+| `@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/amazon-bedrock`, `@ai-sdk/google`, `generateText`, `streamText`, `generateObject`, `providerOptions`, `experimental_providerMetadata`, `createAnthropic`, `createOpenAI` | Vercel AI SDK | `references/vercel-ai-sdk.md` |
 
 Load only the relevant provider files. If OpenRouter, Azure, or Bedrock signals appear alongside OpenAI/Anthropic-compatible calls, prefer the router/provider wrapper reference over the generic direct-provider reference. If detection is ambiguous, ask which provider/engine is in use.
 
