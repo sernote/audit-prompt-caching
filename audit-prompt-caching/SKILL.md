@@ -222,7 +222,7 @@ Search SDK imports, API base URLs, model names, deployment manifests, and config
 | `AzureOpenAI`, `AZURE_OPENAI_ENDPOINT`, `azure.ai.openai`, `api-version`, Azure OpenAI endpoint URLs | Azure OpenAI | `references/azure-openai.md` |
 | `openai`, `responses.create`, `chat.completions`, `prompt_cache_key`, `prompt_cache_retention` | OpenAI | `references/openai.md` |
 | `bedrock-runtime`, `BedrockRuntime`, `boto3.client("bedrock-runtime")`, `client.converse`, `converse_stream`, `InvokeModelCommand`, `ConverseCommand`, `invoke_model`, `cachePoint`, `CacheReadInputTokens`, `CacheWriteInputTokens` | Amazon Bedrock | `references/bedrock.md` |
-| `anthropic`, `messages.create`, `cache_control` | Anthropic | `references/anthropic.md` |
+| `anthropic`, `messages.create`, `cache_control`, `"role": "system"` in `messages` | Anthropic | `references/anthropic.md` |
 | `vllm`, `--enable-prefix-caching`, `vllm bench serve`, `prefix_repetition`, `benchmark_prefix_caching.py`, `AsyncLLMEngine`, `LLM(` | vLLM | `references/vllm.md` |
 | `sglang`, `sglang_router`, `RadixAttention`, `--disable-radix-cache`, `HiCache` | SGLang | `references/sglang.md` |
 | `deepseek`, `api.deepseek.com`, `prompt_cache_hit_tokens` | DeepSeek | `references/deepseek.md` |
@@ -369,6 +369,8 @@ def manage_context(messages, max_tokens):
 ```
 
 For agents: prefer raw history, then compact bulky tool results by preserving paths/IDs/URLs, and use lossy summarization only when compaction is insufficient. If the stable anchor alone exceeds the budget, do not silently drop it; choose a provider-specific strategy, split the route/tool bundle, or fail closed with a clear diagnostic.
+
+On supported Anthropic routes, appending a `{"role": "system"}` message to `messages` is the cache-preserving way to add a new system instruction mid-session instead of editing the top-level `system` field. See `references/anthropic.md` for placement rules and current model availability.
 
 ### AP-6: Mode Switching Or Framework Injection Mutates The Prefix
 

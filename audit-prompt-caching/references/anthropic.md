@@ -10,12 +10,14 @@ Verify before exact claims:
 - cache write/read pricing, Batch API interactions, and TTL premiums
 - `cache_control` syntax, limits, provider availability, and TTL ordering
 - automatic caching support by surface: Claude API, Azure AI Foundry, Amazon Bedrock, Google Vertex AI, and managed routers
+- which Claude models support mid-conversation `{"role": "system"}` messages — `claude-opus-4-8` only at the time of this reference, likely expanded since
 - tool search / `defer_loading` behavior
 - usage object fields and streaming event fields
 - data retention, ZDR, and cache isolation boundaries
 
 Official sources:
 - Prompt caching: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+- Mid-conversation system messages: https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
 - Tool use: https://platform.claude.com/docs/en/build-with-claude/tool-use
 - Tool use with prompt caching: https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching
 - Pricing: https://www.anthropic.com/pricing
@@ -61,6 +63,22 @@ When combining automatic caching with explicit breakpoints, remember that automa
 Use explicit breakpoints when different sections change at different frequencies, or when the prompt has a stable prefix followed by a dynamic suffix. Place `cache_control` on the last block whose full prefix should remain identical across the requests that should share a cache.
 
 For long growing conversations, add additional breakpoints before they are needed if the active breakpoint can move more than 20 blocks beyond the most recent prior write. A later breakpoint cannot recover an entry that was never written in its lookback window.
+
+### Mid-Conversation System Messages
+
+`{"role": "system"}` entries inside `messages` carry system-level authority without touching the top-level `system` field, so the cached `tools → system → messages` prefix above them stays intact. Editing the top-level `system` field mid-session re-hashes the prefix and invalidates the system block and every cached message after it.
+
+Available at the time of this reference on Claude API and Claude Platform on AWS, `claude-opus-4-8` only; not on Bedrock, Vertex AI, or Microsoft Foundry. No beta header. Recheck the supported model list — it is the most likely thing to have expanded since.
+
+A mid-conversation system message itself becomes part of the stable history on the next turn — the breakpoint can move past it under automatic caching or via an explicit breakpoint on the message. Editing or removing one already sent invalidates the cache from that point; append a new one instead of rewriting.
+
+Audit grep:
+
+```bash
+rg -n '"role"\s*:\s*"system"' .
+```
+
+For every match inside `messages[]`, confirm placement and a supported Anthropic surface. Treat top-level `system` edits between turns as a cache-cost finding when a mid-conversation system message would have preserved the prefix on a supported route.
 
 ### Tool Cascade
 
