@@ -1,126 +1,22 @@
-# Agent Tool Strategy
+# Agent Tool Stability
 
-Use this reference when auditing agents, coding assistants, MCP clients, dynamic tool selection, mode switching, or context compaction.
+Use this reference for agents, coding assistants, MCP clients, compaction, mode switching, and long tool loops.
 
-## Core Rule
+## Core Risk
 
-Do not optimize one agent step in isolation. In long trajectories, stable early tokens can matter more than reducing the current request by a few tool definitions.
+Agent prompts often grow append-only, which is cache-friendly, but tool lists, mode instructions, memory blocks, and compaction can rewrite early prefix content. A shorter per-step prompt can cost more when it destroys reuse over a long trajectory.
 
-Before changing tool strategy, estimate the cost of a late-step cache miss:
+## Checks
 
-```text
-late_step_miss_cost ~= late_input_tokens * uncached_input_price
-late_step_hit_cost  ~= late_input_tokens * cached_input_price
-```
+- Log per step: cache read fields, `cached_tokens`, `prefix_hash`, `tools_count`, sorted tool-name hash, output tokens, first/final token timing, actual routed provider/model.
+- Compare cache drops with tool-list changes, mode changes, compaction, memory injection, or provider fallback.
+- Keep route-level tool bundles stable and sorted when possible.
+- Use provider-supported allowed tools, tool search, or deferred loading only after checking current docs.
+- For self-hosted inference, consider masking/constrained decoding instead of changing `tools`.
+- Preserve a stable anchor: system/developer instructions, tools, schemas, first stable messages.
+- Compact bulky tool results before summarizing early history; preserve paths, IDs, URLs, and small structured facts.
+- Treat MCP registry changes as schema changes. Freeze or version tool definitions for a session.
 
-Use provider docs for current prices and cache semantics. For self-hosted inference, translate miss cost into prefill compute, TTFT, and throughput.
+## Report
 
-## Strategy Table
-
-| Situation | Prefer | Watchouts |
-|---|---|---|
-| Up to 10 compact tools | stable full tool list | sort tools and schema keys |
-| 10-50 tools, self-hosted decoding control | stable tools + masking/constrained decoding | mask only at tool-name selection positions |
-| Many tools, managed API | provider-supported `allowed_tools`, `tool_search`, or deferred loading | verify current provider semantics before claiming cache safety |
-| Independent product domains | route before the agent loop to fixed tool bundles | define fallback for cross-domain tasks |
-| Prototype, short agent, cheap model | dynamic tool selection can be acceptable | keep monitoring so it does not ship unnoticed into long trajectories |
-| Per-step RAG over tool docs | avoid if it rewrites early `tools` | safe only when retrieved tools are appended or provider-supported |
-
-## Dynamic Tool Selection Smell
-
-Symptoms:
-- `tools_count` changes on most steps
-- `prefix_hash` changes when tool set changes
-- raw prompt tokens decreased but total cost or TTFT increased
-- the agent has 15+ steps or high input/output ratio
-- tool calls in history refer to tools that later disappear
-
-Safer alternatives:
-- stable compact tool list sorted by name
-- route-level fixed tool bundles selected before the agent loop
-- provider-supported allowed tools separate from the full tool list
-- provider-supported tool search or deferred loading
-- self-hosted masking/constrained decoding
-
-Do not move tool definitions into user messages as a cache workaround unless current provider docs explicitly support the pattern.
-
-## Mode Switching
-
-Plan/debug/read-only modes should not swap the base system prompt or rewrite the tool list.
-
-Safer patterns:
-- keep base instructions stable
-- express mode state in a later message or supported metadata
-- add mode-enter/mode-exit tools when that preserves the stable prefix
-- use allowed-tools or masking for dynamic permissions
-
-Audit for:
-- `PLAN_SYSTEM_PROMPT`, `DEBUG_SYSTEM_PROMPT`, or role-specific system replacements
-- read-only mode implemented by removing write tools from `tools`
-- injected `cwd`, `platform`, date, git status, run IDs, or trace IDs before the cacheable prefix
-
-## History And Compaction
-
-Use this ladder:
-
-1. Raw append-only history while it fits.
-2. Compact bulky tool results while preserving paths, IDs, URLs, checksums, and small structured facts.
-3. Summarize only when compaction is insufficient.
-
-Preserve:
-- `system`
-- tool definitions or provider-supported tool references
-- first stable user/assistant messages
-- route and mode identity if stable
-
-Avoid:
-- replacing early turns with a summary
-- mutating previous tool calls
-- deleting evidence needed by later tool calls
-- treating summarization as a free cache optimization
-
-If the stable anchor alone exceeds the context budget, fail closed or split the route/tool bundle instead of silently dropping it.
-
-## Required Agent Logs
-
-Log per step:
-- provider cache read field, such as `cached_tokens` or `cache_read_input_tokens`
-- cache creation/write field when available
-- `prefix_hash`
-- `tools_count`
-- sorted tool-name hash
-- prompt version and route
-- mode state
-- compaction event and compaction strategy
-- TTFT/prefill latency
-- output tokens and final-token latency when latency is the symptom
-
-Alert when:
-- prefix hash changes unexpectedly
-- cached tokens reset after tool selection or compaction
-- tool count changes inside a long trajectory
-- TTFT rises on late steps
-
-## Synthetic Agent Eval
-
-Add a 3-5 step smoke test:
-
-1. Render step 1 with full stable system/tools.
-2. Append a tool call and result.
-3. Render step 2 and confirm the stable prefix hash did not change.
-4. Trigger mode switch or compaction and confirm only allowed late content changes.
-5. Fail when dynamic tool retrieval, framework metadata, or early summarization mutates the stable prefix.
-
-## Advanced Serving Note
-
-Use this only when the user owns self-hosted serving infrastructure for many concurrent agent workflows.
-
-Classic LRU eviction can be a poor fit for agent workflows because future reuse may be determined by the workflow graph rather than recent access. Research systems such as KVFlow use workflow-aware eviction and KV prefetching to preserve prefixes likely to be reused soon.
-
-Audit questions:
-- Are many agent workflows paused on tools while their KV blocks occupy memory?
-- Are useful agent prefixes evicted shortly before the agent resumes?
-- Does the scheduler know future agent steps, or only recent KV access?
-- Are CPU/GPU KV transfers visible in traces?
-
-Recommendation: report this as an advanced serving-design opportunity, not as a default app-level fix. Prefer prompt stability, routing locality, and KV capacity checks first.
+Classify findings as confirmed, hypotheses, or not applicable. Severity depends on hotness, trajectory length, prefix size, and measured cache/TTFT impact.

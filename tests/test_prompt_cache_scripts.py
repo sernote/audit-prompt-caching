@@ -1146,6 +1146,60 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("vllm bench serve", trigger_queries)
         self.assertIn("prefix_repetition", trigger_queries)
 
+    def test_evals_preserve_provider_pressure_scenarios(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        combined = "\n".join(
+            item["prompt"] + "\n" + item["expected_output"] for item in evals["evals"]
+        )
+
+        for required in [
+            "datetime.now().isoformat()",
+            "dynamic `requestId`",
+            "tools_count changes",
+            "four replicas",
+            "--max-model-len 131072",
+            "DashScope Qwen",
+            "cache_creation_input_tokens",
+            "RAG document-classification",
+            "system instructions, then the user question",
+            "OpenRouter usage shows `cache_write_tokens`",
+            "Amazon Bedrock Converse",
+            "top-level `cache_control`",
+        ]:
+            self.assertIn(required, combined)
+
+    def test_trigger_eval_preserves_negative_non_cache_cases(self):
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        negative_queries = "\n".join(
+            item["query"] for item in trigger_eval if not item["should_trigger"]
+        )
+
+        for required in [
+            "Write a friendly system prompt",
+            "generic RAG",
+            "Count tokens",
+            "JSON schema",
+            "none of them are LLM inference replicas",
+            "Kubernetes Service for a stateless API",
+            "OpenRouter model routing basics",
+        ]:
+            self.assertIn(required, negative_queries)
+
+    def test_rules_reference_has_actionable_antipattern_details(self):
+        data = json.loads(
+            (ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text()
+        )
+
+        for rule in data["rules"]:
+            for key in ("search", "fix", "avoid"):
+                self.assertIn(key, rule, rule["id"])
+                self.assertIsInstance(rule[key], str, rule["id"])
+                self.assertTrue(rule[key].strip(), rule["id"])
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
