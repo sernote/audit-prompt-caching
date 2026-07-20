@@ -287,6 +287,152 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["total_input_tokens"], 1600)
             self.assertEqual(output["cache_hit_ratio"], 0.25)
 
+    def test_analyze_usage_logs_counts_openai_cache_writes_as_inclusive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "input_tokens_details": {
+                                "cached_tokens": 600,
+                                "cache_write_tokens": 200,
+                            },
+                            "output_tokens": 50,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["cache_benefit_tokens"], 600)
+        self.assertEqual(output["cache_write_tokens"], 200)
+        self.assertEqual(output["cache_write_total_tokens"], 200)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_openai_chat_usage_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "prompt_tokens": 1200,
+                            "prompt_tokens_details": {
+                                "cached_tokens": 700,
+                                "cache_write_tokens": 300,
+                            },
+                            "completion_tokens": 80,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1200)
+        self.assertEqual(output["cached_tokens"], 700)
+        self.assertEqual(output["cache_write_tokens"], 300)
+        self.assertEqual(output["output_tokens"], 80)
+        self.assertEqual(output["total_input_tokens"], 1200)
+
+    def test_analyze_usage_logs_reads_flat_openai_cache_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "input_tokens": 1000,
+                        "cached_tokens": 600,
+                        "cache_write_tokens": 200,
+                        "output_tokens": 50,
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["cache_write_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+
+    def test_analyze_usage_logs_marks_wrapper_accounting_ambiguous(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openrouter",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "cached_tokens": 600,
+                            "cache_write_tokens": 200,
+                            "output_tokens": 50,
+                        },
+                    }
+                )
+            )
+
+            default = run_script("analyze_usage_logs.py", log_path)
+            additive = run_script(
+                "analyze_usage_logs.py",
+                "--accounting-mode",
+                "additive",
+                log_path,
+            )
+
+        self.assertEqual(default.returncode, 0, default.stderr)
+        default_output = json.loads(default.stdout)
+        self.assertEqual(default_output["total_input_tokens"], 1000)
+        self.assertEqual(default_output["accounting_semantics"], "ambiguous")
+        self.assertEqual(
+            default_output["warnings"][0]["code"],
+            "AMBIGUOUS_ACCOUNTING_SEMANTICS",
+        )
+        self.assertEqual(additive.returncode, 0, additive.stderr)
+        additive_output = json.loads(additive.stdout)
+        self.assertEqual(additive_output["total_input_tokens"], 1800)
+        self.assertEqual(additive_output["accounting_semantics"], "additive")
+
+    def test_analyze_usage_logs_warns_when_openai_breakdown_exceeds_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 100,
+                            "input_tokens_details": {"cache_write_tokens": 120},
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["total_input_tokens"], 100)
+        self.assertEqual(
+            output["warnings"][0]["code"],
+            "OPENAI_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+
     def test_estimate_cache_roi_outputs_cost_delta_json(self):
         result = run_script(
             "estimate_cache_roi.py",
@@ -318,6 +464,83 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["total_with_cache_cost"], 2.164)
         self.assertEqual(output["input_savings"], 1.296)
         self.assertEqual(output["total_savings_pct"], 37.46)
+
+    def test_estimate_cache_roi_prices_cache_writes(self):
+        result = run_script(
+            "estimate_cache_roi.py",
+            "--static-tokens",
+            "1000",
+            "--dynamic-tokens",
+            "100",
+            "--output-tokens",
+            "0",
+            "--requests",
+            "10",
+            "--hit-rate",
+            "0.5",
+            "--cache-write-rate",
+            "0.4",
+            "--input-price-per-mtok",
+            "1",
+            "--cached-input-price-per-mtok",
+            "0.1",
+            "--cache-write-input-price-per-mtok",
+            "3",
+            "--output-price-per-mtok",
+            "0",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["producer"], "estimate_cache_roi.py")
+        self.assertEqual(output["cache_read_input_tokens"], 5000)
+        self.assertEqual(output["cache_write_input_tokens"], 4000)
+        self.assertEqual(output["ordinary_input_tokens"], 2000)
+        self.assertEqual(output["cache_write_input_cost"], 0.012)
+        self.assertEqual(output["total_baseline_cost"], 0.011)
+        self.assertEqual(output["total_with_cache_cost"], 0.0145)
+        self.assertEqual(output["total_savings"], -0.0035)
+
+    def test_estimate_cache_roi_rejects_invalid_write_assumptions(self):
+        common = (
+            "--static-tokens",
+            "1000",
+            "--dynamic-tokens",
+            "0",
+            "--output-tokens",
+            "0",
+            "--requests",
+            "10",
+            "--input-price-per-mtok",
+            "1",
+            "--cached-input-price-per-mtok",
+            "0.1",
+            "--output-price-per-mtok",
+            "0",
+        )
+        missing_price = run_script(
+            "estimate_cache_roi.py",
+            *common,
+            "--hit-rate",
+            "0.5",
+            "--cache-write-rate",
+            "0.2",
+        )
+        excess_rate = run_script(
+            "estimate_cache_roi.py",
+            *common,
+            "--hit-rate",
+            "0.8",
+            "--cache-write-rate",
+            "0.3",
+            "--cache-write-input-price-per-mtok",
+            "1",
+        )
+
+        self.assertEqual(missing_price.returncode, 2)
+        self.assertIn("write price", missing_price.stderr)
+        self.assertEqual(excess_rate.returncode, 2)
+        self.assertIn("sum", excess_rate.stderr)
 
     def test_render_audit_report_outputs_markdown_from_usage_fixture(self):
         result = run_script(
@@ -450,6 +673,117 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         expected = (FIXTURES / "expected" / "report_openai.md").read_text()
         self.assertEqual(result.stdout, expected)
+
+    def test_render_audit_report_distinguishes_unpriced_cache_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = Path(tmp) / "usage.json"
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "input_tokens_details": {
+                                "cached_tokens": 500,
+                                "cache_write_tokens": 250,
+                            },
+                            "output_tokens": 50,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("render_audit_report.py", "--usage-log", usage_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Cache read tokens: 500", result.stdout)
+        self.assertIn("Cache write tokens: 250", result.stdout)
+        self.assertIn("Cost impact: unknown (no pricing supplied)", result.stdout)
+
+    def test_render_audit_report_accepts_estimator_roi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            usage_path = tmp_path / "usage.json"
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "input_tokens_details": {"cache_write_tokens": 800},
+                            "output_tokens": 0,
+                        },
+                    }
+                )
+            )
+            roi_result = run_script(
+                "estimate_cache_roi.py",
+                "--static-tokens",
+                "1000",
+                "--dynamic-tokens",
+                "0",
+                "--output-tokens",
+                "0",
+                "--requests",
+                "10",
+                "--hit-rate",
+                "0.1",
+                "--cache-write-rate",
+                "0.8",
+                "--input-price-per-mtok",
+                "1",
+                "--cached-input-price-per-mtok",
+                "0.1",
+                "--cache-write-input-price-per-mtok",
+                "2",
+                "--output-price-per-mtok",
+                "0",
+            )
+            self.assertEqual(roi_result.returncode, 0, roi_result.stderr)
+            roi_path = tmp_path / "roi.json"
+            roi_path.write_text(roi_result.stdout)
+
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Cost impact: increased cost", result.stdout)
+        self.assertIn("Priced Cache Scenario", result.stdout)
+
+    def test_render_audit_report_rejects_untrusted_roi_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            usage_path = tmp_path / "usage.json"
+            usage_path.write_text(json.dumps({"usage": {"input_tokens": 10}}))
+            roi_path = tmp_path / "roi.json"
+            roi_path.write_text(
+                json.dumps(
+                    {
+                        "producer": "other.py",
+                        "schema_version": 1,
+                        "total_baseline_cost": 1,
+                        "total_with_cache_cost": 0.5,
+                        "total_savings": 0.5,
+                        "pricing": {},
+                    }
+                )
+            )
+
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("producer", result.stderr)
 
     def test_extract_llm_calls_finds_provider_signals(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -605,7 +939,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertTrue(path.exists(), "missing machine-readable rules.json")
         data = json.loads(path.read_text())
         rules = {rule["id"]: rule for rule in data["rules"]}
-        for rule_id in ("AP-1", "AP-2", "AP-7"):
+        for rule_id in ("AP-1", "AP-2", "AP-7", "AP-11"):
             self.assertIn(rule_id, rules)
         for rule in data["rules"]:
             for key in (
@@ -694,6 +1028,175 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["status"], "findings")
         self.assertEqual(output["findings"][0]["rule_id"], "AP-1")
         self.assertIn("input contains", output["findings"][0]["evidence"])
+
+    def test_layout_linter_validates_direct_gpt56_explicit_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6-terra",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Stable policy",
+                                        "prompt_cache_breakpoint": {
+                                            "mode": "explicit"
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                        "prompt_cache_options": {
+                            "mode": "explicit",
+                            "ttl": "30m",
+                        },
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertTrue(output["cache_policy"]["validated"])
+        self.assertEqual(output["cache_policy"]["api_surface"], "chat")
+        self.assertEqual(output["cache_policy"]["mode"], "explicit")
+        self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 1)
+        self.assertIn("AP-11", output["clean_checks"])
+
+    def test_layout_linter_flags_explicit_mode_without_breakpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6-terra",
+                        "messages": [
+                            {"role": "system", "content": "Stable policy"}
+                        ],
+                        "prompt_cache_options": {
+                            "mode": "explicit",
+                            "ttl": "30m",
+                        },
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        finding = next(
+            item
+            for item in output["findings"]
+            if item["rule_id"] == "AP-11"
+        )
+        self.assertEqual(finding["severity"], "medium")
+        self.assertIn("no valid prompt_cache_breakpoint", finding["issue"])
+        self.assertFalse(output["cache_policy"]["valid"])
+
+    def test_layout_linter_reports_invalid_gpt56_cache_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6",
+                        "input": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "output_text",
+                                        "text": "Question",
+                                        "prompt_cache_breakpoint": {
+                                            "mode": "implicit"
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                        "prompt_cache_options": {
+                            "mode": "automatic",
+                            "ttl": "24h",
+                        },
+                        "prompt_cache_retention": "24h",
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        ap11 = [item for item in output["findings"] if item["rule_id"] == "AP-11"]
+        evidence = "\n".join(item["evidence"] for item in ap11)
+        self.assertIn("prompt_cache_options.mode", evidence)
+        self.assertIn("prompt_cache_options.ttl", evidence)
+        self.assertIn("prompt_cache_retention", evidence)
+        self.assertIn("prompt_cache_breakpoint", evidence)
+
+    def test_layout_linter_does_not_treat_write_slots_as_a_marker_limit(self):
+        blocks = [
+            {
+                "type": "input_text",
+                "text": f"Stable section {index}",
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }
+            for index in range(5)
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6",
+                        "input": [{"role": "user", "content": blocks}],
+                        "prompt_cache_options": {"mode": "explicit"},
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 5)
+
+    def test_layout_linter_leaves_provider_wrappers_unvalidated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "openrouter/gpt-5.6",
+                        "messages": [{"role": "user", "content": "Question"}],
+                        "prompt_cache_options": {"mode": "made-up"},
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertFalse(output["cache_policy"]["validated"])
+        self.assertEqual(output["cache_policy"]["model_support"], "unknown")
+        self.assertNotIn("AP-11", output["clean_checks"])
+
+    def test_layout_linter_returns_usage_error_for_malformed_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text("{")
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid request JSON", result.stderr)
 
     def test_productization_files_cover_ci_and_governance(self):
         ci_path = ROOT / ".github" / "workflows" / "ci.yml"
@@ -913,6 +1416,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "switched from direct Anthropic to OpenRouter",
             "scaled vLLM pods and did not touch prompts",
             "LLM cost increased after an agent refactor",
+            "GPT-5.6 prompt_cache_options",
             "Rewrite this short greeting prompt",
         ]:
             self.assertIn(required, queries)
@@ -999,8 +1503,28 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "prompt_cache_key",
             "MCP tool registry",
             "not worth changing the cache setup",
+            "GPT-5.6",
+            "prompt_cache_options",
+            "cache_write_tokens",
+            "pricing",
         ]:
             self.assertIn(required, combined_prompts + "\n" + combined_expected)
+
+    def test_skill_routes_minimal_gpt56_cache_audit_tools(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "cache_write_tokens",
+            "--accounting-mode",
+            "--cache-write-rate",
+            "--cache-write-input-price-per-mtok",
+            "--roi-json",
+            "whole-input comparison",
+            "does not prove explicit breakpoint reuse",
+        ]:
+            self.assertIn(required, skill)
 
     def test_skill_requires_project_context_language_and_script_transparency(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -1235,6 +1759,16 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "Regional Inference",
             "TPM rate limits",
             "GPU-local storage",
+            "GPT-5.6",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            '"mode": "explicit"',
+            "cache_write_tokens",
+            "30m",
+            "four",
+            "breakdowns of the reported input total",
+            "minimum reuse lifetime",
+            "not a Regional processing guarantee",
         ]:
             self.assertIn(required, reference)
 

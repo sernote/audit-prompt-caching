@@ -75,6 +75,16 @@
       "id": 15,
       "prompt": "A Claude app added top-level `cache_control`; stable policy is followed by timestamp and user question, so writes happen every request.",
       "expected_output": "Use explicit stable-prefix breakpoint; validate cache_read_input_tokens."
+    },
+    {
+      "id": 16,
+      "prompt": "Audit a direct GPT-5.6 request that copied prompt_cache_retention from GPT-5.5 and marks a stable policy before a dynamic suffix.",
+      "expected_output": "Replace the legacy field with prompt_cache_options, validate prompt_cache_breakpoint placement, and say whole-input comparison does not prove provider breakpoint reuse."
+    },
+    {
+      "id": 17,
+      "prompt": "OpenAI GPT-5.6 telemetry has high cache_write_tokens and few reads. Is the cache saving money?",
+      "expected_output": "Treat cache fields as inclusive input breakdowns and require current read, write, input, and output pricing before a cost conclusion."
     }
   ]
 }

@@ -31,6 +31,11 @@ STABLE_HINT_RE = re.compile(
     r"(stable|reusable|policy|few-shot|examples|shared|static)",
     re.IGNORECASE,
 )
+GPT56_MODELS = {"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+SUPPORTED_CACHE_BLOCKS = {
+    "chat": {"text", "image_url", "input_audio", "file", "refusal"},
+    "responses": {"input_text", "input_image", "input_file"},
+}
 
 
 def finding(rule_id, severity, category, issue, evidence, fix, validation):
@@ -173,7 +178,181 @@ def lint_dynamic_schema(payload):
     return None
 
 
+def direct_gpt56(payload):
+    model = payload.get("model")
+    return model in GPT56_MODELS
+
+
+def api_surface(payload):
+    has_messages = "messages" in payload
+    has_input = "input" in payload
+    if has_messages == has_input:
+        return "ambiguous"
+    return "chat" if has_messages else "responses"
+
+
+def marker_locations(value, path="$"):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            if key == "prompt_cache_breakpoint":
+                yield child_path, child
+            yield from marker_locations(child, child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from marker_locations(child, f"{path}[{index}]")
+
+
+def supported_content_blocks(payload, surface):
+    root = "messages" if surface == "chat" else "input"
+    items = payload.get(root)
+    if not isinstance(items, list):
+        return
+    for item_index, item in enumerate(items):
+        if not isinstance(item, dict) or not isinstance(item.get("content"), list):
+            continue
+        for content_index, block in enumerate(item["content"]):
+            if isinstance(block, dict):
+                path = f"$.{root}[{item_index}].content[{content_index}]"
+                yield path, block
+
+
+def cache_issue(message, path, fix, severity="high"):
+    return finding(
+        "AP-11",
+        severity,
+        "explicit-cache-policy",
+        message,
+        path,
+        fix,
+        "re-run the linter and then verify cache read/write telemetry",
+    )
+
+
+def lint_gpt56_cache_policy(payload):
+    surface = api_surface(payload)
+    policy = {
+        "model_support": "gpt-5.6" if direct_gpt56(payload) else "unknown",
+        "api_surface": surface,
+        "mode": None,
+        "ttl": None,
+        "explicit_breakpoints": 0,
+        "validated": False,
+        "valid": None,
+    }
+    if not direct_gpt56(payload):
+        return policy, []
+
+    policy["validated"] = True
+    findings = []
+    if surface == "ambiguous":
+        findings.append(
+            cache_issue(
+                "GPT-5.6 request must contain exactly one of messages or input",
+                "$",
+                "use one supported OpenAI API prompt surface",
+            )
+        )
+
+    options = payload.get("prompt_cache_options", {})
+    if not isinstance(options, dict):
+        findings.append(
+            cache_issue(
+                "prompt_cache_options must be an object",
+                "prompt_cache_options",
+                "send an object with optional mode and ttl fields",
+            )
+        )
+    else:
+        mode = options.get("mode", "implicit")
+        ttl = options.get("ttl", "30m")
+        policy["mode"] = mode
+        policy["ttl"] = ttl
+        if mode not in ("implicit", "explicit"):
+            findings.append(
+                cache_issue(
+                    "prompt_cache_options.mode must be implicit or explicit",
+                    "prompt_cache_options.mode",
+                    "set mode to implicit or explicit",
+                )
+            )
+        if ttl != "30m":
+            findings.append(
+                cache_issue(
+                    "prompt_cache_options.ttl must be 30m",
+                    "prompt_cache_options.ttl",
+                    "set ttl to 30m for this GPT-5.6 contract snapshot",
+                )
+            )
+
+    if "prompt_cache_retention" in payload:
+        findings.append(
+            cache_issue(
+                "prompt_cache_retention is deprecated for GPT-5.6",
+                "prompt_cache_retention",
+                "use prompt_cache_options instead",
+                severity="medium",
+            )
+        )
+
+    markers = list(marker_locations(payload))
+    block_by_marker_path = {}
+    if surface in SUPPORTED_CACHE_BLOCKS:
+        for block_path, block in supported_content_blocks(payload, surface):
+            if "prompt_cache_breakpoint" in block:
+                block_by_marker_path[f"{block_path}.prompt_cache_breakpoint"] = block
+
+    valid_markers = 0
+    for path, value in markers:
+        block = block_by_marker_path.get(path)
+        if block is None:
+            findings.append(
+                cache_issue(
+                    "prompt_cache_breakpoint must be on a supported content block",
+                    path,
+                    "move the marker onto a Chat or Responses content block",
+                )
+            )
+            continue
+        if block.get("type") not in SUPPORTED_CACHE_BLOCKS[surface]:
+            findings.append(
+                cache_issue(
+                    "prompt_cache_breakpoint uses an unsupported content block type",
+                    path,
+                    "attach the marker to a supported prompt input block",
+                )
+            )
+            continue
+        if value != {"mode": "explicit"}:
+            findings.append(
+                cache_issue(
+                    'prompt_cache_breakpoint must be exactly {"mode":"explicit"}',
+                    path,
+                    "use the documented explicit marker value",
+                )
+            )
+            continue
+        valid_markers += 1
+
+    if policy["mode"] == "explicit" and not markers:
+        findings.append(
+            cache_issue(
+                "explicit mode has no valid prompt_cache_breakpoint, so cache writes are disabled",
+                "prompt_cache_options.mode",
+                "add a breakpoint or use implicit mode when automatic writes are intended",
+                severity="medium",
+            )
+        )
+
+    policy["explicit_breakpoints"] = valid_markers
+    policy["valid"] = not findings
+    return policy, findings
+
+
 def lint(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("request payload must be a JSON object")
+    cache_policy, cache_findings = lint_gpt56_cache_policy(payload)
     findings = [
         item
         for item in (
@@ -183,15 +362,19 @@ def lint(payload):
         )
         if item
     ]
+    findings.extend(cache_findings)
     clean_checks = []
     found_rule_ids = {item["rule_id"] for item in findings}
     for rule_id in ("AP-1", "AP-2"):
         if rule_id not in found_rule_ids:
             clean_checks.append(rule_id)
+    if cache_policy["validated"] and cache_policy["valid"]:
+        clean_checks.append("AP-11")
     return {
         "status": "findings" if findings else "ok",
         "findings": findings,
         "clean_checks": clean_checks,
+        "cache_policy": cache_policy,
     }
 
 
@@ -201,7 +384,14 @@ def main(argv=None):
     )
     parser.add_argument("path", help="JSON request payload")
     args = parser.parse_args(argv)
-    payload = json.loads(Path(args.path).read_text())
+    try:
+        payload = json.loads(Path(args.path).read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        print(f"invalid request JSON: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(payload, dict):
+        print("invalid request JSON: root must be an object", file=sys.stderr)
+        return 2
     result = lint(payload)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 1 if result["findings"] else 0

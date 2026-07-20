@@ -52,6 +52,10 @@
     "should_trigger": true
   },
   {
+    "query": "Audit our GPT-5.6 prompt_cache_options and cache_write_tokens after migration",
+    "should_trigger": true
+  },
+  {
     "query": "Rewrite this short greeting prompt to sound warmer",
     "should_trigger": false
   },
