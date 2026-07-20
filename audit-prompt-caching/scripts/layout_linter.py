@@ -334,6 +334,16 @@ def lint_gpt56_cache_policy(payload):
             continue
         valid_markers += 1
 
+    if policy["mode"] == "explicit" and not markers:
+        findings.append(
+            cache_issue(
+                "explicit mode has no valid prompt_cache_breakpoint, so cache writes are disabled",
+                "prompt_cache_options.mode",
+                "add a breakpoint or use implicit mode when automatic writes are intended",
+                severity="medium",
+            )
+        )
+
     policy["explicit_breakpoints"] = valid_markers
     policy["valid"] = not findings
     return policy, findings

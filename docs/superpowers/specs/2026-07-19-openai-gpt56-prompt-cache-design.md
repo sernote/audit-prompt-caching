@@ -61,6 +61,8 @@ The linter validates:
 - exactly one prompt-bearing API surface: `messages` or `input`;
 - `prompt_cache_options` object, mode, and TTL;
 - explicit marker value and placement on supported content blocks;
+- explicit mode with no marker as a cache-disabled audit finding, not an API
+  syntax claim;
 - marker shape and placement, without confusing write slots with a marker cap;
 - deprecated `prompt_cache_retention`.
 

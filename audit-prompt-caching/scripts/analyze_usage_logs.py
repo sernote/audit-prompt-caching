@@ -118,12 +118,16 @@ def extract_openai(record):
         output_tokens = number(usage.get("output_tokens"))
         details = usage.get("input_tokens_details")
     details = details if isinstance(details, dict) else {}
+    cached_tokens = details.get("cached_tokens", usage.get("cached_tokens"))
+    cache_write_tokens = details.get(
+        "cache_write_tokens", usage.get("cache_write_tokens")
+    )
     return {
         "input_tokens": input_tokens,
-        "cached_tokens": number(details.get("cached_tokens")),
+        "cached_tokens": number(cached_tokens),
         "cache_read_input_tokens": 0,
         "cache_creation_input_tokens": 0,
-        "cache_write_tokens": number(details.get("cache_write_tokens")),
+        "cache_write_tokens": number(cache_write_tokens),
         "output_tokens": output_tokens,
     }
 

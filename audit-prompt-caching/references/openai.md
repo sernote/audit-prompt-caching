@@ -31,7 +31,7 @@ Important current behaviors to verify:
 Direct GPT-5.6 models add paid writes and optional explicit cache boundaries:
 
 - `prompt_cache_options.mode` is `implicit` (the default) or `explicit`; the only currently documented TTL is `"30m"`.
-- An explicit boundary is attached to a supported input content block as `"prompt_cache_breakpoint": {"mode": "explicit"}`. In implicit mode OpenAI also considers the latest message; explicit mode writes only marked prefixes.
+- An explicit boundary is attached to a supported input content block as `"prompt_cache_breakpoint": {"mode": "explicit"}`. In implicit mode OpenAI also considers the latest message; explicit mode writes only marked prefixes. Explicit mode with no marker is cache-disabled rather than an API syntax error, but the linter reports it because it is commonly accidental.
 - OpenAI creates at most four new writes per request. Do not turn that write budget into a hard marker-count or read-lookback limit: earlier markers can remain read candidates, and the published read-limit wording has changed across documentation surfaces.
 - `prompt_cache_retention` is the older automatic-cache contract and is deprecated for GPT-5.6; `ttl: "30m"` is a minimum reuse lifetime, not a maximum retention guarantee.
 - Cache writes are billed separately; at review time the model guide states 1.25x the uncached input rate. Supply current prices to the ROI helper rather than copying that multiplier into code.

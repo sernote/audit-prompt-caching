@@ -346,6 +346,30 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["output_tokens"], 80)
         self.assertEqual(output["total_input_tokens"], 1200)
 
+    def test_analyze_usage_logs_reads_flat_openai_cache_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "input_tokens": 1000,
+                        "cached_tokens": 600,
+                        "cache_write_tokens": 200,
+                        "output_tokens": 50,
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["cache_write_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+
     def test_analyze_usage_logs_marks_wrapper_accounting_ambiguous(self):
         with tempfile.TemporaryDirectory() as tmp:
             log_path = Path(tmp) / "usage.json"
@@ -1043,6 +1067,37 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["cache_policy"]["mode"], "explicit")
         self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 1)
         self.assertIn("AP-11", output["clean_checks"])
+
+    def test_layout_linter_flags_explicit_mode_without_breakpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6-terra",
+                        "messages": [
+                            {"role": "system", "content": "Stable policy"}
+                        ],
+                        "prompt_cache_options": {
+                            "mode": "explicit",
+                            "ttl": "30m",
+                        },
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        finding = next(
+            item
+            for item in output["findings"]
+            if item["rule_id"] == "AP-11"
+        )
+        self.assertEqual(finding["severity"], "medium")
+        self.assertIn("no valid prompt_cache_breakpoint", finding["issue"])
+        self.assertFalse(output["cache_policy"]["valid"])
 
     def test_layout_linter_reports_invalid_gpt56_cache_controls(self):
         with tempfile.TemporaryDirectory() as tmp:
