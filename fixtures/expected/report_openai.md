@@ -6,7 +6,11 @@
 - Engine/API surface: Responses API
 - Records reviewed: 3
 - Cache hit ratio: 0.5962
+- Cache read tokens: 9300
+- Cache write tokens: 0
+- Cache write/read ratio: 0.0
 - Output share: 0.0717
+- Cost impact: unknown (no pricing supplied)
 - Measurement change: unknown
 - Prompt behavior change: unknown
 - Provider/routing change: unknown

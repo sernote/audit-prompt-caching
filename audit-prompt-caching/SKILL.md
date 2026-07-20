@@ -2,7 +2,8 @@
 name: audit-prompt-caching
 description: >
   Use whenever the user mentions LLM prompt/prefix cache misses, cached_tokens=0,
-  cache_read_input_tokens/cache_creation_input_tokens, prompt_cache_key,
+  cache_read_input_tokens/cache_creation_input_tokens, cache_write_tokens,
+  prompt_cache_key, prompt_cache_options, prompt_cache_breakpoint,
   cache_control/cachePoint, TTFT/prefill latency, KV reuse, LLM cost or speed
   regressed on repeated long prompts, or speeding up agents through cache
   stability. Use for LLM request shape changes: prompt text/order/builders,
@@ -27,7 +28,8 @@ Use this skill for LLM calls where repeated prompt prefixes may affect cost,
 TTFT, prefill latency, or self-hosted KV reuse.
 
 Typical triggers:
-- `cached_tokens=0`, `cache_read_input_tokens=0`, cache writes without reads, or unclear provider usage fields.
+- `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, cache writes without reads, or unclear provider usage fields.
+- GPT-5.6 `prompt_cache_options`, `prompt_cache_breakpoint`, paid-write behavior, or migration from `prompt_cache_retention`.
 - Cache hit rate, TTFT, prefill latency, or input-token cost changed.
 - LLM cost or speed regressed around repeated long prompts, shared static context, long-context agents, or tool-heavy loops.
 - LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter.
@@ -92,7 +94,7 @@ If the gate fails, report why caching is not the right lever yet and recommend m
 
 ## Language Match Rule
 
-Answer in the user's language by default. Preserve provider/API field names exactly, such as `cached_tokens`, `cache_control`, `cachePoint`, `TTFT`, `prompt_cache_key`, and `response_format`, but explain them in the user's language.
+Answer in the user's language by default. Preserve provider/API field names exactly, such as `cached_tokens`, `cache_write_tokens`, `prompt_cache_options`, `prompt_cache_breakpoint`, `cache_control`, `cachePoint`, `TTFT`, `prompt_cache_key`, and `response_format`, but explain them in the user's language.
 
 ## Agent-First Output Contracts
 
@@ -169,12 +171,12 @@ Load only what the detected scenario needs:
 
 Use scripts when deterministic evidence is better than prose:
 
-- `scripts/prefix_stability_check.py`: compare two rendered prompts or JSON request payloads as raw bytes; use `--canonical-json` only when sorted-key normalization is intentional.
-- `scripts/layout_linter.py`: inspect JSON request payload layout for volatile early content, unsorted tools, and dynamic schema fields.
-- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage logs across OpenAI, Anthropic-compatible, Bedrock-style, and OpenAI-compatible cache fields.
-- `scripts/estimate_cache_roi.py`: estimate input-only and total-cost impact from static/dynamic/output tokens, hit rate, request count, and explicit pricing.
+- `scripts/prefix_stability_check.py`: perform a raw whole-input comparison; use `--canonical-json` only when sorted-key normalization is intentional. It does not prove explicit breakpoint reuse.
+- `scripts/layout_linter.py`: inspect layout anti-patterns and validate direct GPT-5.6 `prompt_cache_options` and `prompt_cache_breakpoint` placement. Provider wrappers remain unvalidated.
+- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage, including OpenAI `cache_write_tokens`. Use `--accounting-mode` only to resolve wrapper fields whose inclusive/additive meaning is known externally.
+- `scripts/estimate_cache_roi.py`: estimate read/write cost with caller-supplied prices. For paid writes, pass `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
 - `scripts/extract_llm_calls.py`: scan a repository for provider calls, cache-control fields, routing signals, and self-hosted engine hints.
-- `scripts/render_audit_report.py`: combine usage summaries and findings into Markdown or JSON.
+- `scripts/render_audit_report.py`: combine usage summaries and findings into Markdown or JSON; pass estimator output through `--roi-json` before making a cost-direction claim.
 - `scripts/validate_skill_package.py`: validate frontmatter, referenced files, eval JSON, and Python helper syntax.
 - `scripts/run_trigger_eval.py`: summarize positive and negative trigger-eval coverage.
 
@@ -224,7 +226,8 @@ If detection is ambiguous, ask which provider/engine is in use.
 
 Use these starts after provider detection and Freshness Gate:
 
-- **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, Responses vs Chat usage fields, `prompt_cache_key`, `prompt_cache_retention`, output-token dominance, and wrapper ambiguity.
+- **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, Responses vs Chat usage fields, `prompt_cache_key`, model-specific cache controls, output-token dominance, and wrapper ambiguity.
+- **GPT-5.6 paid writes**: validate `prompt_cache_options` and marked content blocks, separate inclusive `cached_tokens`/`cache_write_tokens` from input totals, and require current pricing before claiming savings. Prefer explicit mode when implicit latest-message writes churn on a volatile suffix.
 - **Claude/Bedrock/OpenRouter writes without reads**: distinguish write/create fields from read/hit fields, then inspect breakpoint placement, dynamic content before breakpoint, TTL/retention, model/region/API support, fallback routing, and actual routed provider/model.
 - **Dynamic tools in long agent loops**: compare `tools_count`, sorted tool-name hash, `prefix_hash`, mode state, and cache fields per step. Prefer stable route-level tool bundles, sorted schemas, provider-supported allowed tools/tool search/deferred loading, or self-hosted masking after checking current docs.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and cache read/write pricing assumptions.
@@ -234,7 +237,7 @@ Use these starts after provider detection and Freshness Gate:
 
 ## Rule Categories
 
-Use `references/rules.json` for the machine-readable AP-1 through AP-10 anti-pattern inventory. Use this priority taxonomy when turning rules into findings:
+Use `references/rules.json` for the machine-readable AP-1 through AP-11 anti-pattern inventory. Use this priority taxonomy when turning rules into findings:
 
 | Priority | Category | Examples |
 |---|---|---|
