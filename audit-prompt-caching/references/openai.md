@@ -1,6 +1,6 @@
 # OpenAI Prefix Cache Reference
 
-Last reviewed: 2026-07-20. Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
+Last reviewed: 2026-08-10. Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
 
 Official sources:
 - Prompt caching: https://developers.openai.com/api/docs/guides/prompt-caching
@@ -14,12 +14,12 @@ Official sources:
 
 ## Mechanics
 
-OpenAI prompt caching is automatic on supported recent models. Cache hits need exact reusable prefixes; put stable instructions, examples, tools, schemas, images, and documents before dynamic user/request data. Caching starts only when the current model/API surface meets the minimum prompt length, commonly 1024 tokens in the docs current at review time.
+OpenAI prompt caching is automatic on supported recent models. Cache hits need exact reusable prefixes; put stable instructions, examples, tools, schemas, images, and documents before dynamic user/request data. Caching starts only when the current model/API surface meets the minimum prompt length, commonly 1024 tokens in the docs current at review time. For GPT-5.6 and later that 1,024-token minimum is documented as strict; on GPT-5.5 and earlier it varies by model between roughly 1,024 and 2,048, so prompts just over 1,024 may cache inconsistently there.
 
 Important current behaviors to verify:
 - The initial prefix hash participates in routing. OpenAI documents first-prefix affinity; this reference keeps the phrase prefix hash for audits.
 - `prompt_cache_key` is a routing-locality hint, not a privacy boundary or prefix-stability fix.
-- Very hot identical prefix/key traffic can overflow locality; current docs discussed an approximate 15 requests per minute envelope.
+- Very hot key traffic can overflow locality; current docs discussed an approximate 15 requests per minute envelope, counted as total traffic across all prefixes for each `prompt_cache_key`. Above it the docs describe traffic for that key being spread across more than one machine, which partitions the cache.
 - `prompt_cache_retention` values include `in_memory` and `"24h"` on supported surfaces.
 - For `gpt-5.5` and `gpt-5.5-pro`, current docs make `"24h"` the default and do not support `in_memory`; GPT-5.6 uses the separate contract below.
 - Cached prompt tokens still count toward TPM rate limits.
@@ -32,7 +32,9 @@ Direct GPT-5.6 models add paid writes and optional explicit cache boundaries:
 
 - `prompt_cache_options.mode` is `implicit` (the default) or `explicit`; the only currently documented TTL is `"30m"`.
 - An explicit boundary is attached to a supported input content block as `"prompt_cache_breakpoint": {"mode": "explicit"}`. In implicit mode OpenAI also considers the latest message; explicit mode writes only marked prefixes. Explicit mode with no marker is cache-disabled rather than an API syntax error, but the linter reports it because it is commonly accidental.
-- OpenAI creates at most four new writes per request. Do not turn that write budget into a hard marker-count or read-lookback limit: earlier markers can remain read candidates, and the published read-limit wording has changed across documentation surfaces.
+- **`prompt_cache_key` is required for improved breakpoint matching.** Current docs: on GPT-5.6 and later model families you *must* set it to get the more reliable matching, for both implicit and explicit caching. The same section says requests without a key may still receive automatic hits, so absence degrades matching rather than disabling the cache. Report it in the provider-correctness category, and set severity from applicability and telemetry: high on a 5.6 route that depends on breakpoint reuse and reports low `cached_tokens`, lower where hits are already healthy. This is a manual audit check — `layout_linter.py` validates only `prompt_cache_options` and breakpoint placement, so it still reports `AP-11` clean when the key is absent. Scope keys to a prompt family or session; a single global constant concentrates all of a route's traffic on one key, and past the approximate 15 requests-per-minute envelope in Mechanics that key's traffic is spread across machines and the cache partitions.
+- **No fallback to the longest matching unmarked prefix.** This is the migration trap. Earlier models fall back; GPT-5.6 does not. The implicit breakpoint sits on the latest user or tool message, so if changing content — timestamps, tool-call history, fresh user input — is inside that breakpoint, the full prefix at the breakpoint differs between requests. `cached_tokens` can be `0` while thousands of identical tokens are shared, and the changing prefix is written to cache repeatedly. When a 5.5-era route reports a hit-rate collapse straight after a 5.6 migration with no prompt change, check this before prefix drift.
+- OpenAI creates at most four new writes per request. Implicit mode spends one slot on the latest-message breakpoint, leaving the latest three explicit breakpoints writable; explicit mode makes all four available. Do not turn that write budget into a hard read-lookback limit: earlier markers remain read candidates, and when several match the service reads from the longest matching prefix. The official read-lookback count is currently in conflict — the prompt-caching guide says the latest 50 breakpoints, while the Responses and Chat Completions create references say the latest 80 and state no content-block lookback limit — so re-check the surface you target instead of hardcoding either number.
 - `prompt_cache_retention` is the older automatic-cache contract and is deprecated for GPT-5.6; `ttl: "30m"` is a minimum reuse lifetime, not a maximum retention guarantee.
 - Cache writes are billed separately; at review time the model guide states 1.25x the uncached input rate. Supply current prices to the ROI helper rather than copying that multiplier into code.
 
