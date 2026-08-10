@@ -24,11 +24,21 @@ restarted agent loop can still start a fresh cache lineage.
 
 SDKs that generate a `prompt_cache_key` for the caller resolve it from a grouping hierarchy and
 only fall back to a per-run value when no grouping handle is supplied. In the OpenAI Agents SDK
-(Python), `agents/run_internal/prompt_cache_key.py` and `run_grouping.py` resolve, in order:
-`conversation_id`, `session.session_id`, `group_id`, then a generated per-run UUID.
+(Python), the resolver in `agents/run_internal/prompt_cache_key.py` and `run_grouping.py` —
+private SDK internals, not a public API, and version-sensitive — resolves, in order:
+`conversation_id`, `session.session_id`, `RunConfig.group_id`, then a generated per-run UUID.
 `PromptCacheKeyResolver` also persists `_generated_prompt_cache_key` on `RunState`, so a resume
-from `RunState` reuses the key, and it opts out entirely when the request already forwards a
-user-supplied key.
+from `RunState` reuses the key.
+
+Two gates decide whether an SDK-generated key exists at all. Neither is affected by
+auto-generated key churn, so check both before diagnosing restarts:
+
+- **Model opt-in.** A key is generated only for models exposing a truthy
+  `_supports_default_prompt_cache_key` (again a private, version-sensitive SDK attribute). A
+  custom or third-party model that does not opt in sends no generated key.
+- **Caller opt-out.** If `ModelSettings.extra_args` or `ModelSettings.extra_body` already carries
+  a `prompt_cache_key`, the resolver forwards that value unchanged and generates nothing. A
+  caller-supplied key is stable by construction.
 
 So the boundary is not "every `Runner.run()` mints a new key". It is a **fresh, ungrouped**
 invocation — a new run carrying no reused `conversation_id`, session, `group_id`, or `RunState`.
@@ -43,8 +53,10 @@ Affected:
 
 Not affected:
 
-- re-invocations that share a `conversation_id`, `session.session_id`, or `group_id`
+- re-invocations that share a `conversation_id`, `session.session_id`, or `RunConfig.group_id`
 - resume from a persisted `RunState`
+- models that do not opt into the SDK's default prompt cache key (no generated key is sent)
+- runs that already pass a caller-supplied `prompt_cache_key` through `ModelSettings`
 
 Grouping and fallback behavior here are SDK-internal, not a provider contract. Verify them against
 the SDK version actually in use before relying on either branch.
@@ -60,26 +72,36 @@ does:
 
 ```text
 if effective prompt_cache_key changes at each loop re-invocation:
-    count(requests with cached_tokens == 0) == count(loop re-invocations) + 1
+    count(requests with cached_tokens == 0) ~= count(loop re-invocations) + 1
 ```
 
-The `+ 1` is the initial write. An exact match across runs of different lengths is then strong
-evidence that key lineage, not prefix drift, is the cause — prefix drift produces zero-cache
-requests that do not line up with restart counts, and it also shows up on runs with zero restarts.
-If the key is stable across restarts and zero-cache requests still track them, look elsewhere
-(prefix drift, retention, routing).
+The `+ 1` is the initial write. This is an observed diagnostic correlation, not an invariant. A
+changed `prompt_cache_key` changes routing locality; it does not guarantee a miss, and a stable
+key does not guarantee a hit. Expect the count to run high wherever another miss source is active:
+cache TTL or retention expiry between requests, eviction under memory pressure, prefix drift from
+tool or system-prompt edits, or hot-key locality overflow spreading traffic across replicas (see
+`openai.md`). Near-equality across runs of different lengths is still strong evidence that key
+lineage, not prefix drift, dominates — prefix drift produces zero-cache requests that do not track
+restart counts, and it also shows up on runs with zero restarts. If the key is stable across
+restarts and zero-cache requests still track them, look elsewhere (prefix drift, retention,
+routing).
 
 Observed on a long-running document-editing agent (~100 model calls per run, ~130k-token context)
 whose restarts did change the effective key: zero-cache requests tracked restarts exactly across
 twenty runs — 29/28, 25/24, 8/7 — and runs with no restarts showed 1 zero-cache request in 100, a
-99% hit rate on the request-count metric used above. Cost tracked the same axis: 24 restarts cost
+99% hit rate on the request-count metric used above. Exact agreement in that dataset is a reported
+observation from one workload, not a rule to expect everywhere. Cost tracked the same axis: 24 restarts cost
 2.8x a 7-restart run on identical work.
 
 ### Checks
 
-- Log the effective `prompt_cache_key` per request, not only per run, and diff it across restarts.
+- Log a keyed hash of the effective `prompt_cache_key` per request, not only per run, and diff the
+  hashes across restarts. The diagnostic needs equality only, so use HMAC-SHA256 under a
+  service-held key — never log the raw value. Generated keys are derived from conversation,
+  session, tenant, or user identifiers, and caller-supplied keys often are too; do not log raw
+  session tokens, IDs, or user-derived key values (see `observability.md`).
 - Log which grouping handle produced it: reused conversation, session, group id, `RunState`, or a
-  per-run fallback.
+  per-run fallback. Log the handle kind, not its raw value.
 - Correlate zero-cache requests with harness events (guardrail recovery, restart, resume), not only
   with prompt or tool changes.
 - Treat a runner re-invocation as a cache boundary only where the effective key is observed to
@@ -87,8 +109,22 @@ twenty runs — 29/28, 25/24, 8/7 — and runs with no restarts showed 1 zero-ca
 
 ### Fix
 
-Reuse the grouping the SDK already offers: carry a stable `conversation_id`, `session`, or
-`group_id` across continuations, recoveries and restarts, or resume from the persisted `RunState`.
+Reuse a grouping handle that spans the logical session — but match it to how the run already
+manages history. Only one of the three handles is history-neutral:
+
+- **`RunConfig.group_id`** is the handle for client-managed `to_input_list()` continuation loops.
+  It is a trace-grouping id that links runs; it changes key resolution without changing where
+  history comes from.
+- **`session`** — reuse only on runs that are already session-managed. Do not add a session on top
+  of a loop that replays `to_input_list()` history; the SDK would prepend stored history to
+  history you already resent.
+- **`conversation_id`** — reuse only on runs that are already server-managed, passing just the new
+  turn. Do not combine it with replaying full `to_input_list()` history.
+- Session persistence cannot be combined with `conversation_id`, `previous_response_id`, or
+  `auto_previous_response_id` in the same run; pick one persistence strategy per call.
+- A resume from a persisted `RunState` already carries the generated key, so it needs no extra
+  handle.
+
 Supply your own key only when no such handle spans the logical session.
 
 Pick granularity deliberately: one key per session of one work item. A single route-wide constant
