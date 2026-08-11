@@ -120,6 +120,16 @@
       "fix": "Use the documented mode, TTL, and supported content-block markers.",
       "avoid": "Applying direct OpenAI rules to provider wrappers.",
       "validation": "Lint the request and verify cache read/write telemetry."
+    },
+    {
+      "id": "AP-12",
+      "category": "continuity-state",
+      "default_severity": "medium",
+      "summary": "Conversation or reasoning continuity is discarded.",
+      "search": "previous_interaction_id, previous_response_id, session_id, clear_thinking.",
+      "fix": "Preserve the documented opaque handle within one intended conversation.",
+      "avoid": "Reusing raw IDs across tenants or logging them in plaintext.",
+      "validation": "Compare keyed handle hash, cache fields, and TTFT across continuation steps."
     }
   ]
 }

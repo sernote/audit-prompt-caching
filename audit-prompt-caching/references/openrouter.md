@@ -1,6 +1,6 @@
 # OpenRouter Prompt Cache Reference
 
-Last reviewed: 2026-04-30. Verify official docs before exact claims about model/provider support, cache read/write pricing, sticky routing, `provider.order`, `provider.only`, `provider.ignore`, fallback, `openrouter/auto`, `cache_control`, usage fields, ZDR, or context compression.
+Last reviewed: 2026-08-11. Verify official docs before exact claims about model/provider support, cache read/write pricing, sticky routing, `provider.order`, `provider.only`, `provider.ignore`, fallback, `openrouter/auto`, `cache_control`, usage fields, ZDR, or context compression.
 
 Official sources:
 - Prompt caching: https://openrouter.ai/docs/guides/best-practices/prompt-caching
@@ -18,6 +18,8 @@ rg -n "openrouter|OPENROUTER_API_KEY|openrouter.ai/api/v1|@openrouter/sdk|OpenRo
 ```
 
 OpenRouter can expose `usage.prompt_tokens_details.cached_tokens` and `cache_write_tokens` when available. `cache_write_tokens > 0` with repeated `cached_tokens == 0` means writes are not turning into reads; missing fields are not automatically failures.
+
+Use `session_id` or the `x-session-id` header for sticky provider routing. If neither is supplied, OpenRouter can fall back to a provider-compatible `prompt_cache_key`. Sticky affinity expires after inactivity (currently documented as five minutes); it improves locality but does not itself prove a provider cache hit. Do not use `provider.order` when relying on automatic sticky routing: the documented behavior disables that automatic selection path. Log only a keyed hash of any session/group key.
 
 ## Audit Checklist
 

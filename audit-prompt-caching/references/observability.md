@@ -10,12 +10,15 @@ Use for dashboards, alerts, traces, release guardrails, and CI smoke tests.
 - Dimensions: route, prompt family, prompt version, model, provider, region, replica, SDK version, deploy SHA.
 - Hashes: `prefix_hash`, `first_256_token_hash`, tool-name hash, schema hash, stable document hash.
 - Router/KV: actual routed provider/model/replica, KV pressure, eviction, prefix hit/query metrics.
+- Continuity: keyed hash and kind of cache/session/conversation handle (for example `prompt_cache_key`, `session_id`, `previous_interaction_id`, or `previous_response_id`), never the raw value.
 
 Do not log raw prompts. Use keyed hashes for tenant/user-derived or low-entropy prompt content.
 
 ## Dashboard
 
 Show cache read ratio, write/read ratio, cached-token share, output-token share, TTFT/prefill by route, final latency, route/provider/replica split, prompt/schema/tool hash changes, deploy correlation, and top prefix families by cost.
+
+Normalize provider accounting before charting: OpenAI/Gemini cached-token fields are commonly inclusive in prompt input, while Bedrock cache read/write fields are additive. A dashboard that sums all fields indiscriminately will fabricate an apparent usage regression.
 
 ## Alerts And CI
 

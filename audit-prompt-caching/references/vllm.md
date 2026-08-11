@@ -1,6 +1,6 @@
 # vLLM Prefix Cache Reference
 
-Last reviewed: 2026-05-25. Verify official docs before exact claims about defaults, CLI flags, metrics names, block size, hash behavior, chunked prefill, `cache_salt`, multimodal hashes, eviction, or production routing.
+Last reviewed: 2026-08-11. Verify official docs before exact claims about defaults, CLI flags, metrics names, block size, hash behavior, chunked prefill, `cache_salt`, multimodal hashes, eviction, or production routing.
 
 Official sources:
 - Automatic Prefix Caching design: https://docs.vllm.ai/en/stable/design/v1/prefix_caching.html
@@ -8,6 +8,7 @@ Official sources:
 - Engine args: https://docs.vllm.ai/en/stable/configuration/engine_args.html
 - vLLM bench serve: https://docs.vllm.ai/en/stable/cli/bench/serve/
 - Metrics: https://docs.vllm.ai/en/stable/usage/metrics/
+- Releases: https://github.com/vllm-project/vllm/releases
 
 ## Mechanics
 
@@ -22,6 +23,10 @@ vLLM Automatic Prefix Caching reuses KV blocks for identical token prefixes. Vis
 - Keep media representation stable for multimodal prefixes.
 - Treat per-request `cache_salt` as intentional isolation that fragments reuse; choose the coarsest safe trust boundary.
 - Do not force APC on unique prompts without measuring prefix hit metrics.
+- Newer vLLM deployments can emit KV-cache events and use KV transfer/offload
+  connectors. Inspect `--enable-kv-cache-events`, `kv_transfer_config`, and
+  `kv_connector` before attributing a TTFT regression only to prompt drift:
+  transfer, offload, or event loss can explain a cold-looking request.
 
 ## Benchmark Validation
 
@@ -34,3 +39,7 @@ Pair benchmark output with metrics: `vllm:prefix_cache_hits`, `vllm:prefix_cache
 ## Monitoring
 
 Track prefix hit/query ratio, available KV blocks, eviction indicators, TTFT/prefill by route, request length percentiles, prefix family cardinality, `max_model_len`, GPU memory utilization, replica count, router policy, tokenizer/model version, `cache_salt` cardinality, and multimodal representation.
+
+When KV events are enabled, also track event delivery/drop rate, connector type,
+and transfer/offload latency separately from prefix-hit ratio. Event streams are
+observability, not proof that the destination worker reused a KV block.

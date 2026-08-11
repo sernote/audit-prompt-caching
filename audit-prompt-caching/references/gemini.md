@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-08-11.
 
 Verify before exact claims:
 - supported models for implicit and explicit caching
@@ -27,6 +27,8 @@ Gemini has two relevant caching modes:
 - **Explicit context caching**: create and reuse a cache object with a TTL and a more predictable cost-saving surface.
 
 Use explicit caching when the application repeatedly uses a large stable context and needs deterministic cache reuse. Use implicit caching as an optimization, not a guarantee. Cached content is still part of the effective prompt prefix; put large shared content early.
+
+The Gemini **Interactions API** currently exposes implicit caching only. Continue an interaction with `previous_interaction_id` when that API is used; it is a conversation-continuity handle, not an explicit cache object ID. Its response usage reports `total_cached_tokens` alongside prompt/output counts.
 
 ## Provider Checks
 
@@ -54,7 +56,7 @@ If the same document/context is sent repeatedly, prefer explicit context caching
 
 ## Diagnostics
 
-Usage field names vary by SDK/API surface. Check current docs.
+Usage field names vary by SDK/API surface. Check current docs. For Interactions, interpret `total_cached_tokens` as a subset of the prompt-token total (inclusive accounting), not as an additive input total.
 
 Typical checks:
 
@@ -65,6 +67,8 @@ prompt = getattr(usage, "prompt_token_count", None)
 ```
 
 SDK naming can differ. Also check camelCase forms such as `cachedContentTokenCount` if the SDK returns dict-like metadata.
+
+For Interactions, also inspect `total_cached_tokens` / `totalCachedTokens` and `previous_interaction_id` rather than looking only for explicit-cache fields.
 
 For OpenAI-compatible routes, check whether `usage.prompt_tokens_details.cached_tokens` is exposed.
 

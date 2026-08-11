@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-08-11.
 
 Verify before exact claims:
 - current model aliases and context limits
@@ -25,6 +25,8 @@ DeepSeek API exposes automatic context caching. No request-body opt-in is needed
 The official docs describe disk-backed context caching, prefix matching, cache hit/miss usage fields, and best-effort behavior. Do not describe cache hits as guaranteed.
 
 As of the last review, the docs say the cache uses 64 tokens as a storage unit and content below that unit is not cached. Verify before repeating this number.
+
+DeepSeek documents prefix-oriented cache persistence. In its SWA scenario, the first two closely related document requests can be misses while the third reuses an established prefix unit. Do not classify a two-request sample as a permanent miss: run a sequential warm-up/control experiment and compare cache telemetry across at least three ordered requests.
 
 ## Provider Checks
 

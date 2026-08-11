@@ -10,24 +10,39 @@ from pathlib import Path
 
 
 FIELD_ALIASES = {
-    "input_tokens": ("input_tokens", "prompt_tokens", "InputTokens", "inputTokenCount"),
-    "cached_tokens": ("cached_tokens", "prompt_cache_hit_tokens"),
+    "input_tokens": (
+        "input_tokens",
+        "prompt_tokens",
+        "InputTokens",
+        "inputTokens",
+        "inputTokenCount",
+        "prompt_token_count",
+    ),
+    "cached_tokens": (
+        "cached_tokens",
+        "prompt_cache_hit_tokens",
+        "total_cached_tokens",
+    ),
     "cache_read_input_tokens": (
         "cache_read_input_tokens",
         "cache_read_tokens",
         "CacheReadInputTokens",
+        "cacheReadInputTokens",
     ),
     "cache_creation_input_tokens": (
         "cache_creation_input_tokens",
         "cache_write_input_tokens",
         "CacheWriteInputTokens",
+        "cacheWriteInputTokens",
     ),
     "cache_write_tokens": ("cache_write_tokens",),
     "output_tokens": (
         "output_tokens",
         "completion_tokens",
         "OutputTokens",
+        "outputTokens",
         "outputTokenCount",
+        "candidates_token_count",
     ),
 }
 
@@ -80,6 +95,8 @@ def infer_shape(record):
         return "anthropic"
     if provider == "bedrock":
         return "bedrock"
+    if provider == "gemini":
+        return "gemini"
     if provider:
         return "unknown"
 
@@ -87,9 +104,18 @@ def infer_shape(record):
     metrics = record.get("metrics") if isinstance(record, dict) else None
     if isinstance(metrics, dict) and any(
         name in metrics
-        for name in ("InputTokens", "CacheReadInputTokens", "CacheWriteInputTokens")
+        for name in (
+            "InputTokens",
+            "CacheReadInputTokens",
+            "CacheWriteInputTokens",
+            "inputTokens",
+            "cacheReadInputTokens",
+            "cacheWriteInputTokens",
+        )
     ):
         return "bedrock"
+    if "total_cached_tokens" in usage or "totalCachedTokens" in usage:
+        return "gemini"
     if "input_tokens_details" in usage or "prompt_tokens_details" in usage:
         return "openai"
     if "cache_read_input_tokens" in usage or "cache_creation_input_tokens" in usage:
@@ -148,14 +174,36 @@ def extract_anthropic(record):
 
 def extract_bedrock(record):
     metrics = record.get("metrics") if isinstance(record, dict) else None
-    metrics = metrics if isinstance(metrics, dict) else record
+    metrics = metrics if isinstance(metrics, dict) else usage_object(record)
     return {
-        "input_tokens": number(metrics.get("InputTokens")),
+        "input_tokens": number(metrics.get("InputTokens", metrics.get("inputTokens"))),
         "cached_tokens": 0,
-        "cache_read_input_tokens": number(metrics.get("CacheReadInputTokens")),
-        "cache_creation_input_tokens": number(metrics.get("CacheWriteInputTokens")),
+        "cache_read_input_tokens": number(
+            metrics.get("CacheReadInputTokens", metrics.get("cacheReadInputTokens"))
+        ),
+        "cache_creation_input_tokens": number(
+            metrics.get("CacheWriteInputTokens", metrics.get("cacheWriteInputTokens"))
+        ),
         "cache_write_tokens": 0,
-        "output_tokens": number(metrics.get("OutputTokens")),
+        "output_tokens": number(metrics.get("OutputTokens", metrics.get("outputTokens"))),
+    }
+
+
+def extract_gemini(record):
+    usage = usage_object(record)
+    return {
+        "input_tokens": number(
+            usage.get("prompt_token_count", usage.get("promptTokenCount"))
+        ),
+        "cached_tokens": number(
+            usage.get("total_cached_tokens", usage.get("totalCachedTokens"))
+        ),
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "output_tokens": number(
+            usage.get("candidates_token_count", usage.get("candidatesTokenCount"))
+        ),
     }
 
 
@@ -177,6 +225,9 @@ def normalize_record(record, accounting_mode=None, index=None):
     elif shape == "bedrock":
         row = extract_bedrock(record)
         semantics = "additive"
+    elif shape == "gemini":
+        row = extract_gemini(record)
+        semantics = "inclusive"
     else:
         row = extract_unknown(record)
         semantics = accounting_mode or "ambiguous"

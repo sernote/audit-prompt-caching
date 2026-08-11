@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-08-11.
 
 Verify before exact claims:
 - RadixAttention and radix-cache behavior in the deployed SGLang version
@@ -17,6 +17,7 @@ Official sources:
 - SGLang router/model gateway: https://docs.sglang.io/advanced_features/router.html
 - SGLang model gateway/router: https://docs.sglang.io/advanced_features/sgl_model_gateway.html
 - HiCache design: https://docs.sglang.ai/advanced_features/hicache_design.html
+- Releases: https://github.com/sgl-project/sglang/releases
 
 ## Stable Mechanics
 
@@ -57,6 +58,11 @@ Pin model/tokenizer versions and chat templates. Smoke-test token IDs for repres
 
 If the workload has long contexts or sparse repeats, check whether HiCache or cache tiers are used and whether cache eviction/capacity metrics support the traffic shape. Do not assume GPU-only cache can hold every useful prefix.
 
+For current HiCache deployments, identify the configured tier/backend and
+whether L1/L2/L3 movement is enabled. For prefill/decode (PD) disaggregation,
+verify cache transfer and decode-side reuse independently: a successful prefill
+cache hit does not prove the decode worker has the needed KV state.
+
 ### Cache Disabled Or Flushed
 
 Search for flags or endpoints that disable/flush radix cache. Use them for determinism/debugging only with awareness that they remove cache benefits.
@@ -84,6 +90,7 @@ Correlate cache drops with:
 - router strategy or threshold changes
 - replica count or service discovery changes
 - HiCache/cache tier changes
+- PD disaggregation, cache-transfer, or decode-side cache changes
 - mode switching or dynamic tool selection
 
 For CI, render representative prompts through the same chat template the SGLang server uses and fail when stable prefix token IDs change unexpectedly.

@@ -1,14 +1,18 @@
 # Amazon Bedrock Prompt Cache Reference
 
-Verify official Bedrock and model-provider docs before exact claims about Converse vs InvokeModel syntax, supported models, token minimums, checkpoint limits, TTL, cross-region inference, pricing, or usage fields.
+Last reviewed: 2026-08-11. Verify official Bedrock and model-provider docs before exact claims about Converse vs InvokeModel syntax, supported models, token minimums, checkpoint limits, TTL, cross-region inference, pricing, or usage fields.
+
+Official source: https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html
 
 ## Mechanics
 
-Bedrock prompt caching uses provider/model-specific cache points such as `cachePoint`. Usage often appears as `CacheReadInputTokens`, `CacheWriteInputTokens`, and `CacheDetails` in service metrics or response metadata. Treat Bedrock as its own provider surface even when the underlying model family resembles Anthropic or another API.
+Bedrock prompt caching uses provider/model-specific cache points such as `cachePoint`. The native Converse response uses lower-camel usage fields: `inputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens`, and `outputTokens`. Some service metrics/wrappers expose PascalCase equivalents. Treat cache reads and writes as **additive** to `inputTokens` for total-input/cost accounting.
+
+Model contracts differ: Anthropic uses cache-point blocks, Nova has its own cache-point/TTL rules, and OpenAI GPT-5.6 caching is exposed through the Bedrock `bedrock-mantle` route. Identify the model family before prescribing request syntax.
 
 ## Audit Checklist
 
-- Detect `bedrock-runtime`, `ConverseCommand`, `InvokeModelCommand`, `boto3.client("bedrock-runtime")`, `cachePoint`, `CacheReadInputTokens`, and `CacheWriteInputTokens`.
+- Detect `bedrock-runtime`, `ConverseCommand`, `InvokeModelCommand`, `boto3.client("bedrock-runtime")`, `cachePoint`, and both lower-camel/PascalCase cache usage fields.
 - Inspect `system`, `messages`, tools, and document blocks before the cache point. Dynamic user-specific intro before `cachePoint` can force writes without reads.
 - Confirm model-family support, token minimum, checkpoint count, and valid cache-point locations.
 - Check cross-region inference and routed region/model; region changes can break locality or support.
