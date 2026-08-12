@@ -216,36 +216,59 @@ def build_report(args):
     }
 
 
+def denominator_caveat(usage):
+    status = usage.get("denominator_status")
+    if status not in NON_DECISION_GRADE_DENOMINATORS:
+        return None
+    return (
+        f"Usage denominator status is {status}, so the observed cache hit ratio "
+        "is non-decision-grade and must not support a savings claim. "
+        "Fix usage accounting before estimating impact."
+    )
+
+
+def rendered_cache_hit_ratio(usage):
+    ratio = usage.get("cache_hit_ratio", 0)
+    status = usage.get("denominator_status")
+    if status in NON_DECISION_GRADE_DENOMINATORS:
+        return f"{ratio} (non-decision-grade; denominator {status})"
+    return str(ratio)
+
+
 def expected_impact(usage, roi=None):
+    clauses = []
     if roi is not None:
         if roi["total_savings"] > 0:
-            return (
+            clauses.append(
                 f"The supplied pricing scenario estimates ${roi['total_savings']:.6f} "
                 "in savings. Validate it against provider billing."
             )
-        if roi["total_savings"] < 0:
-            return (
+        elif roi["total_savings"] < 0:
+            clauses.append(
                 f"The supplied pricing scenario estimates ${abs(roi['total_savings']):.6f} "
                 "in increased cost. Reduce cache writes or confirm the workload still benefits."
             )
-        return "The supplied pricing scenario is cost-neutral. Validate provider billing."
-    denominator_status = usage.get("denominator_status")
-    if denominator_status in NON_DECISION_GRADE_DENOMINATORS:
-        return (
-            f"Usage denominator status is {denominator_status}, so the observed cache "
-            "hit ratio is non-decision-grade and must not support a savings claim. "
-            "Fix usage accounting before estimating impact."
-        )
-    hit_ratio = usage.get("cache_hit_ratio", 0)
-    if hit_ratio:
-        return (
-            f"Observed cache benefit on {hit_ratio:.4f} of input tokens. "
-            "Validate TTFT and total cost separately before claiming savings."
-        )
-    return (
-        "No cache benefit tokens observed. Validate prefix stability, provider "
-        "support, routing, and cache read/write telemetry."
-    )
+        else:
+            clauses.append(
+                "The supplied pricing scenario is cost-neutral. Validate provider billing."
+            )
+
+    caveat = denominator_caveat(usage)
+    if caveat:
+        clauses.append(caveat)
+    elif roi is None:
+        hit_ratio = usage.get("cache_hit_ratio", 0)
+        if hit_ratio:
+            clauses.append(
+                f"Observed cache benefit on {hit_ratio:.4f} of input tokens. "
+                "Validate TTFT and total cost separately before claiming savings."
+            )
+        else:
+            clauses.append(
+                "No cache benefit tokens observed. Validate prefix stability, provider "
+                "support, routing, and cache read/write telemetry."
+            )
+    return " ".join(clauses)
 
 
 def render_markdown(report):
@@ -258,7 +281,7 @@ def render_markdown(report):
         f"- Provider/engine: {report['provider']}",
         f"- Engine/API surface: {report['engine']}",
         f"- Records reviewed: {usage['records']}",
-        f"- Cache hit ratio: {usage['cache_hit_ratio']}",
+        f"- Cache hit ratio: {rendered_cache_hit_ratio(usage)}",
         f"- Cache read tokens: {usage['cache_benefit_tokens']}",
         f"- Cache write tokens: {usage['cache_write_total_tokens']}",
         f"- Cache write/read ratio: {usage['cache_write_read_ratio']}",

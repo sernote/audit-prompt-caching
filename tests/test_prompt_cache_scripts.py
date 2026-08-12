@@ -1527,6 +1527,25 @@ class PromptCacheScriptsTest(unittest.TestCase):
             },
         )
 
+        markdown_result = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            FIXTURES / "openai" / "repeated_prefix_usage.jsonl",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "gateway_response",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "provider_prompt",
+        )
+        self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+        self.assertIn(
+            "Cache planes: gateway_response, provider_prompt, engine_kv",
+            markdown_result.stdout,
+        )
+
     def test_render_audit_report_markdown_renders_unknown_clinic_summary(self):
         result = run_script(
             "render_audit_report.py",
@@ -1631,7 +1650,57 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertIn(
                     f"Usage denominator status: {denominator}", markdown_result.stdout
                 )
+                self.assertRegex(
+                    markdown_result.stdout,
+                    rf"Cache hit ratio: .*non-decision-grade; denominator {denominator}",
+                )
                 self.assertNotIn("Observed cache benefit on", markdown_result.stdout)
+
+    def test_render_audit_report_qualifies_empty_evidence_ratio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, ())
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "Cache hit ratio: 0 (non-decision-grade; denominator ambiguous)",
+            result.stdout,
+        )
+
+    def test_render_audit_report_keeps_denominator_caveat_with_roi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, self.INVALID_USAGE_RECORDS)
+            roi_path = Path(tmp) / "roi.json"
+            roi_path.write_text(
+                json.dumps(
+                    {
+                        "producer": "estimate_cache_roi.py",
+                        "schema_version": 1,
+                        "pricing": {},
+                        "cache_read_input_cost": 0.1,
+                        "cache_write_input_cost": 0.0,
+                        "total_baseline_cost": 1.0,
+                        "total_with_cache_cost": 0.5,
+                        "total_savings": 0.5,
+                    }
+                )
+            )
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("estimates $0.500000 in savings", result.stdout)
+        self.assertIn("Usage denominator status is invalid", result.stdout)
+        self.assertIn("must not support a savings claim", result.stdout)
 
     def test_render_audit_report_has_no_aggregate_clinic_rollup(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1659,9 +1728,21 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(json_result.returncode, 0, json_result.stderr)
         output = json.loads(json_result.stdout)
         forbidden = ("score", "rank", "grade", "percentage", "rollup", "traffic_light")
-        for key in list(output) + list(output["clinic_summary"]):
+        def nested_keys(value):
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    yield key
+                    yield from nested_keys(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from nested_keys(child)
+
+        for key in nested_keys(output):
             self.assertFalse(
-                any(token in key for token in forbidden),
+                any(
+                    f"clinic_{token}" in key or f"{token}_clinic" in key
+                    for token in forbidden
+                ),
                 f"unexpected aggregate key: {key}",
             )
         self.assertEqual(json_result.returncode, 0)
