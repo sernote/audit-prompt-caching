@@ -1458,6 +1458,219 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("producer", result.stderr)
 
+    @staticmethod
+    def write_usage_log(directory, records):
+        path = Path(directory) / "usage.jsonl"
+        path.write_text("\n".join(json.dumps(record) for record in records))
+        return path
+
+    AMBIGUOUS_USAGE_RECORDS = (
+        {
+            "provider": "openai",
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": {"cached_tokens": 600},
+                "output_tokens": 50,
+            },
+        },
+        {"provider": "openai", "model": "gpt-5.4", "route": "responses-api"},
+    )
+    INVALID_USAGE_RECORDS = (
+        {
+            "provider": "gemini",
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "cachedContentTokenCount": 900,
+                "candidatesTokenCount": 10,
+            },
+        },
+    )
+
+    def test_render_audit_report_canonicalizes_cache_planes_and_clinic_statuses(self):
+        result = run_script(
+            "render_audit_report.py",
+            "--json",
+            "--usage-log",
+            FIXTURES / "openai" / "repeated_prefix_usage.jsonl",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "gateway_response",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "provider_prompt",
+            "--applicability",
+            "pass",
+            "--prefix-stability",
+            "warning",
+            "--isolation",
+            "not_applicable",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(
+            output["cache_planes"],
+            ["gateway_response", "provider_prompt", "engine_kv"],
+        )
+        self.assertEqual(
+            output["clinic_summary"],
+            {
+                "applicability": "pass",
+                "evidence_quality": "unknown",
+                "prefix_stability": "warning",
+                "usage_accounting": "unknown",
+                "routing_locality": "unknown",
+                "economics": "unknown",
+                "isolation": "not_applicable",
+            },
+        )
+
+    def test_render_audit_report_markdown_renders_unknown_clinic_summary(self):
+        result = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            FIXTURES / "openai" / "repeated_prefix_usage.jsonl",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("## Cache Clinic Summary", result.stdout)
+        self.assertLess(
+            result.stdout.index("## Cache Clinic Summary"),
+            result.stdout.index("## Findings"),
+        )
+        self.assertIn("Cache planes: unknown", result.stdout)
+        for label in (
+            "Applicability",
+            "Evidence quality",
+            "Prefix stability",
+            "Usage accounting",
+            "Routing locality",
+            "Economics",
+            "Isolation",
+        ):
+            self.assertIn(f"- {label}: unknown", result.stdout)
+
+    def test_render_audit_report_rejects_invalid_clinic_choices(self):
+        usage_log = FIXTURES / "openai" / "repeated_prefix_usage.jsonl"
+
+        bad_status = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            usage_log,
+            "--economics",
+            "excellent",
+        )
+        bad_plane = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            usage_log,
+            "--cache-plane",
+            "cdn_cache",
+        )
+
+        self.assertEqual(bad_status.returncode, 2)
+        self.assertIn("--economics", bad_status.stderr)
+        self.assertIn("invalid choice", bad_status.stderr)
+        self.assertEqual(bad_plane.returncode, 2)
+        self.assertIn("--cache-plane", bad_plane.stderr)
+        self.assertIn("invalid choice", bad_plane.stderr)
+
+    def test_render_audit_report_rejects_pass_usage_accounting_on_bad_denominator(self):
+        for records in (self.AMBIGUOUS_USAGE_RECORDS, self.INVALID_USAGE_RECORDS):
+            with self.subTest(records=records):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(tmp, records)
+                    result = run_script(
+                        "render_audit_report.py",
+                        "--usage-log",
+                        usage_path,
+                        "--usage-accounting",
+                        "pass",
+                    )
+
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn("usage_accounting", result.stderr)
+
+    def test_render_audit_report_derives_usage_accounting_from_denominator(self):
+        cases = (
+            (self.AMBIGUOUS_USAGE_RECORDS, "ambiguous", "warning"),
+            (self.INVALID_USAGE_RECORDS, "invalid", "fail"),
+        )
+        for records, denominator, expected_status in cases:
+            with self.subTest(denominator=denominator):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(tmp, records)
+                    json_result = run_script(
+                        "render_audit_report.py",
+                        "--json",
+                        "--usage-log",
+                        usage_path,
+                    )
+                    markdown_result = run_script(
+                        "render_audit_report.py",
+                        "--usage-log",
+                        usage_path,
+                    )
+
+                self.assertEqual(json_result.returncode, 0, json_result.stderr)
+                output = json.loads(json_result.stdout)
+                self.assertEqual(output["usage"]["denominator_status"], denominator)
+                self.assertEqual(
+                    output["clinic_summary"]["usage_accounting"], expected_status
+                )
+                self.assertNotIn("Observed cache benefit on", output["expected_impact"])
+                self.assertIn(denominator, output["expected_impact"])
+                self.assertIn("must not support a savings claim", output["expected_impact"])
+
+                self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+                self.assertIn(
+                    f"- Usage accounting: {expected_status}", markdown_result.stdout
+                )
+                self.assertIn(
+                    f"Usage denominator status: {denominator}", markdown_result.stdout
+                )
+                self.assertNotIn("Observed cache benefit on", markdown_result.stdout)
+
+    def test_render_audit_report_has_no_aggregate_clinic_rollup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, self.INVALID_USAGE_RECORDS)
+            json_result = run_script(
+                "render_audit_report.py",
+                "--json",
+                "--usage-log",
+                usage_path,
+                "--cache-plane",
+                "engine_kv",
+                "--applicability",
+                "pass",
+            )
+            markdown_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--cache-plane",
+                "engine_kv",
+                "--applicability",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        forbidden = ("score", "rank", "grade", "percentage", "rollup", "traffic_light")
+        for key in list(output) + list(output["clinic_summary"]):
+            self.assertFalse(
+                any(token in key for token in forbidden),
+                f"unexpected aggregate key: {key}",
+            )
+        self.assertEqual(json_result.returncode, 0)
+
+        self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+        lowered = markdown_result.stdout.lower()
+        for token in ("clinic score", "overall score", "clinic grade", "clinic rank"):
+            self.assertNotIn(token, lowered)
+
     def test_extract_llm_calls_finds_provider_signals(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

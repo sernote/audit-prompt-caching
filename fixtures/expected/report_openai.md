@@ -18,6 +18,18 @@
 - Do first: analyze usage logs and validate prefix stability
 - Do not do yet: make provider/routing changes without telemetry
 
+## Cache Clinic Summary
+
+- Cache planes: unknown
+- Applicability: unknown
+- Evidence quality: unknown
+- Prefix stability: unknown
+- Usage accounting: unknown
+- Routing locality: unknown
+- Economics: unknown
+- Isolation: unknown
+- Usage denominator status: valid
+
 ## Findings
 
 fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase
