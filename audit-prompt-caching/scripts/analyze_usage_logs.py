@@ -46,6 +46,15 @@ FIELD_ALIASES = {
     ),
 }
 
+BEDROCK_USAGE_FIELDS = (
+    "InputTokens",
+    "CacheReadInputTokens",
+    "CacheWriteInputTokens",
+    "inputTokens",
+    "cacheReadInputTokens",
+    "cacheWriteInputTokens",
+)
+
 
 def number(value):
     if value in (None, "") or isinstance(value, bool):
@@ -86,6 +95,17 @@ def usage_object(record):
     return usage if isinstance(usage, dict) else record
 
 
+def has_bedrock_usage_fields(value):
+    return isinstance(value, dict) and any(
+        name in value for name in BEDROCK_USAGE_FIELDS
+    )
+
+
+def bedrock_usage_object(record):
+    metrics = record.get("metrics") if isinstance(record, dict) else None
+    return metrics if has_bedrock_usage_fields(metrics) else usage_object(record)
+
+
 def infer_shape(record):
     provider = record.get("provider") if isinstance(record, dict) else None
     provider = provider.lower() if isinstance(provider, str) else ""
@@ -102,17 +122,7 @@ def infer_shape(record):
 
     usage = usage_object(record)
     metrics = record.get("metrics") if isinstance(record, dict) else None
-    if isinstance(metrics, dict) and any(
-        name in metrics
-        for name in (
-            "InputTokens",
-            "CacheReadInputTokens",
-            "CacheWriteInputTokens",
-            "inputTokens",
-            "cacheReadInputTokens",
-            "cacheWriteInputTokens",
-        )
-    ):
+    if has_bedrock_usage_fields(metrics) or has_bedrock_usage_fields(usage):
         return "bedrock"
     if "total_cached_tokens" in usage or "totalCachedTokens" in usage:
         return "gemini"
@@ -173,8 +183,7 @@ def extract_anthropic(record):
 
 
 def extract_bedrock(record):
-    metrics = record.get("metrics") if isinstance(record, dict) else None
-    metrics = metrics if isinstance(metrics, dict) else usage_object(record)
+    metrics = bedrock_usage_object(record)
     return {
         "input_tokens": number(metrics.get("InputTokens", metrics.get("inputTokens"))),
         "cached_tokens": 0,

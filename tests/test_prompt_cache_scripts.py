@@ -294,6 +294,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 json.dumps(
                     {
                         "provider": "bedrock",
+                        "metrics": {"latencyMs": 42},
                         "usage": {
                             "inputTokens": 1000,
                             "cacheReadInputTokens": 400,
@@ -313,6 +314,33 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["cache_creation_input_tokens"], 200)
         self.assertEqual(output["total_input_tokens"], 1600)
         self.assertEqual(output["accounting_semantics"], "additive")
+
+    def test_analyze_usage_logs_inferrs_unlabeled_bedrock_converse_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "bedrock-converse-raw.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "usage": {
+                            "inputTokens": 1000,
+                            "cacheReadInputTokens": 400,
+                            "cacheWriteInputTokens": 200,
+                            "outputTokens": 100,
+                        }
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cache_read_input_tokens"], 400)
+        self.assertEqual(output["cache_creation_input_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1600)
+        self.assertEqual(output["accounting_semantics"], "additive")
+        self.assertEqual(output["warnings"], [])
 
     def test_analyze_usage_logs_reads_gemini_interactions_cached_tokens(self):
         with tempfile.TemporaryDirectory() as tmp:
