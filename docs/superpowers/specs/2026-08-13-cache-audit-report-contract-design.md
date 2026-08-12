@@ -94,7 +94,7 @@ The existing command-line interfaces are the driving adapters. JSONL and JSON ar
 
 ## Canonical normalized usage event
 
-Every event emitted by `analyze_usage_logs.py --normalized-jsonl` adds the following fields:
+Every event emitted by `analyze_usage_logs.py --jsonl-normalized` adds the following fields:
 
 ```json
 {

@@ -1497,6 +1497,199 @@ class PromptCacheScriptsTest(unittest.TestCase):
             },
         },
     )
+    UNKNOWN_WRAPPER_USAGE_RECORDS = (
+        {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "completion_tokens": 50,
+                }
+            }
+        },
+    )
+    CONTRADICTORY_WRAPPER_USAGE_RECORDS = (
+        {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 100,
+                    "cached_tokens": 900,
+                    "completion_tokens": 10,
+                }
+            }
+        },
+    )
+    VALID_USAGE_RECORDS = (
+        {
+            "provider": "anthropic",
+            "usage": {
+                "input_tokens": 400,
+                "cache_read_input_tokens": 600,
+                "cache_creation_input_tokens": 100,
+                "output_tokens": 50,
+            },
+        },
+    )
+    ROI_JSON = {
+        "producer": "estimate_cache_roi.py",
+        "schema_version": 1,
+        "pricing": {},
+        "cache_read_input_cost": 0.1,
+        "cache_write_input_cost": 0.0,
+        "total_baseline_cost": 1.0,
+        "total_with_cache_cost": 0.5,
+        "total_savings": 0.5,
+    }
+
+    def write_roi_json(self, directory):
+        path = Path(directory) / "roi.json"
+        path.write_text(json.dumps(self.ROI_JSON))
+        return path
+
+    def test_render_audit_report_keeps_unknown_wrapper_ambiguous_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.UNKNOWN_WRAPPER_USAGE_RECORDS
+            )
+            json_result = run_script(
+                "render_audit_report.py", "--json", "--usage-log", usage_path
+            )
+            pass_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--usage-accounting",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        self.assertEqual(output["usage"]["denominator_status"], "ambiguous")
+        self.assertEqual(output["clinic_summary"]["usage_accounting"], "warning")
+        self.assertEqual(pass_result.returncode, 2, pass_result.stdout)
+        self.assertIn("usage_accounting", pass_result.stderr)
+
+    def test_render_audit_report_accepts_operator_supplied_accounting_mode(self):
+        for mode in ("inclusive", "additive"):
+            with self.subTest(mode=mode):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(
+                        tmp, self.UNKNOWN_WRAPPER_USAGE_RECORDS
+                    )
+                    result = run_script(
+                        "render_audit_report.py",
+                        "--json",
+                        "--usage-log",
+                        usage_path,
+                        "--accounting-mode",
+                        mode,
+                        "--usage-accounting",
+                        "pass",
+                    )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output = json.loads(result.stdout)
+                self.assertEqual(output["usage"]["denominator_status"], "valid")
+                self.assertEqual(
+                    output["clinic_summary"]["usage_accounting"], "pass"
+                )
+
+    def test_render_audit_report_rejects_pass_on_inclusive_contradiction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.CONTRADICTORY_WRAPPER_USAGE_RECORDS
+            )
+            json_result = run_script(
+                "render_audit_report.py",
+                "--json",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+            )
+            pass_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+                "--usage-accounting",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        self.assertEqual(output["usage"]["denominator_status"], "invalid")
+        self.assertEqual(output["clinic_summary"]["usage_accounting"], "fail")
+        self.assertEqual(pass_result.returncode, 2, pass_result.stdout)
+        self.assertIn("usage_accounting", pass_result.stderr)
+
+    def test_render_audit_report_rejects_unknown_accounting_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.UNKNOWN_WRAPPER_USAGE_RECORDS
+            )
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "guess",
+            )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--accounting-mode", result.stderr)
+        self.assertIn("invalid choice", result.stderr)
+
+    def test_render_audit_report_qualifies_cost_lines_on_bad_denominator(self):
+        cases = (
+            (self.AMBIGUOUS_USAGE_RECORDS, "ambiguous"),
+            (self.INVALID_USAGE_RECORDS, "invalid"),
+        )
+        for records, denominator in cases:
+            with self.subTest(denominator=denominator):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(tmp, records)
+                    roi_path = self.write_roi_json(tmp)
+                    result = run_script(
+                        "render_audit_report.py",
+                        "--usage-log",
+                        usage_path,
+                        "--roi-json",
+                        roi_path,
+                    )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                qualifier = (
+                    f"(usage ratio non-decision-grade; denominator {denominator})"
+                )
+                self.assertIn(
+                    f"- Cost impact: savings of $0.500000 {qualifier}",
+                    result.stdout,
+                )
+                self.assertIn(
+                    f"- Assessment: savings of $0.500000 {qualifier}",
+                    result.stdout,
+                )
+                self.assertIn("estimates $0.500000 in savings", result.stdout)
+                self.assertIn("must not support a savings claim", result.stdout)
+
+    def test_render_audit_report_keeps_plain_cost_lines_on_valid_denominator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, self.VALID_USAGE_RECORDS)
+            roi_path = self.write_roi_json(tmp)
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("- Cost impact: savings of $0.500000\n", result.stdout)
+        self.assertIn("- Assessment: savings of $0.500000\n", result.stdout)
+        self.assertNotIn("non-decision-grade", result.stdout)
 
     def test_render_audit_report_canonicalizes_cache_planes_and_clinic_statuses(self):
         result = run_script(
@@ -2820,6 +3013,25 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "non-LLM perf",
         ]:
             self.assertIn(required, description)
+
+    def test_skill_description_keeps_provider_telemetry_anchors(self):
+        description = self.skill_frontmatter_description()
+        body = self.skill_text().split("---", 2)[2]
+
+        for anchor in [
+            "total_cached_tokens",
+            "cache_creation_input_tokens",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+        ]:
+            with self.subTest(anchor=anchor):
+                self.assertIn(
+                    anchor,
+                    description,
+                    f"{anchor} must be a frontmatter trigger anchor, not body-only",
+                )
+
+        self.assertNotIn("description:", body)
 
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertLessEqual(

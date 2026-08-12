@@ -1,12 +1,12 @@
 ---
 name: audit-prompt-caching
 description: >
-  Use whenever the user mentions LLM prompt/prefix cache misses, cached_tokens=0,
-  cache_read_input_tokens, cache_write_tokens, prompt_cache_key,
-  prompt_cache_options, cache_control/cachePoint, TTFT/prefill, KV reuse,
-  LLM cost or speed regressed on repeated long prompts, or speeding up agents
-  through cache stability. Use for LLM request shape changes:
-  prompt text/order/builders, tools, schemas, response_format, model/router,
+  Use whenever the user mentions cached_tokens=0, total_cached_tokens,
+  cache_read_input_tokens, cache_creation_input_tokens, cache_write_tokens,
+  prompt_cache_key, prompt_cache_options, prompt_cache_breakpoint,
+  previous_interaction_id, cache_control/cachePoint, TTFT, KV reuse,
+  LLM cost or speed regressed on repeated long prompts, or speeding up agents.
+  LLM request shape changes: tools, schemas, response_format, model/router,
   agent loops, compaction. Not for generic prompt writing/RAG, token counts,
   or non-LLM perf.
 ---
@@ -30,7 +30,7 @@ TTFT, prefill latency, or self-hosted KV reuse. Typical triggers:
 - Cache hit rate, TTFT, prefill latency, or input-token cost changed, or a reported hit rate is not trusted.
 - LLM cost or speed regressed around repeated long prompts, shared static context, long-context agents, or tool-heavy loops.
 - LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter.
-- Prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loop structure, or context compaction changed.
+- Any prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loop structure, or context compaction changed.
 - The route uses long system prompts, tool catalogs, schemas, static documents, few-shot examples, repeated RAG/CAG context, or provider cache APIs.
 - vLLM/SGLang/self-hosted deployments have multi-replica routing, KV pressure, tokenizer/chat-template drift, cache salts, or APC benchmarks such as `vllm bench serve`, `prefix_repetition`, or `benchmark_prefix_caching.py`.
 

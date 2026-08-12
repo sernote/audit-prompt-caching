@@ -141,9 +141,9 @@ def has_extended_fields(finding):
     )
 
 
-def load_usage(path):
+def load_usage(path, accounting_mode=None):
     records = analyze_usage_logs.read_records(Path(path))
-    return analyze_usage_logs.summarize(records)
+    return analyze_usage_logs.summarize(records, accounting_mode=accounting_mode)
 
 
 def load_roi(path):
@@ -194,7 +194,7 @@ def cost_assessment(roi):
 
 
 def build_report(args):
-    usage = load_usage(args.usage_log)
+    usage = load_usage(args.usage_log, accounting_mode=args.accounting_mode)
     roi = load_roi(args.roi_json) if args.roi_json else None
     findings = [parse_finding(finding) for finding in args.finding]
     return {
@@ -224,6 +224,17 @@ def denominator_caveat(usage):
         f"Usage denominator status is {status}, so the observed cache hit ratio "
         "is non-decision-grade and must not support a savings claim. "
         "Fix usage accounting before estimating impact."
+    )
+
+
+def qualified_cost_assessment(report):
+    """Inline-qualify cost claims whose usage denominator is not decision-grade."""
+    status = report["usage"].get("denominator_status")
+    assessment = report["cost_assessment"]
+    if status not in NON_DECISION_GRADE_DENOMINATORS:
+        return assessment
+    return (
+        f"{assessment} (usage ratio non-decision-grade; denominator {status})"
     )
 
 
@@ -273,6 +284,7 @@ def expected_impact(usage, roi=None):
 
 def render_markdown(report):
     usage = report["usage"]
+    cost_assessment_line = qualified_cost_assessment(report)
     lines = [
         "# Prompt Cache Audit",
         "",
@@ -286,7 +298,7 @@ def render_markdown(report):
         f"- Cache write tokens: {usage['cache_write_total_tokens']}",
         f"- Cache write/read ratio: {usage['cache_write_read_ratio']}",
         f"- Output share: {usage['output_share']}",
-        f"- Cost impact: {report['cost_assessment']}",
+        f"- Cost impact: {cost_assessment_line}",
         f"- Measurement change: {report['measurement_change']}",
         f"- Prompt behavior change: {report['prompt_behavior_change']}",
         f"- Provider/routing change: {report['provider_routing_change']}",
@@ -366,7 +378,7 @@ def render_markdown(report):
                 f"- Cost with cache: ${roi['total_with_cache_cost']:.6f}",
                 f"- Cache read cost: ${roi['cache_read_input_cost']:.6f}",
                 f"- Cache write cost: ${roi['cache_write_input_cost']:.6f}",
-                f"- Assessment: {report['cost_assessment']}",
+                f"- Assessment: {cost_assessment_line}",
             ]
         )
     lines.extend(
@@ -391,6 +403,14 @@ def main(argv=None):
         description="Render a prompt-cache audit report from usage logs."
     )
     parser.add_argument("--usage-log", required=True, help="JSON, JSONL, or CSV usage log")
+    parser.add_argument(
+        "--accounting-mode",
+        choices=("inclusive", "additive"),
+        help=(
+            "Operator-supplied cache-token accounting for otherwise ambiguous "
+            "wrapper usage logs; it cannot override an inclusive contradiction."
+        ),
+    )
     parser.add_argument("--provider", default="unknown")
     parser.add_argument("--engine", default="unknown")
     parser.add_argument("--measurement-change", default=DEFAULT_MEASUREMENT_CHANGE)

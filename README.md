@@ -214,8 +214,15 @@ Responses-style `input` payloads.
 `semantic_response`) and one status per Cache Clinic dimension, such as
 `--evidence-quality` or `--usage-accounting`. Unset dimensions stay `unknown`,
 and the report emits no aggregate score across them. When the normalized usage
-denominator is `ambiguous` or `invalid`, the rendered cache hit ratio is
-qualified as non-decision-grade and cannot support a savings claim.
+denominator is `ambiguous` or `invalid`, the rendered cache hit ratio and both
+cost lines (`Cost impact:` and the priced-scenario `Assessment:`) are qualified
+as non-decision-grade and cannot support a savings claim.
+
+`render_audit_report.py --accounting-mode inclusive|additive` resolves wrapper
+usage logs whose cache-token accounting is only known externally, the same way
+`analyze_usage_logs.py --accounting-mode` does. It cannot rescue an inclusive
+contradiction: a denominator that stays `invalid` still rejects
+`--usage-accounting pass`.
 
 `prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
 
