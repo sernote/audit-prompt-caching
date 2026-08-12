@@ -106,13 +106,17 @@ def extracted_value(value, names, prefix):
 
 
 def first_number(record, names):
+    """Return the first nonzero alias, keeping the first present alias as evidence."""
+    present_path = None
     for obj, prefix in walk(record):
         for name in names:
             if name in obj:
                 found = number(obj[name])
                 if found:
                     return found, dot_path(prefix, name)
-    return 0, None
+                if present_path is None:
+                    present_path = dot_path(prefix, name)
+    return 0, present_path
 
 
 def blank_source_fields():
@@ -121,6 +125,9 @@ def blank_source_fields():
 
 def extraction(**extracted):
     """Split per-field (value, path) pairs into canonical values and provenance."""
+    unknown = [field for field in extracted if field not in FIELD_ALIASES]
+    if unknown:
+        raise ValueError(f"non-canonical usage fields: {', '.join(sorted(unknown))}")
     row = {field: 0 for field in CANONICAL_USAGE_FIELDS}
     source_fields = blank_source_fields()
     for field, (value, path) in extracted.items():
@@ -469,11 +476,13 @@ def inclusive_violations(row):
     ]
 
 
-def denominator_status(row, semantics):
-    if semantics == "ambiguous":
-        return "ambiguous"
+def denominator_status(row, semantics, total_input_tokens):
     if semantics == "inclusive" and inclusive_violations(row):
         return "invalid"
+    if semantics == "ambiguous":
+        return "ambiguous"
+    if total_input_tokens <= 0:
+        return "ambiguous"
     return "valid"
 
 
@@ -549,7 +558,9 @@ def normalize_record(record, accounting_mode=None, index=None):
             "total_input_tokens": total_input_tokens,
             "accounting_semantics": semantics,
             "source_fields": source_fields,
-            "denominator_status": denominator_status(row, semantics),
+            "denominator_status": denominator_status(
+                row, semantics, total_input_tokens
+            ),
             "warnings": normalization_warnings(adapter, row, semantics, index),
         }
     )

@@ -1,4 +1,5 @@
 import csv
+import importlib.util
 import json
 import subprocess
 import sys
@@ -24,6 +25,20 @@ def run_script(script_name, *args):
 
 def load_jsonl(path):
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def load_script_module(script_name):
+    """Import a script for module-level assertions without writing bytecode."""
+    path = SCRIPTS / script_name
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+    return module
 
 
 class PromptCacheScriptsTest(unittest.TestCase):
@@ -911,6 +926,185 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertEqual(output["records"], 0)
         self.assertEqual(output["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_marks_evidence_free_record_ambiguous(self):
+        evidence_free_record = {
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "route": "responses-api",
+        }
+        valid_record = {
+            "provider": "openai",
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": {"cached_tokens": 600},
+                "output_tokens": 50,
+            },
+        }
+
+        event = self.normalized_event(evidence_free_record)
+
+        self.assertEqual(event["denominator_status"], "ambiguous")
+        self.assertEqual(set(event["source_fields"].values()), {None})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.jsonl"
+            log_path.write_text(
+                "\n".join(
+                    json.dumps(record)
+                    for record in (valid_record, evidence_free_record)
+                )
+            )
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout)["denominator_status"], "ambiguous"
+        )
+
+    def test_analyze_usage_logs_keeps_additive_denominator_without_uncached_input(self):
+        event = self.normalized_event(
+            {
+                "provider": "anthropic",
+                "usage": {
+                    "input_tokens": 0,
+                    "cache_read_input_tokens": 800,
+                    "output_tokens": 40,
+                },
+            }
+        )
+
+        self.assertEqual(event["total_input_tokens"], 800)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_marks_zero_denominator_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "usage": {"input_tokens": 0, "output_tokens": 40},
+            }
+        )
+
+        self.assertEqual(event["total_input_tokens"], 0)
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_keeps_inclusive_contradiction_over_zero_input(self):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usageMetadata": {
+                    "promptTokenCount": 0,
+                    "cachedContentTokenCount": 900,
+                },
+            }
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+
+    def test_analyze_usage_logs_keeps_zero_valued_wrapper_alias_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "openrouter",
+                "usage": {
+                    "input_tokens": 1000,
+                    "cached_tokens": 0,
+                    "prompt_cache_hit_tokens": 0,
+                    "output_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["cached_tokens"], 0)
+        self.assertEqual(event["source_fields"]["cached_tokens"], "usage.cached_tokens")
+
+    def test_analyze_usage_logs_flags_inclusive_override_contradiction(self):
+        event = self.normalized_event(
+            {
+                "provider": "openrouter",
+                "usage": {
+                    "input_tokens": 100,
+                    "cached_tokens": 400,
+                    "output_tokens": 50,
+                },
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cached_tokens")
+
+    def test_analyze_usage_logs_reports_flat_openai_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "input_tokens": 1000,
+                "cached_tokens": 600,
+                "cache_write_tokens": 200,
+                "output_tokens": 50,
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "input_tokens",
+                "cached_tokens": "cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": "cache_write_tokens",
+                "output_tokens": "output_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_gemini_interactions_usage_envelope_provenance(
+        self,
+    ):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usage": {
+                    "total_input_tokens": 1000,
+                    "total_cached_tokens": 600,
+                    "total_output_tokens": 100,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.total_input_tokens",
+                "cached_tokens": "usage.total_cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "usage.total_output_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_rejects_non_canonical_extraction_fields(self):
+        analyzer = load_script_module("analyze_usage_logs.py")
+
+        with self.assertRaises(ValueError):
+            analyzer.extraction(cached_token=(600, "usage.cached_token"))
+
+        _, source_fields = analyzer.extraction(
+            cached_tokens=(600, "usage.cached_tokens")
+        )
+        self.assertEqual(
+            tuple(source_fields), tuple(analyzer.CANONICAL_USAGE_FIELDS)
+        )
 
     def test_estimate_cache_roi_outputs_cost_delta_json(self):
         result = run_script(
