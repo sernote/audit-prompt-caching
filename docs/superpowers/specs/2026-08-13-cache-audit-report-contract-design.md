@@ -1,6 +1,6 @@
 # Cache Audit Evidence Contract and Clinic Summary
 
-**Status:** Reviewed — revision 1
+**Status:** Implemented and verified
 **Date:** 2026-08-13
 **Target:** `audit-prompt-caching` skill package
 
@@ -215,9 +215,9 @@ Isolation reporting is passive and evidence-based. It may document cache-key sco
 
 - Malformed JSON and unsupported record shapes retain current fail-fast behavior.
 - Unknown provider wrappers remain `accounting_semantics: ambiguous` unless the existing accounting override resolves them.
-- Known impossible inclusive accounting produces `denominator_status: invalid` and a stable warning code.
+- Known impossible inclusive accounting, including aggregate cache benefit/write totals above the inclusive input total, produces `denominator_status: invalid` and a stable warning code.
 - Missing optional source fields use `null`; they do not cause invented paths.
-- Reports with no normalized usage evidence show the denominator and clinic dimensions as unknown rather than zero or pass.
+- Reports with no normalized usage evidence show an ambiguous denominator, derive `usage_accounting: warning`, leave the other unproven clinic dimensions `unknown`, and qualify the numeric ratio as non-decision-grade.
 
 ## Security and privacy
 
@@ -247,7 +247,7 @@ The package's deferred-token total is tracked as a no-regression signal, not opt
 - Bedrock raw lower-camel and Pascal-case usage surfaces preserve their actual source paths.
 - Gemini Interactions and Generate Content surfaces preserve their distinct source paths.
 - An unknown wrapper without an override is ambiguous; the existing accounting override can make it valid.
-- A known inclusive contradiction is invalid and carries a stable warning.
+- A known inclusive component or aggregate contradiction is invalid and carries a stable warning.
 - Aggregate denominator status follows `invalid > ambiguous > valid` and is ambiguous for no records.
 
 ### Report contract
