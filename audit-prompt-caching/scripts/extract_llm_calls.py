@@ -85,6 +85,9 @@ PROVIDER_PATTERNS = {
     "vllm": [
         r"\bvllm\b",
         r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])",
+        r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])",
+        r"\b(enable_kv_cache_events|kv_cache_events)\b",
+        r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
         r"\bAsyncLLMEngine\b",
     ],
     "sglang": [
@@ -92,6 +95,8 @@ PROVIDER_PATTERNS = {
         r"\bRadixAttention\b",
         r"(^|[^A-Za-z0-9_])--disable-radix-cache($|[^A-Za-z0-9_-])",
         r"\bHiCache\b",
+        r"\b(enable_hierarchical_cache|hicache_storage_backend)\b",
+        r"\b(disaggregation_mode|pd_disaggregation)\b",
     ],
     "gemini": [
         r"\bgoogle\.genai\b",

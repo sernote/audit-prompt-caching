@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-08-12.
 
 Verify before exact claims:
 - supported models for implicit and explicit caching
@@ -16,6 +16,8 @@ Verify before exact claims:
 Official sources:
 - Gemini context caching: https://ai.google.dev/gemini-api/docs/caching
 - Gemini API docs: https://ai.google.dev/gemini-api/docs
+- Interactions API schema: https://ai.google.dev/api/interactions-api
+- Generate Content schema: https://ai.google.dev/api/generate-content
 - Vertex AI context caching: https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-overview
 - Pricing: https://ai.google.dev/gemini-api/docs/pricing
 
@@ -27,6 +29,8 @@ Gemini has two relevant caching modes:
 - **Explicit context caching**: create and reuse a cache object with a TTL and a more predictable cost-saving surface.
 
 Use explicit caching when the application repeatedly uses a large stable context and needs deterministic cache reuse. Use implicit caching as an optimization, not a guarantee. Cached content is still part of the effective prompt prefix; put large shared content early.
+
+The Gemini **Interactions API** currently exposes implicit caching only. Continue an interaction with `previous_interaction_id` when that API is used; it is a conversation-continuity handle, not an explicit cache object ID. A normal response reports `usage.total_input_tokens`, `usage.total_cached_tokens`, and `usage.total_output_tokens`; the final streaming event reports the same totals at `metadata.total_usage`. These totals use inclusive accounting.
 
 ## Provider Checks
 
@@ -54,9 +58,9 @@ If the same document/context is sent repeatedly, prefer explicit context caching
 
 ## Diagnostics
 
-Usage field names vary by SDK/API surface. Check current docs.
+Usage field names vary by SDK/API surface. Check current docs. For Interactions, interpret `total_cached_tokens` as a subset of `total_input_tokens` (inclusive accounting), not as an additive input total. For a streamed Interaction, read the final `metadata.total_usage` envelope rather than a per-event delta.
 
-Typical checks:
+For Generate Content, typical checks are:
 
 ```python
 usage = response.usage_metadata
@@ -64,7 +68,9 @@ cached = getattr(usage, "cached_content_token_count", None)
 prompt = getattr(usage, "prompt_token_count", None)
 ```
 
-SDK naming can differ. Also check camelCase forms such as `cachedContentTokenCount` if the SDK returns dict-like metadata.
+SDK naming can differ. Also check camelCase forms such as `cachedContentTokenCount` if the SDK returns dict-like metadata. Do not substitute Generate Content's `promptTokenCount` / `candidatesTokenCount` for Interactions' `totalInputTokens` / `totalOutputTokens`.
+
+For Interactions, inspect `total_input_tokens` / `totalInputTokens`, `total_cached_tokens` / `totalCachedTokens`, `total_output_tokens` / `totalOutputTokens`, and `previous_interaction_id` rather than looking only for explicit-cache fields.
 
 For OpenAI-compatible routes, check whether `usage.prompt_tokens_details.cached_tokens` is exposed.
 

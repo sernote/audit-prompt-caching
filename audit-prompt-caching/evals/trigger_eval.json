@@ -56,6 +56,14 @@
     "should_trigger": true
   },
   {
+    "query": "Gemini Interactions total_cached_tokens dropped after we stopped sending previous_interaction_id",
+    "should_trigger": true
+  },
+  {
+    "query": "vLLM KV cache events show transfer failures after enabling a KV connector",
+    "should_trigger": true
+  },
+  {
     "query": "Rewrite this short greeting prompt to sound warmer",
     "should_trigger": false
   },

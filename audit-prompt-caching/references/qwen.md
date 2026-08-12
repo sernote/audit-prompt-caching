@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-08-11.
 
 Verify before exact claims:
 - supported Qwen/DashScope models by region
@@ -17,6 +17,8 @@ Official sources:
 - Model Studio docs: https://help.aliyun.com/zh/model-studio/
 - Qwen docs: https://qwen.readthedocs.io/
 - Qwen vLLM deployment: https://qwen.readthedocs.io/en/stable/deployment/vllm.html
+- Responses API: https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses
+- Context cache: https://help.aliyun.com/en/model-studio/context-cache
 
 ## Stable Mechanics
 
@@ -29,6 +31,8 @@ Qwen can mean:
 Always identify which one is in use.
 
 DashScope docs describe both explicit and implicit context caching for supported models. Self-hosted Qwen follows the inference engine's cache behavior, so use the vLLM/SGLang reference for those deployments.
+
+For the documented DashScope Responses flow, enable session cache with `x-dashscope-session-cache: enable` and continue with `previous_response_id`. This is distinct from a generic prefix hash: preserve the response lineage only within the intended conversation and do not log raw IDs. Inspect response cache-detail usage fields for the selected route; do not assume OpenAI field names are complete for Qwen.
 
 ## Provider Checks
 

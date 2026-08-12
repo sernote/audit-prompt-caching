@@ -3,6 +3,7 @@ name: audit-prompt-caching
 description: >
   Use whenever the user mentions LLM prompt/prefix cache misses, cached_tokens=0,
   cache_read_input_tokens/cache_creation_input_tokens, cache_write_tokens,
+  total_cached_tokens, prompt_cache_key, session_id, previous_interaction_id,
   prompt_cache_key, prompt_cache_options, prompt_cache_breakpoint,
   cache_control/cachePoint, TTFT/prefill latency, KV reuse, LLM cost or speed
   regressed on repeated long prompts, or speeding up agents through cache
@@ -203,7 +204,7 @@ Search SDK imports, API base URLs, model names, deployment manifests, and engine
 - OpenRouter: `openrouter`, `openrouter.ai/api/v1`, `openrouter/auto` -> `references/openrouter.md`.
 - Azure, Bedrock, Qwen/DashScope, Vercel AI SDK, and Mastra wrappers: load `references/azure-openai.md`, `references/bedrock.md`, `references/qwen.md`, `references/vercel-ai-sdk.md`, or `references/mastra.md` before direct-provider references.
 - Direct providers: OpenAI -> `references/openai.md`; Anthropic -> `references/anthropic.md`; DeepSeek -> `references/deepseek.md`; Gemini -> `references/gemini.md`; YandexGPT -> `references/yandexgpt.md`; z.ai -> `references/zai.md`.
-- Self-hosted engines: `vllm`, `vllm bench serve`, `prefix_repetition`, `benchmark_prefix_caching.py` -> `references/vllm.md`; SGLang/RadixAttention/HiCache -> `references/sglang.md`.
+- Self-hosted engines: `vllm`, `vllm bench serve`, `prefix_repetition`, `benchmark_prefix_caching.py`, KV-cache events, or KV transfer connectors -> `references/vllm.md`; SGLang/RadixAttention/HiCache/PD disaggregation -> `references/sglang.md`.
 
 If detection is ambiguous, ask which provider/engine is in use.
 
@@ -229,6 +230,8 @@ Use these starts after provider detection and Freshness Gate:
 - **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, Responses vs Chat usage fields, `prompt_cache_key`, model-specific cache controls, output-token dominance, and wrapper ambiguity.
 - **GPT-5.6 paid writes**: validate `prompt_cache_options` and marked content blocks, separate inclusive `cached_tokens`/`cache_write_tokens` from input totals, and require current pricing before claiming savings. Prefer explicit mode when implicit latest-message writes churn on a volatile suffix.
 - **Claude/Bedrock/OpenRouter writes without reads**: distinguish write/create fields from read/hit fields, then inspect breakpoint placement, dynamic content before breakpoint, TTL/retention, model/region/API support, fallback routing, and actual routed provider/model.
+- **Gemini Interactions or managed session cache**: distinguish an explicit cache object from an opaque continuation handle (`previous_interaction_id` or `previous_response_id`), preserve it only inside the intended conversation, and normalize `total_cached_tokens` as inclusive before comparing routes.
+- **KV events, HiCache, or PD disaggregation**: separate prompt-prefix mismatch from eviction, tier transfer/offload, event delivery, and decode-side KV reuse. Compare TTFT/prefill and worker/tier metrics before changing prompt construction.
 - **Dynamic tools in long agent loops**: compare `tools_count`, sorted tool-name hash, `prefix_hash`, mode state, and cache fields per step. Prefer stable route-level tool bundles, sorted schemas, provider-supported allowed tools/tool search/deferred loading, or self-hosted masking after checking current docs.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and cache read/write pricing assumptions.
 - **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first.
@@ -237,7 +240,7 @@ Use these starts after provider detection and Freshness Gate:
 
 ## Rule Categories
 
-Use `references/rules.json` for the machine-readable AP-1 through AP-11 anti-pattern inventory. Use this priority taxonomy when turning rules into findings:
+Use `references/rules.json` for the machine-readable AP-1 through AP-12 anti-pattern inventory. Use this priority taxonomy when turning rules into findings:
 
 | Priority | Category | Examples |
 |---|---|---|

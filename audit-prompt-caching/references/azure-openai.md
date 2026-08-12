@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-08-11.
 
 Verify before exact claims:
 - supported Azure OpenAI models and deployment types
@@ -33,9 +33,11 @@ If repeated prompts show `cached_tokens = 0`, first check whether the prompt rea
 
 Azure prompt caches are temporary and tied to recent use. Compare the user's repeated-request cadence with current Azure retention docs. A daily or sparse repeat may be a cold-cache workload even with a stable prompt.
 
-### Routing Affinity
+### `prompt_cache_key` And Routing Affinity
 
-Check current docs for how Azure routes cacheable requests. If the project uses the `user` parameter or any affinity-like field, verify whether it groups true shared prefixes without over-fragmenting by request/session/user.
+For GPT-5.6, Azure documents `prompt_cache_key` as the affinity key for reliable matching. Use a stable, non-secret key for requests that may safely share a prefix; do not create a per-request key or embed a raw user/session identifier. Hash or HMAC an appropriate grouping value when isolation is needed.
+
+Azure does **not** document `prompt_cache_options` or `prompt_cache_breakpoint` on this surface. Do not copy those OpenAI parameters into an Azure request.
 
 ### Tools, Images, And Schemas
 
@@ -56,6 +58,8 @@ cached = getattr(details, "cached_tokens", 0) if details else 0
 total = getattr(usage, "prompt_tokens", 0)
 ratio = cached / total if total else 0
 ```
+
+Azure documents cache-write billing but no separate cache-write usage field. Do not infer write volume from `cached_tokens`; record the first request in a prefix cohort as an expected cold write and use billing/export data when exact write cost is required.
 
 If `cached == 0` for repeated prompts:
 - prompt below current cacheable threshold

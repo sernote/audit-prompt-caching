@@ -1,11 +1,12 @@
 # Anthropic Prefix Cache Reference
 
-Last reviewed: 2026-04-27. Verify official docs before exact claims about Claude model support, token minimums, pricing, Batch API, `cache_control`, TTLs, automatic caching, tool search, `defer_loading`, usage fields, ZDR, provider surfaces, or isolation.
+Last reviewed: 2026-08-11. Verify official docs before exact claims about Claude model support, token minimums, pricing, Batch API, `cache_control`, TTLs, automatic caching, tool search, `defer_loading`, usage fields, ZDR, provider surfaces, or isolation.
 
 Official sources:
 - Prompt caching: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
 - Mid-conversation system messages: https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
 - Tool use with prompt caching: https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching
+- Cache Diagnostics beta: https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics
 - API reference: https://docs.anthropic.com/en/api/messages
 - Pricing: https://www.anthropic.com/pricing
 
@@ -28,6 +29,8 @@ Prompt hierarchy is `tools -> system -> messages`; changing an earlier level inv
 - longer TTL entries must appear before shorter TTL entries when mixing 1h and 5m breakpoints. Syntax includes `"ttl": "1h"`.
 - Thinking blocks cannot be directly marked with cache control, but thinking blocks passed back can be cached as part of surrounding content; non-tool-result user content can strip prior thinking blocks.
 - workspace-level isolation applies on documented Claude API/Azure surfaces; Bedrock and Vertex can differ.
+- Cache Diagnostics is a beta diagnostic surface: use it to identify the first divergent request element, but keep normal usage telemetry as the production source of cache ratios.
+- Server tool results can cause an automatic 5-minute cache write. Do not add a redundant `cache_control` solely to cache those returned tool results; verify the tool type and current API surface first.
 
 ## Diagnostics
 

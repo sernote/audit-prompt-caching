@@ -287,6 +287,197 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["total_input_tokens"], 1600)
             self.assertEqual(output["cache_hit_ratio"], 0.25)
 
+    def test_analyze_usage_logs_reads_bedrock_converse_lower_camel_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "bedrock-converse.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "bedrock",
+                        "metrics": {"latencyMs": 42},
+                        "usage": {
+                            "inputTokens": 1000,
+                            "cacheReadInputTokens": 400,
+                            "cacheWriteInputTokens": 200,
+                            "outputTokens": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cache_read_input_tokens"], 400)
+        self.assertEqual(output["cache_creation_input_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1600)
+        self.assertEqual(output["accounting_semantics"], "additive")
+
+    def test_analyze_usage_logs_inferrs_unlabeled_bedrock_converse_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "bedrock-converse-raw.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "usage": {
+                            "inputTokens": 1000,
+                            "cacheReadInputTokens": 400,
+                            "cacheWriteInputTokens": 200,
+                            "outputTokens": 100,
+                        }
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cache_read_input_tokens"], 400)
+        self.assertEqual(output["cache_creation_input_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1600)
+        self.assertEqual(output["accounting_semantics"], "additive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_gemini_interactions_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-interactions.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "usage": {
+                            "total_cached_tokens": 600,
+                            "total_input_tokens": 1000,
+                            "total_output_tokens": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_accepts_gemini_interactions_cache_miss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-interactions-miss.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "object": "interaction",
+                        "usage": {
+                            "total_cached_tokens": 0,
+                            "total_input_tokens": 1000,
+                            "total_output_tokens": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 0)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_gemini_interactions_stream_total_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-interactions-stream.jsonl"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "event_type": "step.stop",
+                        "metadata": {
+                            "total_usage": {
+                                "total_cached_tokens": 600,
+                                "total_input_tokens": 1000,
+                                "total_output_tokens": 100,
+                            }
+                        },
+                    }
+                )
+            )
+
+            result = run_script(
+                "analyze_usage_logs.py", "--jsonl-normalized", log_path
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        event = json.loads(result.stdout)
+        self.assertEqual(event["provider"], "gemini")
+        self.assertEqual(event["input_tokens"], 1000)
+        self.assertEqual(event["cached_tokens"], 600)
+        self.assertEqual(event["output_tokens"], 100)
+        self.assertEqual(event["total_input_tokens"], 1000)
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_preserves_gemini_generate_content_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-generate-content.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "gemini",
+                        "usageMetadata": {
+                            "promptTokenCount": 1000,
+                            "cachedContentTokenCount": 600,
+                            "candidatesTokenCount": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_flat_gemini_generate_content_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-generate-content-flat.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "gemini",
+                        "prompt_token_count": 1000,
+                        "cached_content_token_count": 600,
+                        "candidates_token_count": 100,
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
     def test_analyze_usage_logs_counts_openai_cache_writes_as_inclusive(self):
         with tempfile.TemporaryDirectory() as tmp:
             log_path = Path(tmp) / "usage.json"
@@ -858,6 +1049,28 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             output = json.loads(result.stdout)
             self.assertGreaterEqual(output["providers"]["sglang"], 2)
+
+    def test_extract_llm_calls_detects_kv_events_and_hicache_tiers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "\n".join(
+                    [
+                        "command: vllm serve model --enable-kv-cache-events",
+                        "kv_transfer_config: {kv_connector: LMCacheConnectorV1}",
+                        "command: sglang.launch_server --enable-hierarchical-cache",
+                        "hicache_storage_backend: disk",
+                        "disaggregation_mode: prefill",
+                    ]
+                )
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertGreaterEqual(output["providers"]["vllm"], 2)
+        self.assertGreaterEqual(output["providers"]["sglang"], 3)
 
     def test_validate_skill_package_checks_required_files_and_references(self):
         result = run_script("validate_skill_package.py", ROOT / "audit-prompt-caching")

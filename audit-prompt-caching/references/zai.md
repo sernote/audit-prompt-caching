@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-04-24.
+Last reviewed: 2026-08-11.
 
 Verify before exact claims:
 - current GLM model names and cache support
@@ -37,6 +37,8 @@ Check whether `usage.prompt_tokens_details.cached_tokens` exists for the model a
 ### Similarity Vs Exact Prefix
 
 z.ai docs describe identifying identical or highly similar content. Do not assume OpenAI-style exact-prefix behavior unless current docs state it. Still apply universal prefix-stability rules, because identical stable content should maximize hit probability.
+
+For thinking-capable GLM routes, preserve the documented reasoning/thinking continuity when continuing an interaction. Dropping or clearing that state can change the effective early context and make a cache regression look like a simple prompt-text issue. Audit reasoning-state policy separately from visible message text.
 
 ### Pricing
 

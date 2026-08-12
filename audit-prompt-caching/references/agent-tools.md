@@ -16,6 +16,7 @@ Agent prompts often grow append-only, which is cache-friendly, but tool lists, m
 - Preserve a stable anchor: system/developer instructions, tools, schemas, first stable messages.
 - Compact bulky tool results before summarizing early history; preserve paths, IDs, URLs, and small structured facts.
 - Treat MCP registry changes as schema changes. Freeze or version tool definitions for a session.
+- Treat provider conversation and reasoning handles as cache-relevant state. Examples include Gemini `previous_interaction_id`, Qwen `previous_response_id`, and a provider's documented thinking/reasoning continuation. Preserve them only for the same intended conversation; an opaque handle may carry user context and must be logged as a keyed hash, not as a raw identifier.
 
 ## Fresh Ungrouped Restarts Reset an Auto-Generated Cache Key
 
