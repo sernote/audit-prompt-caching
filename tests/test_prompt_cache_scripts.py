@@ -207,6 +207,19 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(events[1]["cache_benefit_tokens"], 4600)
         self.assertEqual(events[1]["total_input_tokens"], 5200)
         self.assertEqual(events[2]["output_tokens"], 405)
+        self.assertEqual(events[0]["schema_version"], 1)
+        self.assertEqual(
+            events[0]["source_fields"],
+            {
+                "input_tokens": "usage.input_tokens",
+                "cached_tokens": "usage.input_tokens_details.cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "usage.output_tokens",
+            },
+        )
+        self.assertEqual(events[0]["denominator_status"], "valid")
 
     def test_analyze_usage_logs_uses_full_anthropic_denominator(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -623,6 +636,281 @@ class PromptCacheScriptsTest(unittest.TestCase):
             output["warnings"][0]["code"],
             "OPENAI_CACHE_BREAKDOWN_EXCEEDS_INPUT",
         )
+        self.assertEqual(output["denominator_status"], "invalid")
+        self.assertNotIn("schema_version", output)
+
+    def normalized_event(self, record, *args, name="usage.json"):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / name
+            log_path.write_text(json.dumps(record))
+            result = run_script(
+                "analyze_usage_logs.py", "--jsonl-normalized", *args, log_path
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_analyze_usage_logs_reports_openai_chat_usage_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "usage": {
+                    "prompt_tokens": 1200,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 700,
+                        "cache_write_tokens": 300,
+                    },
+                    "completion_tokens": 80,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.prompt_tokens",
+                "cached_tokens": "usage.prompt_tokens_details.cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": "usage.prompt_tokens_details.cache_write_tokens",
+                "output_tokens": "usage.completion_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_anthropic_usage_provenance(self):
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "input_tokens": 500,
+                    "cache_read_input_tokens": 300,
+                    "cache_creation_input_tokens": 200,
+                    "output_tokens": 50,
+                }
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.input_tokens",
+                "cached_tokens": None,
+                "cache_read_input_tokens": "usage.cache_read_input_tokens",
+                "cache_creation_input_tokens": "usage.cache_creation_input_tokens",
+                "cache_write_tokens": None,
+                "output_tokens": "usage.output_tokens",
+            },
+        )
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_bedrock_metrics_provenance(self):
+        event = self.normalized_event(
+            {
+                "metrics": {
+                    "InputTokens": 1000,
+                    "CacheReadInputTokens": 400,
+                    "CacheWriteInputTokens": 200,
+                    "OutputTokens": 100,
+                }
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "metrics.InputTokens",
+                "cached_tokens": None,
+                "cache_read_input_tokens": "metrics.CacheReadInputTokens",
+                "cache_creation_input_tokens": "metrics.CacheWriteInputTokens",
+                "cache_write_tokens": None,
+                "output_tokens": "metrics.OutputTokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_bedrock_converse_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "bedrock",
+                "metrics": {"latencyMs": 42},
+                "usage": {
+                    "inputTokens": 1000,
+                    "cacheReadInputTokens": 400,
+                    "cacheWriteInputTokens": 200,
+                    "outputTokens": 100,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.inputTokens",
+                "cached_tokens": None,
+                "cache_read_input_tokens": "usage.cacheReadInputTokens",
+                "cache_creation_input_tokens": "usage.cacheWriteInputTokens",
+                "cache_write_tokens": None,
+                "output_tokens": "usage.outputTokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_gemini_interactions_provenance(self):
+        event = self.normalized_event(
+            {
+                "event_type": "step.stop",
+                "metadata": {
+                    "total_usage": {
+                        "total_cached_tokens": 600,
+                        "total_input_tokens": 1000,
+                        "total_output_tokens": 100,
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "metadata.total_usage.total_input_tokens",
+                "cached_tokens": "metadata.total_usage.total_cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "metadata.total_usage.total_output_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_gemini_generate_content_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usageMetadata": {
+                    "promptTokenCount": 1000,
+                    "cachedContentTokenCount": 600,
+                    "candidatesTokenCount": 100,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usageMetadata.promptTokenCount",
+                "cached_tokens": "usageMetadata.cachedContentTokenCount",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "usageMetadata.candidatesTokenCount",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_nested_wrapper_provenance(self):
+        record = {
+            "provider": "openrouter",
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "completion_tokens": 50,
+                }
+            },
+        }
+
+        event = self.normalized_event(record)
+        overridden = self.normalized_event(record, "--accounting-mode", "inclusive")
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "data.usage.prompt_tokens",
+                "cached_tokens": "data.usage.cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "data.usage.completion_tokens",
+            },
+        )
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+        self.assertEqual(overridden["accounting_semantics"], "inclusive")
+        self.assertEqual(overridden["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_marks_inclusive_contradiction_invalid(self):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usageMetadata": {
+                    "promptTokenCount": 1000,
+                    "cachedContentTokenCount": 1200,
+                    "candidatesTokenCount": 100,
+                },
+            }
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cached_tokens")
+
+    def test_analyze_usage_logs_aggregates_worst_denominator_status(self):
+        valid_record = {
+            "provider": "openai",
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": {"cached_tokens": 600},
+                "output_tokens": 50,
+            },
+        }
+        ambiguous_record = {
+            "provider": "openrouter",
+            "usage": {"input_tokens": 1000, "cached_tokens": 600},
+        }
+        invalid_record = {
+            "provider": "gemini",
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "cachedContentTokenCount": 900,
+            },
+        }
+
+        def summarize(*records):
+            with tempfile.TemporaryDirectory() as tmp:
+                log_path = Path(tmp) / "usage.jsonl"
+                log_path.write_text(
+                    "\n".join(json.dumps(record) for record in records)
+                )
+                result = run_script("analyze_usage_logs.py", log_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)
+
+        self.assertEqual(summarize(valid_record)["denominator_status"], "valid")
+        self.assertEqual(
+            summarize(valid_record, ambiguous_record)["denominator_status"],
+            "ambiguous",
+        )
+        self.assertEqual(
+            summarize(valid_record, ambiguous_record, invalid_record)[
+                "denominator_status"
+            ],
+            "invalid",
+        )
+
+    def test_analyze_usage_logs_reports_ambiguous_denominator_without_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "empty.jsonl"
+            log_path.write_text("")
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["records"], 0)
+        self.assertEqual(output["denominator_status"], "ambiguous")
 
     def test_estimate_cache_roi_outputs_cost_delta_json(self):
         result = run_script(
