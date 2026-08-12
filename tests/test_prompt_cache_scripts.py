@@ -1054,6 +1054,134 @@ class PromptCacheScriptsTest(unittest.TestCase):
         )
         self.assertEqual(event["warnings"][0]["field"], "cached_tokens")
 
+    def test_analyze_usage_logs_flags_inclusive_read_aliases_exceeding_input(self):
+        record = {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "cache_read_tokens": 700,
+                    "completion_tokens": 50,
+                }
+            }
+        }
+
+        event = self.normalized_event(record, "--accounting-mode", "inclusive")
+
+        self.assertEqual(event["cached_tokens"], 600)
+        self.assertEqual(event["cache_read_input_tokens"], 700)
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cache_benefit_tokens")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = self.write_usage_log(tmp, (record,))
+            result = run_script(
+                "analyze_usage_logs.py", "--accounting-mode", "inclusive", log_path
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        totals = json.loads(result.stdout)
+        self.assertEqual(totals["denominator_status"], "invalid")
+        self.assertEqual(totals["cache_hit_ratio"], 1.3)
+
+    def test_analyze_usage_logs_keeps_exact_inclusive_split_valid(self):
+        event = self.normalized_event(
+            {
+                "data": {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "cached_tokens": 400,
+                        "cache_read_tokens": 600,
+                        "completion_tokens": 50,
+                    }
+                }
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["cache_benefit_tokens"], 1000)
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_flags_inclusive_write_total_exceeding_input(self):
+        event = self.normalized_event(
+            {
+                "data": {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "cache_write_tokens": 600,
+                        "cache_creation_input_tokens": 700,
+                        "completion_tokens": 50,
+                    }
+                }
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cache_write_total_tokens")
+
+    def test_analyze_usage_logs_flags_inclusive_read_write_split_exceeding_input(self):
+        event = self.normalized_event(
+            {
+                "data": {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "cached_tokens": 600,
+                        "cache_write_tokens": 600,
+                        "completion_tokens": 50,
+                    }
+                }
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(
+            event["warnings"][0]["field"], "cache_accounted_input_tokens"
+        )
+
+    def test_analyze_usage_logs_prefers_individual_openai_breakdown_violation(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "usage": {
+                    "input_tokens": 100,
+                    "input_tokens_details": {
+                        "cached_tokens": 120,
+                        "cache_write_tokens": 90,
+                    },
+                    "output_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "OPENAI_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cached_tokens")
+
     def test_analyze_usage_logs_reports_flat_openai_provenance(self):
         event = self.normalized_event(
             {
@@ -1519,6 +1647,18 @@ class PromptCacheScriptsTest(unittest.TestCase):
             }
         },
     )
+    AGGREGATE_CONTRADICTORY_WRAPPER_USAGE_RECORDS = (
+        {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "cache_read_tokens": 700,
+                    "completion_tokens": 50,
+                }
+            }
+        },
+    )
     VALID_USAGE_RECORDS = (
         {
             "provider": "anthropic",
@@ -1621,6 +1761,55 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(json_result.stdout)
         self.assertEqual(output["usage"]["denominator_status"], "invalid")
         self.assertEqual(output["clinic_summary"]["usage_accounting"], "fail")
+        self.assertEqual(pass_result.returncode, 2, pass_result.stdout)
+        self.assertIn("usage_accounting", pass_result.stderr)
+
+    def test_render_audit_report_rejects_pass_on_aggregate_inclusive_contradiction(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.AGGREGATE_CONTRADICTORY_WRAPPER_USAGE_RECORDS
+            )
+            json_result = run_script(
+                "render_audit_report.py",
+                "--json",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+            )
+            markdown_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+            )
+            pass_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+                "--usage-accounting",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        self.assertEqual(output["usage"]["denominator_status"], "invalid")
+        self.assertEqual(output["usage"]["cache_hit_ratio"], 1.3)
+        self.assertEqual(output["clinic_summary"]["usage_accounting"], "fail")
+        self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+        self.assertIn(
+            "- Cache hit ratio: 1.3 (non-decision-grade; denominator invalid)",
+            markdown_result.stdout,
+        )
+        self.assertIn(
+            "(usage ratio non-decision-grade; denominator invalid)",
+            markdown_result.stdout,
+        )
         self.assertEqual(pass_result.returncode, 2, pass_result.stdout)
         self.assertIn("usage_accounting", pass_result.stderr)
 

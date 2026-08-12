@@ -1,7 +1,7 @@
 # Cache Audit Evidence Contract and Clinic Summary
 
-**Status:** Reviewed — revision 1  
-**Date:** 2026-08-13  
+**Status:** Reviewed — revision 1
+**Date:** 2026-08-13
 **Target:** `audit-prompt-caching` skill package
 
 ## Context

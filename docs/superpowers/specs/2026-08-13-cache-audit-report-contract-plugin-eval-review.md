@@ -1,7 +1,7 @@
 # Plugin-eval Review: Cache Audit Evidence Contract
 
-**Date:** 2026-08-13  
-**Target revision:** draft `2026-08-13-cache-audit-report-contract-design.md`  
+**Date:** 2026-08-13
+**Target revision:** draft `2026-08-13-cache-audit-report-contract-design.md`
 **Evaluator:** plugin-eval 0.1.2, static analysis only
 
 ## Outcome

@@ -467,13 +467,43 @@ def infer_provider(record):
     return usage_adapter_for(record).provider
 
 
+def cache_benefit_tokens(row):
+    return row["cached_tokens"] + row["cache_read_input_tokens"]
+
+
+def cache_write_total_tokens(row):
+    return row["cache_write_tokens"] + row["cache_creation_input_tokens"]
+
+
+def inclusive_aggregates(row):
+    """Return the derived inclusive totals that must fit inside the input total."""
+    benefit = cache_benefit_tokens(row)
+    write_total = cache_write_total_tokens(row)
+    return (
+        ("cache_benefit_tokens", benefit),
+        ("cache_write_total_tokens", write_total),
+        ("cache_accounted_input_tokens", benefit + write_total),
+    )
+
+
 def inclusive_violations(row):
-    """Return inclusive cache components that cannot fit inside the input total."""
-    return [
+    """Return inclusive cache fields that cannot fit inside the input total.
+
+    A single raw component that alone exceeds the input total is the clearer
+    evidence, so aggregates are only reported when every component fits and the
+    sum still contradicts the reported input.
+    """
+    individual = [
         field
         for field in INCLUSIVE_CACHE_COMPONENTS
         if row[field] > row["input_tokens"]
     ]
+    if individual:
+        return individual
+    for field, value in inclusive_aggregates(row):
+        if value > row["input_tokens"]:
+            return [field]
+    return []
 
 
 def denominator_status(row, semantics, total_input_tokens):
@@ -506,20 +536,27 @@ def normalization_warnings(adapter, row, semantics, index):
                 ),
             }
         )
-    if adapter.shape == "openai":
-        for field in ("cached_tokens", "cache_write_tokens"):
-            if row[field] > row["input_tokens"]:
-                warnings.append(
-                    {
-                        "code": "OPENAI_CACHE_BREAKDOWN_EXCEEDS_INPUT",
-                        "index": index,
-                        "field": field,
-                        "message": (
-                            f"OpenAI {field} exceeds the endpoint input token total"
-                        ),
-                    }
-                )
-    elif semantics == "inclusive":
+    openai_violations = (
+        [
+            field
+            for field in ("cached_tokens", "cache_write_tokens")
+            if row[field] > row["input_tokens"]
+        ]
+        if adapter.shape == "openai"
+        else []
+    )
+    for field in openai_violations:
+        warnings.append(
+            {
+                "code": "OPENAI_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+                "index": index,
+                "field": field,
+                "message": (
+                    f"OpenAI {field} exceeds the endpoint input token total"
+                ),
+            }
+        )
+    if semantics == "inclusive" and not openai_violations:
         for field in inclusive_violations(row):
             warnings.append(
                 {
@@ -543,18 +580,16 @@ def normalize_record(record, accounting_mode=None, index=None):
         else adapter.semantics
     )
 
-    cache_benefit_tokens = row["cached_tokens"] + row["cache_read_input_tokens"]
-    cache_write_total_tokens = (
-        row["cache_write_tokens"] + row["cache_creation_input_tokens"]
-    )
+    benefit_tokens = cache_benefit_tokens(row)
+    write_total_tokens = cache_write_total_tokens(row)
     total_input_tokens = row["input_tokens"]
     if semantics == "additive":
-        total_input_tokens += cache_benefit_tokens + cache_write_total_tokens
+        total_input_tokens += benefit_tokens + write_total_tokens
 
     row.update(
         {
-            "cache_benefit_tokens": cache_benefit_tokens,
-            "cache_write_total_tokens": cache_write_total_tokens,
+            "cache_benefit_tokens": benefit_tokens,
+            "cache_write_total_tokens": write_total_tokens,
             "total_input_tokens": total_input_tokens,
             "accounting_semantics": semantics,
             "source_fields": source_fields,
