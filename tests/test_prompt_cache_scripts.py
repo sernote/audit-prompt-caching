@@ -1,6 +1,7 @@
 import csv
 import importlib.util
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "audit-prompt-caching" / "scripts"
 FIXTURES = ROOT / "fixtures"
+
+# plugin-eval 0.1.2 reports static token estimates as len(text) / 4. Mirroring
+# that arithmetic keeps the budget guardrails in-suite without shelling out to
+# plugin-eval, which is not a repository test dependency.
+PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 139
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5852
+BASELINE_DESCRIPTION_CHARS = 679
+
+
+def estimated_plugin_eval_tokens(text):
+    return math.ceil(len(text) / 4)
 
 
 def run_script(script_name, *args):
@@ -2761,6 +2773,215 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, reference)
 
+
+    def skill_text(self):
+        return (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+    def skill_frontmatter_description(self):
+        frontmatter = self.skill_text().split("---", 2)[1]
+        self.assertIn("description:", frontmatter)
+        return frontmatter.split("description:", 1)[1]
+
+    def test_skill_description_is_shorter_but_keeps_trigger_boundaries(self):
+        description = self.skill_frontmatter_description()
+
+        self.assertLessEqual(
+            estimated_plugin_eval_tokens(description),
+            PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
+            "frontmatter description exceeds the plugin-eval moderate trigger ceiling",
+        )
+        self.assertLess(
+            len(description),
+            BASELINE_DESCRIPTION_CHARS * 0.85,
+            "frontmatter description is not materially shorter than the baseline",
+        )
+
+        for required in [
+            "Use whenever the user mentions",
+            "cached_tokens=0",
+            "cache_read_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "cache_control",
+            "cachePoint",
+            "TTFT",
+            "KV reuse",
+            "LLM cost or speed regressed",
+            "repeated long prompts",
+            "speeding up agents",
+            "LLM request shape",
+            "response_format",
+            "agent loops",
+            "compaction",
+            "Not for generic prompt writing",
+            "RAG",
+            "token counts",
+            "non-LLM perf",
+        ]:
+            self.assertIn(required, description)
+
+    def test_skill_stays_within_invoked_token_baseline(self):
+        self.assertLessEqual(
+            estimated_plugin_eval_tokens(self.skill_text()),
+            PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
+            "SKILL.md grew above the plugin-eval invoked-token baseline",
+        )
+
+    def test_skill_defines_explicit_cache_plane_gate(self):
+        skill = self.skill_text()
+
+        for required in [
+            "Cache Plane Gate",
+            "gateway_response",
+            "provider_prompt",
+            "engine_kv",
+            "external_kv",
+            "semantic_response",
+            "several planes at once",
+            "Do not infer a plane from provider or model names",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_defines_usage_evidence_contract(self):
+        skill = self.skill_text()
+
+        for required in [
+            "Usage Evidence Contract",
+            "schema_version",
+            "source_fields",
+            "accounting_semantics",
+            "denominator_status",
+            "`warnings`",
+            "decision-grade",
+            "valid",
+            "ambiguous",
+            "invalid",
+            "Do not build a second normalizer",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_defines_no_score_clinic_summary(self):
+        skill = self.skill_text()
+
+        for required in [
+            "Cache Clinic Summary",
+            "applicability",
+            "evidence_quality",
+            "prefix_stability",
+            "usage_accounting",
+            "routing_locality",
+            "economics",
+            "isolation",
+            "pass/warning/fail/unknown/not_applicable",
+            "Leave every unproven dimension `unknown`",
+            "never aggregate them into a score, rank, or grade",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_bounds_prefix_plan_and_isolation_evidence(self):
+        skill = self.skill_text()
+
+        for required in [
+            "observed rendered payload",
+            "request-construction",
+            "universal provider-internal serialization order",
+            "Isolation review is passive",
+            "separate authorization",
+            "out of scope",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_observability_reference_documents_usage_evidence_contract(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "observability.md"
+        ).read_text()
+
+        for required in [
+            "Usage Evidence Contract",
+            "schema_version",
+            "source_fields",
+            "accounting_semantics",
+            "denominator_status",
+            "usage.prompt_tokens_details.cached_tokens",
+            "human-readable dot paths",
+            "not machine-resolvable JSONPath",
+            "dynamic map keys",
+            "Paths never contain leaf values or raw envelopes",
+            "Backward Compatibility",
+            "additive",
+            "strict JSON consumers must allow new event, summary, and report fields",
+            "aggregate and report schema versioning remains deferred",
+        ]:
+            self.assertIn(required, reference)
+
+    def test_report_template_documents_plane_and_clinic_contract(self):
+        template = (
+            ROOT / "audit-prompt-caching" / "references" / "report-template.md"
+        ).read_text()
+
+        for required in [
+            "Cache Planes",
+            "--cache-plane",
+            "repeatable",
+            "gateway_response",
+            "provider_prompt",
+            "engine_kv",
+            "external_kv",
+            "semantic_response",
+            "Cache Clinic Summary",
+            "applicability",
+            "evidence_quality",
+            "prefix_stability",
+            "usage_accounting",
+            "routing_locality",
+            "economics",
+            "isolation",
+            "pass/warning/fail/unknown/not_applicable",
+            "--usage-accounting",
+            "--evidence-quality",
+            "non-decision-grade",
+            "no aggregate score",
+        ]:
+            self.assertIn(required, template)
+
+    def test_readme_documents_cache_plane_and_clinic_flags(self):
+        readme = (ROOT / "README.md").read_text()
+
+        for required in [
+            "--cache-plane gateway_response",
+            "--cache-plane provider_prompt",
+            "--evidence-quality",
+            "--usage-accounting",
+            "non-decision-grade",
+            "no aggregate score",
+        ]:
+            self.assertIn(required, readme)
+
+    def test_evals_cover_plane_denominator_and_unknown_dimension_pressure(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        combined = "\n".join(
+            item["prompt"] + "\n" + item["expected_output"] for item in evals["evals"]
+        )
+
+        for required in [
+            "gateway response-cache hit rate",
+            "cached_tokens stays 0",
+            "gateway_response",
+            "provider_prompt",
+            "unknown OpenAI-compatible wrapper",
+            "95 percent cache hit rate",
+            "denominator_status",
+            "ambiguous",
+            "no savings claim",
+            "no usage logs",
+            "cache clinic summary",
+            "unknown",
+            "no aggregate score",
+        ]:
+            self.assertIn(required, combined)
 
 if __name__ == "__main__":
     unittest.main()

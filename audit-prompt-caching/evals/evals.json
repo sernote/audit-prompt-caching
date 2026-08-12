@@ -85,6 +85,21 @@
       "id": 17,
       "prompt": "OpenAI GPT-5.6 telemetry has high cache_write_tokens and few reads. Is the cache saving money?",
       "expected_output": "Treat cache fields as inclusive input breakdowns and require current read, write, input, and output pricing before a cost conclusion."
+    },
+    {
+      "id": 18,
+      "prompt": "Our LiteLLM gateway reports a 70 percent gateway response-cache hit rate, but the OpenAI cached_tokens stays 0 on the same route. Is prompt caching working?",
+      "expected_output": "Separate the gateway_response plane from the provider_prompt plane; a gateway response-cache hit is not provider prefix reuse and each plane needs its own evidence."
+    },
+    {
+      "id": 19,
+      "prompt": "An unknown OpenAI-compatible wrapper reports a 95 percent cache hit rate in our dashboard. Can we book the savings this quarter?",
+      "expected_output": "Unknown wrapper accounting stays ambiguous, so denominator_status is ambiguous and the ratio is non-decision-grade: no savings claim until the accounting semantics are proven."
+    },
+    {
+      "id": 20,
+      "prompt": "We only have a prompt builder diff: no usage logs, no routing data, no cost model, and no isolation review. Give me the cache clinic summary.",
+      "expected_output": "Report every unproven clinic dimension as unknown instead of dropping it, and give no aggregate score, grade, or rank across dimensions."
     }
   ]
 }

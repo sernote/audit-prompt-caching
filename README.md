@@ -196,6 +196,11 @@ python3 audit-prompt-caching/scripts/render_audit_report.py \
   --usage-log path/to/usage.jsonl \
   --provider openai \
   --engine "Responses API" \
+  --cache-plane gateway_response \
+  --cache-plane provider_prompt \
+  --evidence-quality warning \
+  --usage-accounting warning \
+  --prefix-stability fail \
   --finding "src/llm/request.py:42 | high | openai | dynamic timestamp in system prompt | timestamp changes the cacheable prefix on every call | move volatile metadata after the stable prefix | compare rendered request bytes across repeated calls"
 python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
 python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
@@ -203,6 +208,14 @@ python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 
 `layout_linter.py` accepts rendered Chat-style `messages` payloads and
 Responses-style `input` payloads.
+
+`render_audit_report.py` takes `--cache-plane` once per plane in scope
+(`gateway_response`, `provider_prompt`, `engine_kv`, `external_kv`,
+`semantic_response`) and one status per Cache Clinic dimension, such as
+`--evidence-quality` or `--usage-accounting`. Unset dimensions stay `unknown`,
+and the report emits no aggregate score across them. When the normalized usage
+denominator is `ambiguous` or `invalid`, the rendered cache hit ratio is
+qualified as non-decision-grade and cannot support a savings claim.
 
 `prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
 

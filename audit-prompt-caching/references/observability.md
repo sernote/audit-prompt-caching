@@ -14,6 +14,43 @@ Use for dashboards, alerts, traces, release guardrails, and CI smoke tests.
 
 Do not log raw prompts. Use keyed hashes for tenant/user-derived or low-entropy prompt content.
 
+## Usage Evidence Contract
+
+`analyze_usage_logs.py --jsonl-normalized` emits one canonical event per record. Four fields decide whether a cache ratio is decision-grade:
+
+```json
+{
+  "schema_version": 1,
+  "source_fields": {
+    "input_tokens": "usage.prompt_tokens",
+    "cached_tokens": "usage.prompt_tokens_details.cached_tokens",
+    "cache_read_input_tokens": null,
+    "cache_creation_input_tokens": null,
+    "cache_write_tokens": null,
+    "output_tokens": "usage.completion_tokens"
+  },
+  "accounting_semantics": "inclusive",
+  "denominator_status": "valid",
+  "warnings": []
+}
+```
+
+- `schema_version` versions this normalized event contract, not the provider's raw schema.
+- `source_fields` names which raw field produced each canonical value, or `null` when the value is absent or derived.
+- `accounting_semantics` is `inclusive`, `additive`, or `ambiguous`.
+- `denominator_status` is `valid`, `ambiguous` (unresolved wrapper semantics, or no measured input), or `invalid` (an adapter invariant is contradicted, for example cached input above an inclusive input total). The aggregate takes the worst observed status: `invalid > ambiguous > valid`.
+- `warnings` carries the stable normalization warning codes; it is the only warning list.
+
+Only a `valid` denominator supports a savings or hit-rate claim. Report `ambiguous` and `invalid` ratios as non-decision-grade evidence and fix accounting first.
+
+### Source Path Handling
+
+`source_fields` values are human-readable dot paths for reviewers, not machine-resolvable JSONPath expressions. Unknown wrapper envelopes can place usage under dynamic map keys, so a path may not be reusable as a selector and can itself carry request- or tenant-derived identifiers. Treat normalized telemetry as sensitive and apply the same handling policy as the rest of your token telemetry. Paths never contain leaf values or raw envelopes.
+
+### Backward Compatibility
+
+Event, summary, and report changes are additive: no existing key is renamed or removed, and strict JSON consumers must allow new event, summary, and report fields rather than failing closed. Only normalized events are versioned today; aggregate and report schema versioning remains deferred until a breaking migration needs it.
+
 ## Dashboard
 
 Show cache read ratio, write/read ratio, cached-token share, output-token share, TTFT/prefill by route, final latency, route/provider/replica split, prompt/schema/tool hash changes, deploy correlation, and top prefix families by cost.
