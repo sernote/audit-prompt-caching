@@ -30,6 +30,36 @@ Do not do yet:
 source | severity | provider/engine | issue | evidence | evidence_type | confidence | impact_condition | cache impact | safe_first_action | fix | validation | do_not_do_yet
 ```
 
+## Cache Planes
+
+Name every plane the audit actually covers. `render_audit_report.py --cache-plane` is repeatable and renders in this fixed order regardless of input order:
+
+1. `gateway_response` — response reuse at a gateway or proxy.
+2. `provider_prompt` — provider-managed prompt/prefix caching in provider usage telemetry.
+3. `engine_kv` — attention KV reuse inside a self-hosted engine.
+4. `external_kv` — KV blocks persisted or transferred outside the serving process.
+5. `semantic_response` — similarity-based reuse of a prior response.
+
+With no `--cache-plane`, the JSON list is empty and Markdown renders `Cache planes: unknown`. The renderer never infers a plane from a provider, model, or route name.
+
+## Cache Clinic Summary
+
+Report seven dimensions, each with exactly one status of `pass/warning/fail/unknown/not_applicable`:
+
+| Dimension | CLI flag | Question |
+|---|---|---|
+| `applicability` | `--applicability` | Is caching the right lever for this route? |
+| `evidence_quality` | `--evidence-quality` | Do conclusions rest on rendered payloads, telemetry, or hypotheses? |
+| `prefix_stability` | `--prefix-stability` | Is the cacheable prefix byte/token stable? |
+| `usage_accounting` | `--usage-accounting` | Is the cache-hit denominator trustworthy? |
+| `routing_locality` | `--routing-locality` | Do repeated prefixes land on the same cache? |
+| `economics` | `--economics` | Does the read/write price shape justify the change? |
+| `isolation` | `--isolation` | Is cache-key and tenant scope safe? |
+
+Every dimension defaults to `unknown`. Leave missing evidence visible as `unknown` instead of excluding it, and emit no aggregate score, grade, rank, or traffic-light roll-up across dimensions.
+
+An `ambiguous` or `invalid` usage denominator can never be reported as `usage_accounting: pass`; the renderer rejects that combination, forces `warning`/`fail`, and marks the hit ratio non-decision-grade.
+
 ## Evidence Needed Next
 
 List rendered prompt pair, usage fields, route/model/provider, prefix/tool/schema hashes, TTFT/prefill, output tokens, and deployment/router/KV metrics needed to raise or lower severity.

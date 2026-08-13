@@ -1,0 +1,68 @@
+{
+  "title": "Improve audit-prompt-caching",
+  "target": {
+    "kind": "skill",
+    "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+    "entryPath": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+    "name": "audit-prompt-caching",
+    "relativePath": "audit-prompt-caching"
+  },
+  "summary": "Raise the evaluation from grade F (54/100) with a focus on the highest-signal structural and budget issues first.",
+  "goals": [
+    "Reduce repeated instruction text and move detail into deferred supporting files.",
+    "Split complex functions into smaller helpers or guard clauses.",
+    "Break large functions into smaller helpers with clear names."
+  ],
+  "measurementGoals": [
+    "token-usage-observer",
+    "task-outcome-scorecard",
+    "latency-efficiency"
+  ],
+  "requiredFixes": [
+    {
+      "id": "trigger_cost_tokens-budget-high",
+      "message": "trigger_cost_tokens is excessive relative to the current Codex baseline.",
+      "remediation": [
+        "Reduce repeated instruction text and move detail into deferred supporting files."
+      ]
+    },
+    {
+      "id": "deferred_cost_tokens-budget-high",
+      "message": "deferred_cost_tokens is excessive relative to the current Codex baseline.",
+      "remediation": [
+        "Reduce repeated instruction text and move detail into deferred supporting files."
+      ]
+    }
+  ],
+  "recommendedFixes": [
+    {
+      "id": "invoke_cost_tokens-budget-high",
+      "message": "invoke_cost_tokens is heavy relative to the current Codex baseline.",
+      "remediation": [
+        "Reduce repeated instruction text and move detail into deferred supporting files."
+      ]
+    },
+    {
+      "id": "py-complexity-high",
+      "message": "At least one Python function has high cyclomatic complexity.",
+      "remediation": [
+        "Split complex functions into smaller helpers or guard clauses."
+      ]
+    },
+    {
+      "id": "py-function-length-high",
+      "message": "At least one Python function is long enough to hurt readability.",
+      "remediation": [
+        "Break large functions into smaller helpers with clear names."
+      ]
+    },
+    {
+      "id": "py-tests-missing",
+      "message": "Python source files were found without matching test files.",
+      "remediation": [
+        "Add `test_*.py` or `tests/` coverage for the main Python logic."
+      ]
+    }
+  ],
+  "suggestedPrompt": "Use the skill-creator guidance to improve audit-prompt-caching. Keep the structure compact and move bulky details into references or scripts. Define success measures with these toolsets: token-usage-observer, task-outcome-scorecard, latency-efficiency. Address trigger_cost_tokens-budget-high: trigger_cost_tokens is excessive relative to the current Codex baseline. Address deferred_cost_tokens-budget-high: deferred_cost_tokens is excessive relative to the current Codex baseline. Address invoke_cost_tokens-budget-high: invoke_cost_tokens is heavy relative to the current Codex baseline. Address py-complexity-high: At least one Python function has high cyclomatic complexity. Address py-function-length-high: At least one Python function is long enough to hurt readability. Address py-tests-missing: Python source files were found without matching test files."
+}

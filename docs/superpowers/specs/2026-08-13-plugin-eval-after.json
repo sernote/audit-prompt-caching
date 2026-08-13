@@ -1,0 +1,1723 @@
+{
+  "schemaVersion": 1,
+  "tool": {
+    "name": "plugin-eval",
+    "version": "0.1.0"
+  },
+  "createdAt": "2026-08-12T23:21:45.385Z",
+  "target": {
+    "kind": "skill",
+    "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+    "entryPath": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+    "name": "audit-prompt-caching",
+    "relativePath": "audit-prompt-caching"
+  },
+  "summary": {
+    "score": 68,
+    "grade": "D",
+    "riskLevel": "high",
+    "riskReasons": [
+      "Contains 1 failing error check (deferred_cost_tokens-budget-high).",
+      "Overall score is below 70, which the evaluator treats as high risk."
+    ],
+    "scoreBreakdown": {
+      "startingScore": 100,
+      "totalDeductions": 32.25,
+      "finalScore": 68,
+      "gradeThresholds": {
+        "A": 93,
+        "B": 85,
+        "C": 70,
+        "D": 55
+      }
+    },
+    "checkCounts": {
+      "total": 6,
+      "pass": 0,
+      "warn": 4,
+      "fail": 1,
+      "info": 2,
+      "error": 1,
+      "warning": 4
+    },
+    "deductions": [
+      {
+        "id": "deferred_cost_tokens-budget-high",
+        "category": "budget",
+        "severity": "error",
+        "status": "fail",
+        "message": "deferred_cost_tokens is excessive relative to the current Codex baseline.",
+        "penalty": 14,
+        "remediation": [
+          "Reduce repeated instruction text and move detail into deferred supporting files."
+        ],
+        "source": "core"
+      },
+      {
+        "id": "invoke_cost_tokens-budget-high",
+        "category": "budget",
+        "severity": "warning",
+        "status": "warn",
+        "message": "invoke_cost_tokens is heavy relative to the current Codex baseline.",
+        "penalty": 4.5,
+        "remediation": [
+          "Reduce repeated instruction text and move detail into deferred supporting files."
+        ],
+        "source": "core"
+      },
+      {
+        "id": "py-complexity-high",
+        "category": "complexity",
+        "severity": "warning",
+        "status": "warn",
+        "message": "At least one Python function has high cyclomatic complexity.",
+        "penalty": 4.5,
+        "remediation": [
+          "Split complex functions into smaller helpers or guard clauses."
+        ],
+        "source": "core"
+      },
+      {
+        "id": "py-function-length-high",
+        "category": "readability",
+        "severity": "warning",
+        "status": "warn",
+        "message": "At least one Python function is long enough to hurt readability.",
+        "penalty": 4.5,
+        "remediation": [
+          "Break large functions into smaller helpers with clear names."
+        ],
+        "source": "core"
+      },
+      {
+        "id": "py-tests-missing",
+        "category": "best-practice",
+        "severity": "warning",
+        "status": "warn",
+        "message": "Python source files were found without matching test files.",
+        "penalty": 4.5,
+        "remediation": [
+          "Add `test_*.py` or `tests/` coverage for the main Python logic."
+        ],
+        "source": "core"
+      },
+      {
+        "id": "coverage-artifacts-unavailable",
+        "category": "coverage",
+        "severity": "info",
+        "status": "info",
+        "message": "No coverage artifacts were found for this target.",
+        "penalty": 0.25,
+        "remediation": [
+          "Generate `lcov.info`, `coverage.xml`, or an Istanbul coverage JSON file if you want coverage scoring."
+        ],
+        "source": "core"
+      }
+    ],
+    "categoryDeductions": [
+      {
+        "category": "budget",
+        "totalPenalty": 18.5,
+        "checks": 2
+      },
+      {
+        "category": "best-practice",
+        "totalPenalty": 4.5,
+        "checks": 1
+      },
+      {
+        "category": "complexity",
+        "totalPenalty": 4.5,
+        "checks": 1
+      },
+      {
+        "category": "readability",
+        "totalPenalty": 4.5,
+        "checks": 1
+      },
+      {
+        "category": "coverage",
+        "totalPenalty": 0.25,
+        "checks": 1
+      }
+    ],
+    "topRecommendations": [
+      "Reduce repeated instruction text and move detail into deferred supporting files.",
+      "Split complex functions into smaller helpers or guard clauses.",
+      "Break large functions into smaller helpers with clear names.",
+      "Add `test_*.py` or `tests/` coverage for the main Python logic."
+    ],
+    "whyBullets": [
+      "1 failing error check are driving the highest-confidence problems.",
+      "4 warning signals still need cleanup before this feels polished.",
+      "budget is the largest source of score loss at -18.5 points.",
+      "Active budget pressure is high enough that token cost may dominate the user experience.",
+      "No observed usage is attached yet, so budget conclusions are still based on static estimates."
+    ],
+    "fixFirst": [
+      {
+        "id": "deferred_cost_tokens-budget-high",
+        "category": "budget",
+        "severity": "error",
+        "status": "fail",
+        "message": "deferred_cost_tokens is excessive relative to the current Codex baseline.",
+        "why": "Budget pressure matters because always-loaded or frequently-loaded text can make the workflow feel expensive fast.",
+        "remediation": [
+          "Reduce repeated instruction text and move detail into deferred supporting files."
+        ],
+        "penalty": 14,
+        "source": "core"
+      },
+      {
+        "id": "invoke_cost_tokens-budget-high",
+        "category": "budget",
+        "severity": "warning",
+        "status": "warn",
+        "message": "invoke_cost_tokens is heavy relative to the current Codex baseline.",
+        "why": "Budget pressure matters because always-loaded or frequently-loaded text can make the workflow feel expensive fast.",
+        "remediation": [
+          "Reduce repeated instruction text and move detail into deferred supporting files."
+        ],
+        "penalty": 4.5,
+        "source": "core"
+      },
+      {
+        "id": "py-tests-missing",
+        "category": "best-practice",
+        "severity": "warning",
+        "status": "warn",
+        "message": "Python source files were found without matching test files.",
+        "why": "Best-practice gaps usually do not break the workflow immediately, but they make the skill harder to understand and improve.",
+        "remediation": [
+          "Add `test_*.py` or `tests/` coverage for the main Python logic."
+        ],
+        "penalty": 4.5,
+        "source": "core"
+      }
+    ],
+    "watchNext": [
+      {
+        "id": "py-complexity-high",
+        "category": "complexity",
+        "severity": "warning",
+        "status": "warn",
+        "message": "At least one Python function has high cyclomatic complexity.",
+        "why": "Complexity findings matter because they increase review cost and make generated or helper code harder to change safely.",
+        "remediation": [
+          "Split complex functions into smaller helpers or guard clauses."
+        ],
+        "penalty": 4.5,
+        "source": "core"
+      },
+      {
+        "id": "py-function-length-high",
+        "category": "readability",
+        "severity": "warning",
+        "status": "warn",
+        "message": "At least one Python function is long enough to hurt readability.",
+        "why": "Readability issues slow engineers down during review, debugging, and follow-up edits.",
+        "remediation": [
+          "Break large functions into smaller helpers with clear names."
+        ],
+        "penalty": 4.5,
+        "source": "core"
+      }
+    ]
+  },
+  "budgets": {
+    "method": "estimated-static",
+    "invocation_policy": {
+      "allow_implicit_invocation": true,
+      "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/agents/openai.yaml"
+    },
+    "trigger_cost_tokens": {
+      "value": 135,
+      "band": "moderate",
+      "thresholds": {
+        "goodMax": 96,
+        "moderateMax": 139,
+        "heavyMax": 164
+      },
+      "components": [
+        {
+          "label": "skill-name",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+          "tokens": 5,
+          "note": "Always-loaded skill identifier"
+        },
+        {
+          "label": "skill-description",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+          "tokens": 130,
+          "note": "Always-loaded trigger description"
+        }
+      ]
+    },
+    "invoke_cost_tokens": {
+      "value": 5850,
+      "band": "heavy",
+      "thresholds": {
+        "goodMax": 1380,
+        "moderateMax": 2039,
+        "heavyMax": 6905
+      },
+      "components": [
+        {
+          "label": "skill-file",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+          "tokens": 5850,
+          "note": "Loaded when the skill is invoked"
+        }
+      ]
+    },
+    "deferred_cost_tokens": {
+      "value": 41238,
+      "band": "excessive",
+      "thresholds": {
+        "goodMax": 3771,
+        "moderateMax": 17846,
+        "heavyMax": 26574
+      },
+      "components": [
+        {
+          "label": "agents/openai.yaml",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/agents/openai.yaml",
+          "tokens": 65,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "evals/evals.json",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/evals/evals.json",
+          "tokens": 1564,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "evals/trigger_eval.json",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/evals/trigger_eval.json",
+          "tokens": 774,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/agent-tools.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/agent-tools.md",
+          "tokens": 2125,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/anthropic.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/anthropic.md",
+          "tokens": 951,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/azure-openai.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/azure-openai.md",
+          "tokens": 1011,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/bedrock.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/bedrock.md",
+          "tokens": 521,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/deepseek.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/deepseek.md",
+          "tokens": 721,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/economics.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/economics.md",
+          "tokens": 407,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/gemini.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/gemini.md",
+          "tokens": 1169,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/mastra.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/mastra.md",
+          "tokens": 614,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/mechanics.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/mechanics.md",
+          "tokens": 672,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/observability.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/observability.md",
+          "tokens": 1062,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/openai.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/openai.md",
+          "tokens": 1972,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/openrouter.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/openrouter.md",
+          "tokens": 820,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/operational-playbook.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/operational-playbook.md",
+          "tokens": 574,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/predeploy-checklist.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/predeploy-checklist.md",
+          "tokens": 422,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/qwen.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/qwen.md",
+          "tokens": 962,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/report-template.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/report-template.md",
+          "tokens": 829,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/rules.json",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/rules.json",
+          "tokens": 1257,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/sglang.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/sglang.md",
+          "tokens": 984,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/use-cases.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/use-cases.md",
+          "tokens": 699,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/vercel-ai-sdk.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/vercel-ai-sdk.md",
+          "tokens": 863,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/vllm.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/vllm.md",
+          "tokens": 859,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/yandexgpt.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/yandexgpt.md",
+          "tokens": 671,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "references/zai.md",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/zai.md",
+          "tokens": 671,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/analyze_usage_logs.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/analyze_usage_logs.py",
+          "tokens": 5673,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/estimate_cache_roi.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/estimate_cache_roi.py",
+          "tokens": 1495,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/extract_llm_calls.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/extract_llm_calls.py",
+          "tokens": 1143,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/layout_linter.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/layout_linter.py",
+          "tokens": 3263,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/prefix_stability_check.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/prefix_stability_check.py",
+          "tokens": 866,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/render_audit_report.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/render_audit_report.py",
+          "tokens": 4067,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/run_trigger_eval.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/run_trigger_eval.py",
+          "tokens": 603,
+          "note": "Deferred supporting file"
+        },
+        {
+          "label": "scripts/validate_skill_package.py",
+          "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/validate_skill_package.py",
+          "tokens": 889,
+          "note": "Deferred supporting file"
+        }
+      ]
+    },
+    "total_tokens": {
+      "value": 47223,
+      "band": "excessive"
+    }
+  },
+  "observedUsage": null,
+  "checks": [
+    {
+      "id": "invoke_cost_tokens-budget-high",
+      "category": "budget",
+      "severity": "warning",
+      "status": "warn",
+      "message": "invoke_cost_tokens is heavy relative to the current Codex baseline.",
+      "evidence": [
+        "Value: 5850 tokens",
+        "Baseline samples: skills=12, plugins=176"
+      ],
+      "remediation": [
+        "Reduce repeated instruction text and move detail into deferred supporting files."
+      ],
+      "source": "core"
+    },
+    {
+      "id": "deferred_cost_tokens-budget-high",
+      "category": "budget",
+      "severity": "error",
+      "status": "fail",
+      "message": "deferred_cost_tokens is excessive relative to the current Codex baseline.",
+      "evidence": [
+        "Value: 41238 tokens",
+        "Baseline samples: skills=12, plugins=176"
+      ],
+      "remediation": [
+        "Reduce repeated instruction text and move detail into deferred supporting files."
+      ],
+      "source": "core"
+    },
+    {
+      "id": "py-complexity-high",
+      "category": "complexity",
+      "severity": "warning",
+      "status": "warn",
+      "message": "At least one Python function has high cyclomatic complexity.",
+      "evidence": [
+        "Max complexity: 124"
+      ],
+      "remediation": [
+        "Split complex functions into smaller helpers or guard clauses."
+      ],
+      "source": "core"
+    },
+    {
+      "id": "py-function-length-high",
+      "category": "readability",
+      "severity": "warning",
+      "status": "warn",
+      "message": "At least one Python function is long enough to hurt readability.",
+      "evidence": [
+        "Max function length: 118 lines"
+      ],
+      "remediation": [
+        "Break large functions into smaller helpers with clear names."
+      ],
+      "source": "core"
+    },
+    {
+      "id": "py-tests-missing",
+      "category": "best-practice",
+      "severity": "warning",
+      "status": "warn",
+      "message": "Python source files were found without matching test files.",
+      "evidence": [
+        "Source files: 8"
+      ],
+      "remediation": [
+        "Add `test_*.py` or `tests/` coverage for the main Python logic."
+      ],
+      "source": "core"
+    },
+    {
+      "id": "coverage-artifacts-unavailable",
+      "category": "coverage",
+      "severity": "info",
+      "status": "info",
+      "message": "No coverage artifacts were found for this target.",
+      "evidence": [
+        "audit-prompt-caching"
+      ],
+      "remediation": [
+        "Generate `lcov.info`, `coverage.xml`, or an Istanbul coverage JSON file if you want coverage scoring."
+      ],
+      "source": "core"
+    }
+  ],
+  "metrics": [
+    {
+      "id": "skill_line_count",
+      "category": "budget",
+      "value": 307,
+      "unit": "lines",
+      "band": "good",
+      "source": "core",
+      "targetPath": "audit-prompt-caching"
+    },
+    {
+      "id": "description_length_chars",
+      "category": "budget",
+      "value": 517,
+      "unit": "chars",
+      "band": "moderate",
+      "source": "core",
+      "targetPath": "audit-prompt-caching"
+    },
+    {
+      "id": "relative_link_count",
+      "category": "documentation",
+      "value": 0,
+      "unit": "links",
+      "band": "good",
+      "source": "core",
+      "targetPath": "audit-prompt-caching"
+    },
+    {
+      "id": "code_fence_count",
+      "category": "readability",
+      "value": 1,
+      "unit": "blocks",
+      "band": "good",
+      "source": "core",
+      "targetPath": "audit-prompt-caching"
+    },
+    {
+      "id": "support_file_count",
+      "category": "documentation",
+      "value": 34,
+      "unit": "files",
+      "band": "good",
+      "source": "core",
+      "targetPath": "audit-prompt-caching"
+    },
+    {
+      "id": "trigger_cost_tokens",
+      "category": "budget",
+      "value": 135,
+      "unit": "tokens",
+      "band": "moderate",
+      "source": "core"
+    },
+    {
+      "id": "invoke_cost_tokens",
+      "category": "budget",
+      "value": 5850,
+      "unit": "tokens",
+      "band": "heavy",
+      "source": "core"
+    },
+    {
+      "id": "deferred_cost_tokens",
+      "category": "budget",
+      "value": 41238,
+      "unit": "tokens",
+      "band": "excessive",
+      "source": "core"
+    },
+    {
+      "id": "py_file_count",
+      "category": "code-quality",
+      "value": 8,
+      "unit": "files",
+      "band": "good",
+      "source": "core"
+    },
+    {
+      "id": "py_function_count",
+      "category": "code-quality",
+      "value": 111,
+      "unit": "functions",
+      "band": "good",
+      "source": "core"
+    },
+    {
+      "id": "py_max_cyclomatic_complexity",
+      "category": "complexity",
+      "value": 124,
+      "unit": "score",
+      "band": "heavy",
+      "source": "core"
+    },
+    {
+      "id": "py_average_function_length",
+      "category": "readability",
+      "value": 14.77,
+      "unit": "lines",
+      "band": "good",
+      "source": "core"
+    },
+    {
+      "id": "py_max_nesting_depth",
+      "category": "complexity",
+      "value": 8,
+      "unit": "levels",
+      "band": "heavy",
+      "source": "core"
+    },
+    {
+      "id": "py_comment_ratio",
+      "category": "readability",
+      "value": 0.005,
+      "unit": "ratio",
+      "band": "moderate",
+      "source": "core"
+    },
+    {
+      "id": "py_test_file_count",
+      "category": "best-practice",
+      "value": 0,
+      "unit": "files",
+      "band": "moderate",
+      "source": "core"
+    },
+    {
+      "id": "coverage_artifact_count",
+      "category": "coverage",
+      "value": 0,
+      "unit": "files",
+      "band": "info",
+      "source": "core"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "skill-link-inventory",
+      "type": "inventory",
+      "label": "Skill relative links",
+      "description": "Relative links found in SKILL.md.",
+      "source": "core",
+      "data": {
+        "links": []
+      }
+    },
+    {
+      "id": "budget-breakdown",
+      "type": "budget",
+      "label": "Budget breakdown",
+      "description": "Trigger, invoke, and deferred token budget analysis.",
+      "source": "core",
+      "data": {
+        "budgets": {
+          "method": "estimated-static",
+          "invocation_policy": {
+            "allow_implicit_invocation": true,
+            "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/agents/openai.yaml"
+          },
+          "trigger_cost_tokens": {
+            "value": 135,
+            "band": "moderate",
+            "thresholds": {
+              "goodMax": 96,
+              "moderateMax": 139,
+              "heavyMax": 164
+            },
+            "components": [
+              {
+                "label": "skill-name",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+                "tokens": 5,
+                "note": "Always-loaded skill identifier"
+              },
+              {
+                "label": "skill-description",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+                "tokens": 130,
+                "note": "Always-loaded trigger description"
+              }
+            ]
+          },
+          "invoke_cost_tokens": {
+            "value": 5850,
+            "band": "heavy",
+            "thresholds": {
+              "goodMax": 1380,
+              "moderateMax": 2039,
+              "heavyMax": 6905
+            },
+            "components": [
+              {
+                "label": "skill-file",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+                "tokens": 5850,
+                "note": "Loaded when the skill is invoked"
+              }
+            ]
+          },
+          "deferred_cost_tokens": {
+            "value": 41238,
+            "band": "excessive",
+            "thresholds": {
+              "goodMax": 3771,
+              "moderateMax": 17846,
+              "heavyMax": 26574
+            },
+            "components": [
+              {
+                "label": "agents/openai.yaml",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/agents/openai.yaml",
+                "tokens": 65,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "evals/evals.json",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/evals/evals.json",
+                "tokens": 1564,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "evals/trigger_eval.json",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/evals/trigger_eval.json",
+                "tokens": 774,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/agent-tools.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/agent-tools.md",
+                "tokens": 2125,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/anthropic.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/anthropic.md",
+                "tokens": 951,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/azure-openai.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/azure-openai.md",
+                "tokens": 1011,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/bedrock.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/bedrock.md",
+                "tokens": 521,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/deepseek.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/deepseek.md",
+                "tokens": 721,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/economics.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/economics.md",
+                "tokens": 407,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/gemini.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/gemini.md",
+                "tokens": 1169,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/mastra.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/mastra.md",
+                "tokens": 614,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/mechanics.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/mechanics.md",
+                "tokens": 672,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/observability.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/observability.md",
+                "tokens": 1062,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/openai.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/openai.md",
+                "tokens": 1972,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/openrouter.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/openrouter.md",
+                "tokens": 820,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/operational-playbook.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/operational-playbook.md",
+                "tokens": 574,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/predeploy-checklist.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/predeploy-checklist.md",
+                "tokens": 422,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/qwen.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/qwen.md",
+                "tokens": 962,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/report-template.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/report-template.md",
+                "tokens": 829,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/rules.json",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/rules.json",
+                "tokens": 1257,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/sglang.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/sglang.md",
+                "tokens": 984,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/use-cases.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/use-cases.md",
+                "tokens": 699,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/vercel-ai-sdk.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/vercel-ai-sdk.md",
+                "tokens": 863,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/vllm.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/vllm.md",
+                "tokens": 859,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/yandexgpt.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/yandexgpt.md",
+                "tokens": 671,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "references/zai.md",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/references/zai.md",
+                "tokens": 671,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/analyze_usage_logs.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/analyze_usage_logs.py",
+                "tokens": 5673,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/estimate_cache_roi.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/estimate_cache_roi.py",
+                "tokens": 1495,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/extract_llm_calls.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/extract_llm_calls.py",
+                "tokens": 1143,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/layout_linter.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/layout_linter.py",
+                "tokens": 3263,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/prefix_stability_check.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/prefix_stability_check.py",
+                "tokens": 866,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/render_audit_report.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/render_audit_report.py",
+                "tokens": 4067,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/run_trigger_eval.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/run_trigger_eval.py",
+                "tokens": 603,
+                "note": "Deferred supporting file"
+              },
+              {
+                "label": "scripts/validate_skill_package.py",
+                "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/scripts/validate_skill_package.py",
+                "tokens": 889,
+                "note": "Deferred supporting file"
+              }
+            ]
+          },
+          "total_tokens": {
+            "value": 47223,
+            "band": "excessive"
+          }
+        },
+        "baselineEvidence": {
+          "skillSamples": 12,
+          "pluginSamples": 176,
+          "sourceRoots": [
+            "../../../../../.codex/skills",
+            "../../../../../.codex/plugins/cache/openai-curated",
+            "../../../../../.codex/.tmp/plugins/plugins"
+          ]
+        }
+      }
+    },
+    {
+      "id": "py-per-file-analysis",
+      "type": "analysis",
+      "label": "Python per-file analysis",
+      "description": "Heuristic Python quality and complexity breakdown by file.",
+      "source": "core",
+      "data": {
+        "files": [
+          {
+            "path": "scripts/analyze_usage_logs.py",
+            "functionCount": 55,
+            "complexity": 124,
+            "maxFunctionLength": 53,
+            "maxNesting": 6,
+            "longLines": 0
+          },
+          {
+            "path": "scripts/estimate_cache_roi.py",
+            "functionCount": 6,
+            "complexity": 23,
+            "maxFunctionLength": 74,
+            "maxNesting": 4,
+            "longLines": 0
+          },
+          {
+            "path": "scripts/extract_llm_calls.py",
+            "functionCount": 4,
+            "complexity": 18,
+            "maxFunctionLength": 33,
+            "maxNesting": 8,
+            "longLines": 0
+          },
+          {
+            "path": "scripts/layout_linter.py",
+            "functionCount": 18,
+            "complexity": 99,
+            "maxFunctionLength": 118,
+            "maxNesting": 5,
+            "longLines": 0
+          },
+          {
+            "path": "scripts/prefix_stability_check.py",
+            "functionCount": 5,
+            "complexity": 18,
+            "maxFunctionLength": 50,
+            "maxNesting": 3,
+            "longLines": 0
+          },
+          {
+            "path": "scripts/render_audit_report.py",
+            "functionCount": 15,
+            "complexity": 69,
+            "maxFunctionLength": 114,
+            "maxNesting": 7,
+            "longLines": 0
+          },
+          {
+            "path": "scripts/run_trigger_eval.py",
+            "functionCount": 3,
+            "complexity": 22,
+            "maxFunctionLength": 28,
+            "maxNesting": 3,
+            "longLines": 0
+          },
+          {
+            "path": "scripts/validate_skill_package.py",
+            "functionCount": 5,
+            "complexity": 27,
+            "maxFunctionLength": 51,
+            "maxNesting": 3,
+            "longLines": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "measurement-plan",
+      "type": "measurement-plan",
+      "label": "Measurement plan",
+      "description": "Recommended toolsets for measuring the real-world effect of this skill or plugin.",
+      "source": "core",
+      "data": {
+        "recommendedToolsets": [
+          "token-usage-observer",
+          "task-outcome-scorecard",
+          "latency-efficiency"
+        ],
+        "toolsets": [
+          {
+            "id": "token-usage-observer",
+            "label": "Token Usage Observer",
+            "priority": "high",
+            "goal": "Measure how many tokens the skill or plugin actually burns in representative runs.",
+            "why": "Static estimates are useful guardrails, but observed usage is what tells you whether a real workflow is affordable and whether caching or reasoning changes the picture.",
+            "signals": [
+              "observed_usage_sample_count",
+              "observed_input_tokens_avg",
+              "observed_total_tokens_avg",
+              "estimate_vs_observed_input_ratio"
+            ],
+            "evidenceSources": [
+              "Responses API usage logs",
+              "Codex-like session exports",
+              "JSONL traces captured from local benchmarking harnesses"
+            ],
+            "starterPack": {
+              "manifestName": "token-usage-pack",
+              "focus": "Validate sample size, cold-start versus warm-cache behavior, and estimate drift over time."
+            }
+          },
+          {
+            "id": "task-outcome-scorecard",
+            "label": "Task Outcome Scorecard",
+            "priority": "high",
+            "goal": "Measure whether the skill helps users finish the intended job with fewer retries and less cleanup.",
+            "why": "A low-token skill is still a miss if it fails the task, and a verbose skill may be worth it if it consistently improves first-pass success.",
+            "signals": [
+              "task_success_rate",
+              "first_pass_success_rate",
+              "retry_rate",
+              "human_override_rate"
+            ],
+            "evidenceSources": [
+              "Task run logs",
+              "Structured user acceptance checklist",
+              "Before/after comparison runs on the same prompts"
+            ],
+            "starterPack": {
+              "manifestName": "task-outcomes-pack",
+              "focus": "Score success, retries, and manual intervention across a fixed prompt set."
+            }
+          },
+          {
+            "id": "tool-call-audit",
+            "label": "Tool Call Audit",
+            "priority": "medium",
+            "goal": "Check whether the agent uses the right tools, arguments, and sequencing when the skill is active.",
+            "why": "For Codex plugins and many higher-agency skills, tool correctness is often the real determinant of user value.",
+            "signals": [
+              "tool_call_success_rate",
+              "invalid_tool_argument_rate",
+              "recoverable_tool_failure_rate"
+            ],
+            "evidenceSources": [
+              "Tool invocation traces",
+              "Recorded sessions",
+              "Golden-path scenario replays"
+            ],
+            "starterPack": {
+              "manifestName": "tool-audit-pack",
+              "focus": "Flag wrong tool selection, malformed args, and missing follow-up calls."
+            }
+          },
+          {
+            "id": "latency-efficiency",
+            "label": "Latency And Efficiency",
+            "priority": "high",
+            "goal": "Track whether the skill speeds users up enough to justify its cost.",
+            "why": "DX improvements usually win when they reduce waiting or rework, not only when they reduce absolute token counts.",
+            "signals": [
+              "p50_time_to_first_acceptable_answer_seconds",
+              "p95_time_to_task_completion_seconds",
+              "tokens_per_successful_run"
+            ],
+            "evidenceSources": [
+              "Benchmark harness timings",
+              "Manual stopwatch runs on canonical tasks",
+              "Responses API timestamps combined with usage logs"
+            ],
+            "starterPack": {
+              "manifestName": "latency-efficiency-pack",
+              "focus": "Measure time-to-value and cost-per-success on a stable prompt suite."
+            }
+          },
+          {
+            "id": "human-rubric-review",
+            "label": "Human Rubric Review",
+            "priority": "medium",
+            "goal": "Capture clarity, trust, and usefulness signals that automated checks will miss.",
+            "why": "The best skills often reduce confusion and editing effort in ways that do not show up in static lint-like checks.",
+            "signals": [
+              "clarity_score_avg",
+              "confidence_score_avg",
+              "follow_up_question_rate"
+            ],
+            "evidenceSources": [
+              "Reviewer scorecards",
+              "Team rubric sheets",
+              "Annotated transcripts"
+            ],
+            "starterPack": {
+              "manifestName": "human-rubric-pack",
+              "focus": "Collect 1 to 5 scores for clarity, trust, and edit burden across a small evaluator panel."
+            }
+          },
+          {
+            "id": "regression-suite",
+            "label": "Regression Suite",
+            "priority": "medium",
+            "goal": "Protect the repository behavior that the skill is supposed to improve.",
+            "why": "If a skill is meant to help coding workflows, outcomes should be paired with deterministic repo checks so quality gains do not come from cutting corners.",
+            "signals": [
+              "test_pass_rate",
+              "lint_pass_rate",
+              "regression_escape_count"
+            ],
+            "evidenceSources": [
+              "Unit and integration test runs",
+              "Coverage deltas",
+              "Snapshot or golden-file checks"
+            ],
+            "starterPack": {
+              "manifestName": "regression-pack",
+              "focus": "Blend repository test outcomes with evaluation-task success metrics."
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "extensions": [],
+  "measurementPlan": {
+    "kind": "measurement-plan",
+    "createdAt": "2026-08-12T23:21:46.497Z",
+    "target": {
+      "kind": "skill",
+      "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+      "entryPath": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+      "name": "audit-prompt-caching",
+      "relativePath": "audit-prompt-caching"
+    },
+    "title": "Measurement plan for audit-prompt-caching",
+    "summary": "Combine cost, outcome, and trust signals so you can tell whether the skill or plugin is genuinely helping instead of only looking well-structured on paper.",
+    "recommendedToolsets": [
+      "token-usage-observer",
+      "task-outcome-scorecard",
+      "latency-efficiency"
+    ],
+    "toolsets": [
+      {
+        "id": "token-usage-observer",
+        "label": "Token Usage Observer",
+        "priority": "high",
+        "goal": "Measure how many tokens the skill or plugin actually burns in representative runs.",
+        "why": "Static estimates are useful guardrails, but observed usage is what tells you whether a real workflow is affordable and whether caching or reasoning changes the picture.",
+        "signals": [
+          "observed_usage_sample_count",
+          "observed_input_tokens_avg",
+          "observed_total_tokens_avg",
+          "estimate_vs_observed_input_ratio"
+        ],
+        "evidenceSources": [
+          "Responses API usage logs",
+          "Codex-like session exports",
+          "JSONL traces captured from local benchmarking harnesses"
+        ],
+        "starterPack": {
+          "manifestName": "token-usage-pack",
+          "focus": "Validate sample size, cold-start versus warm-cache behavior, and estimate drift over time."
+        }
+      },
+      {
+        "id": "task-outcome-scorecard",
+        "label": "Task Outcome Scorecard",
+        "priority": "high",
+        "goal": "Measure whether the skill helps users finish the intended job with fewer retries and less cleanup.",
+        "why": "A low-token skill is still a miss if it fails the task, and a verbose skill may be worth it if it consistently improves first-pass success.",
+        "signals": [
+          "task_success_rate",
+          "first_pass_success_rate",
+          "retry_rate",
+          "human_override_rate"
+        ],
+        "evidenceSources": [
+          "Task run logs",
+          "Structured user acceptance checklist",
+          "Before/after comparison runs on the same prompts"
+        ],
+        "starterPack": {
+          "manifestName": "task-outcomes-pack",
+          "focus": "Score success, retries, and manual intervention across a fixed prompt set."
+        }
+      },
+      {
+        "id": "tool-call-audit",
+        "label": "Tool Call Audit",
+        "priority": "medium",
+        "goal": "Check whether the agent uses the right tools, arguments, and sequencing when the skill is active.",
+        "why": "For Codex plugins and many higher-agency skills, tool correctness is often the real determinant of user value.",
+        "signals": [
+          "tool_call_success_rate",
+          "invalid_tool_argument_rate",
+          "recoverable_tool_failure_rate"
+        ],
+        "evidenceSources": [
+          "Tool invocation traces",
+          "Recorded sessions",
+          "Golden-path scenario replays"
+        ],
+        "starterPack": {
+          "manifestName": "tool-audit-pack",
+          "focus": "Flag wrong tool selection, malformed args, and missing follow-up calls."
+        }
+      },
+      {
+        "id": "latency-efficiency",
+        "label": "Latency And Efficiency",
+        "priority": "high",
+        "goal": "Track whether the skill speeds users up enough to justify its cost.",
+        "why": "DX improvements usually win when they reduce waiting or rework, not only when they reduce absolute token counts.",
+        "signals": [
+          "p50_time_to_first_acceptable_answer_seconds",
+          "p95_time_to_task_completion_seconds",
+          "tokens_per_successful_run"
+        ],
+        "evidenceSources": [
+          "Benchmark harness timings",
+          "Manual stopwatch runs on canonical tasks",
+          "Responses API timestamps combined with usage logs"
+        ],
+        "starterPack": {
+          "manifestName": "latency-efficiency-pack",
+          "focus": "Measure time-to-value and cost-per-success on a stable prompt suite."
+        }
+      },
+      {
+        "id": "human-rubric-review",
+        "label": "Human Rubric Review",
+        "priority": "medium",
+        "goal": "Capture clarity, trust, and usefulness signals that automated checks will miss.",
+        "why": "The best skills often reduce confusion and editing effort in ways that do not show up in static lint-like checks.",
+        "signals": [
+          "clarity_score_avg",
+          "confidence_score_avg",
+          "follow_up_question_rate"
+        ],
+        "evidenceSources": [
+          "Reviewer scorecards",
+          "Team rubric sheets",
+          "Annotated transcripts"
+        ],
+        "starterPack": {
+          "manifestName": "human-rubric-pack",
+          "focus": "Collect 1 to 5 scores for clarity, trust, and edit burden across a small evaluator panel."
+        }
+      },
+      {
+        "id": "regression-suite",
+        "label": "Regression Suite",
+        "priority": "medium",
+        "goal": "Protect the repository behavior that the skill is supposed to improve.",
+        "why": "If a skill is meant to help coding workflows, outcomes should be paired with deterministic repo checks so quality gains do not come from cutting corners.",
+        "signals": [
+          "test_pass_rate",
+          "lint_pass_rate",
+          "regression_escape_count"
+        ],
+        "evidenceSources": [
+          "Unit and integration test runs",
+          "Coverage deltas",
+          "Snapshot or golden-file checks"
+        ],
+        "starterPack": {
+          "manifestName": "regression-pack",
+          "focus": "Blend repository test outcomes with evaluation-task success metrics."
+        }
+      }
+    ],
+    "artifact": {
+      "id": "measurement-plan",
+      "type": "measurement-plan",
+      "label": "Measurement plan",
+      "description": "Recommended toolsets for measuring the real-world effect of this skill or plugin.",
+      "source": "core",
+      "data": {
+        "recommendedToolsets": [
+          "token-usage-observer",
+          "task-outcome-scorecard",
+          "latency-efficiency"
+        ],
+        "toolsets": [
+          {
+            "id": "token-usage-observer",
+            "label": "Token Usage Observer",
+            "priority": "high",
+            "goal": "Measure how many tokens the skill or plugin actually burns in representative runs.",
+            "why": "Static estimates are useful guardrails, but observed usage is what tells you whether a real workflow is affordable and whether caching or reasoning changes the picture.",
+            "signals": [
+              "observed_usage_sample_count",
+              "observed_input_tokens_avg",
+              "observed_total_tokens_avg",
+              "estimate_vs_observed_input_ratio"
+            ],
+            "evidenceSources": [
+              "Responses API usage logs",
+              "Codex-like session exports",
+              "JSONL traces captured from local benchmarking harnesses"
+            ],
+            "starterPack": {
+              "manifestName": "token-usage-pack",
+              "focus": "Validate sample size, cold-start versus warm-cache behavior, and estimate drift over time."
+            }
+          },
+          {
+            "id": "task-outcome-scorecard",
+            "label": "Task Outcome Scorecard",
+            "priority": "high",
+            "goal": "Measure whether the skill helps users finish the intended job with fewer retries and less cleanup.",
+            "why": "A low-token skill is still a miss if it fails the task, and a verbose skill may be worth it if it consistently improves first-pass success.",
+            "signals": [
+              "task_success_rate",
+              "first_pass_success_rate",
+              "retry_rate",
+              "human_override_rate"
+            ],
+            "evidenceSources": [
+              "Task run logs",
+              "Structured user acceptance checklist",
+              "Before/after comparison runs on the same prompts"
+            ],
+            "starterPack": {
+              "manifestName": "task-outcomes-pack",
+              "focus": "Score success, retries, and manual intervention across a fixed prompt set."
+            }
+          },
+          {
+            "id": "tool-call-audit",
+            "label": "Tool Call Audit",
+            "priority": "medium",
+            "goal": "Check whether the agent uses the right tools, arguments, and sequencing when the skill is active.",
+            "why": "For Codex plugins and many higher-agency skills, tool correctness is often the real determinant of user value.",
+            "signals": [
+              "tool_call_success_rate",
+              "invalid_tool_argument_rate",
+              "recoverable_tool_failure_rate"
+            ],
+            "evidenceSources": [
+              "Tool invocation traces",
+              "Recorded sessions",
+              "Golden-path scenario replays"
+            ],
+            "starterPack": {
+              "manifestName": "tool-audit-pack",
+              "focus": "Flag wrong tool selection, malformed args, and missing follow-up calls."
+            }
+          },
+          {
+            "id": "latency-efficiency",
+            "label": "Latency And Efficiency",
+            "priority": "high",
+            "goal": "Track whether the skill speeds users up enough to justify its cost.",
+            "why": "DX improvements usually win when they reduce waiting or rework, not only when they reduce absolute token counts.",
+            "signals": [
+              "p50_time_to_first_acceptable_answer_seconds",
+              "p95_time_to_task_completion_seconds",
+              "tokens_per_successful_run"
+            ],
+            "evidenceSources": [
+              "Benchmark harness timings",
+              "Manual stopwatch runs on canonical tasks",
+              "Responses API timestamps combined with usage logs"
+            ],
+            "starterPack": {
+              "manifestName": "latency-efficiency-pack",
+              "focus": "Measure time-to-value and cost-per-success on a stable prompt suite."
+            }
+          },
+          {
+            "id": "human-rubric-review",
+            "label": "Human Rubric Review",
+            "priority": "medium",
+            "goal": "Capture clarity, trust, and usefulness signals that automated checks will miss.",
+            "why": "The best skills often reduce confusion and editing effort in ways that do not show up in static lint-like checks.",
+            "signals": [
+              "clarity_score_avg",
+              "confidence_score_avg",
+              "follow_up_question_rate"
+            ],
+            "evidenceSources": [
+              "Reviewer scorecards",
+              "Team rubric sheets",
+              "Annotated transcripts"
+            ],
+            "starterPack": {
+              "manifestName": "human-rubric-pack",
+              "focus": "Collect 1 to 5 scores for clarity, trust, and edit burden across a small evaluator panel."
+            }
+          },
+          {
+            "id": "regression-suite",
+            "label": "Regression Suite",
+            "priority": "medium",
+            "goal": "Protect the repository behavior that the skill is supposed to improve.",
+            "why": "If a skill is meant to help coding workflows, outcomes should be paired with deterministic repo checks so quality gains do not come from cutting corners.",
+            "signals": [
+              "test_pass_rate",
+              "lint_pass_rate",
+              "regression_escape_count"
+            ],
+            "evidenceSources": [
+              "Unit and integration test runs",
+              "Coverage deltas",
+              "Snapshot or golden-file checks"
+            ],
+            "starterPack": {
+              "manifestName": "regression-pack",
+              "focus": "Blend repository test outcomes with evaluation-task success metrics."
+            }
+          }
+        ]
+      }
+    },
+    "nextAction": {
+      "label": "Start with Token Usage Observer",
+      "why": "Measure how many tokens the skill or plugin actually burns in representative runs.",
+      "command": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'What should I run next?' --format markdown",
+      "chatPrompt": "What should I run next?",
+      "toolsetId": "token-usage-observer"
+    }
+  },
+  "improvementBrief": {
+    "title": "Improve audit-prompt-caching",
+    "target": {
+      "kind": "skill",
+      "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+      "entryPath": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+      "name": "audit-prompt-caching",
+      "relativePath": "audit-prompt-caching"
+    },
+    "summary": "Raise the evaluation from grade D (68/100) with a focus on the highest-signal structural and budget issues first.",
+    "goals": [
+      "Reduce repeated instruction text and move detail into deferred supporting files.",
+      "Split complex functions into smaller helpers or guard clauses.",
+      "Break large functions into smaller helpers with clear names.",
+      "Add `test_*.py` or `tests/` coverage for the main Python logic."
+    ],
+    "measurementGoals": [
+      "token-usage-observer",
+      "task-outcome-scorecard",
+      "latency-efficiency"
+    ],
+    "requiredFixes": [
+      {
+        "id": "deferred_cost_tokens-budget-high",
+        "message": "deferred_cost_tokens is excessive relative to the current Codex baseline.",
+        "remediation": [
+          "Reduce repeated instruction text and move detail into deferred supporting files."
+        ]
+      }
+    ],
+    "recommendedFixes": [
+      {
+        "id": "invoke_cost_tokens-budget-high",
+        "message": "invoke_cost_tokens is heavy relative to the current Codex baseline.",
+        "remediation": [
+          "Reduce repeated instruction text and move detail into deferred supporting files."
+        ]
+      },
+      {
+        "id": "py-complexity-high",
+        "message": "At least one Python function has high cyclomatic complexity.",
+        "remediation": [
+          "Split complex functions into smaller helpers or guard clauses."
+        ]
+      },
+      {
+        "id": "py-function-length-high",
+        "message": "At least one Python function is long enough to hurt readability.",
+        "remediation": [
+          "Break large functions into smaller helpers with clear names."
+        ]
+      },
+      {
+        "id": "py-tests-missing",
+        "message": "Python source files were found without matching test files.",
+        "remediation": [
+          "Add `test_*.py` or `tests/` coverage for the main Python logic."
+        ]
+      }
+    ],
+    "suggestedPrompt": "Use the skill-creator guidance to improve audit-prompt-caching. Keep the structure compact and move bulky details into references or scripts. Define success measures with these toolsets: token-usage-observer, task-outcome-scorecard, latency-efficiency. Address deferred_cost_tokens-budget-high: deferred_cost_tokens is excessive relative to the current Codex baseline. Address invoke_cost_tokens-budget-high: invoke_cost_tokens is heavy relative to the current Codex baseline. Address py-complexity-high: At least one Python function has high cyclomatic complexity. Address py-function-length-high: At least one Python function is long enough to hurt readability. Address py-tests-missing: Python source files were found without matching test files."
+  },
+  "nextAction": {
+    "label": "Measure real token usage next",
+    "why": "The static budget looks heavy, so live usage is the fastest way to confirm whether the cost is acceptable.",
+    "command": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Measure the real token usage of this skill.' --format markdown",
+    "chatPrompt": "Measure the real token usage of this skill."
+  },
+  "workflowGuide": {
+    "kind": "workflow-guide",
+    "createdAt": "2026-08-12T23:21:46.497Z",
+    "target": {
+      "kind": "skill",
+      "path": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+      "entryPath": "/Users/notevskii/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/SKILL.md",
+      "name": "audit-prompt-caching",
+      "relativePath": "audit-prompt-caching"
+    },
+    "requestedGoal": "evaluate",
+    "requestedChatPrompt": null,
+    "requestRouting": null,
+    "recommendedWorkflowId": "evaluate",
+    "recommendedWorkflow": {
+      "id": "evaluate",
+      "label": "Evaluate Skill",
+      "chatPrompt": "Evaluate this skill.",
+      "summary": "Start here when you want the overall report for a skill, including structure, budgets, and code checks.",
+      "firstCommand": "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+      "commands": [
+        "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown"
+      ],
+      "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Evaluate this skill.' --format markdown"
+    },
+    "workflowStatus": {
+      "hasBenchmarkConfig": false,
+      "hasUsageLog": false
+    },
+    "beginnerSummary": "Start with a natural chat request, then let plugin-eval show the exact local command sequence behind it.",
+    "startHere": {
+      "chatPrompt": "Evaluate this skill.",
+      "label": "Evaluate Skill",
+      "summary": "Start here when you want the overall report for a skill, including structure, budgets, and code checks.",
+      "routingExplanation": "Plugin Eval recommended Evaluate Skill from the current local state for this skill.",
+      "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Evaluate this skill.' --format markdown",
+      "firstCommand": "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+      "commands": [
+        "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown"
+      ]
+    },
+    "entrypoints": [
+      {
+        "id": "analysis",
+        "label": "Full Skill Analysis",
+        "chatPrompt": "Give me a full analysis of this skill, including benchmark setup.",
+        "summary": "Use this when you want the full report and starter benchmark setup for this skill in one guided path.",
+        "firstCommand": "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+        "commands": [
+          "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+          "plugin-eval init-benchmark ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+          "plugin-eval benchmark ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --config ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/.plugin-eval/benchmark.json"
+        ],
+        "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Give me a full analysis of this skill, including benchmark setup.' --format markdown"
+      },
+      {
+        "id": "evaluate",
+        "label": "Evaluate Skill",
+        "chatPrompt": "Evaluate this skill.",
+        "summary": "Start here when you want the overall report for a skill, including structure, budgets, and code checks.",
+        "firstCommand": "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+        "commands": [
+          "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown"
+        ],
+        "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Evaluate this skill.' --format markdown"
+      },
+      {
+        "id": "budget",
+        "label": "Explain Token Budget",
+        "chatPrompt": "Explain the token budget for this skill.",
+        "summary": "Use this when the main question is why the skill feels expensive before you collect any live measurements.",
+        "firstCommand": "plugin-eval explain-budget ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+        "commands": [
+          "plugin-eval explain-budget ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown"
+        ],
+        "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Explain the token budget for this skill.' --format markdown"
+      },
+      {
+        "id": "measure",
+        "label": "Measure Real Token Usage",
+        "chatPrompt": "Measure the real token usage of this skill.",
+        "summary": "Use this when you want real token usage instead of only the static estimate.",
+        "firstCommand": "plugin-eval init-benchmark ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+        "commands": [
+          "plugin-eval init-benchmark ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+          "plugin-eval benchmark ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --config ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/.plugin-eval/benchmark.json",
+          "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --observed-usage ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching/.plugin-eval/benchmark-usage.jsonl --format markdown"
+        ],
+        "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Measure the real token usage of this skill.' --format markdown"
+      },
+      {
+        "id": "benchmark",
+        "label": "Benchmark With Starter Scenarios",
+        "chatPrompt": "Help me benchmark this skill.",
+        "summary": "Use this when you want starter scenarios and a repeatable real-Codex benchmark run for this skill.",
+        "firstCommand": "plugin-eval init-benchmark ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching",
+        "commands": [
+          "plugin-eval init-benchmark ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching"
+        ],
+        "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'Help me benchmark this skill.' --format markdown"
+      },
+      {
+        "id": "next",
+        "label": "Start Here",
+        "chatPrompt": "What should I run next?",
+        "summary": "If you are new to plugin-eval, start with the overall evaluation report for this skill.",
+        "firstCommand": "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+        "commands": [
+          "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown"
+        ],
+        "startCommand": "plugin-eval start ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --request 'What should I run next?' --format markdown"
+      }
+    ],
+    "nextSteps": [
+      "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown"
+    ],
+    "nextAction": {
+      "label": "Evaluate Skill",
+      "why": "Plugin Eval recommended Evaluate Skill from the current local state for this skill.",
+      "command": "plugin-eval analyze ~/.config/superpowers/worktrees/audit-prompt/cache-audit-report-contract/audit-prompt-caching --format markdown",
+      "chatPrompt": "Evaluate this skill."
+    }
+  }
+}
