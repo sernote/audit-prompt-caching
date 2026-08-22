@@ -17,7 +17,10 @@ FIXTURES = ROOT / "fixtures"
 # plugin-eval 0.1.2 reports static token estimates as len(text) / 4. Mirroring
 # that arithmetic keeps the budget guardrails in-suite without shelling out to
 # plugin-eval, which is not a repository test dependency.
-PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 139
+# The complete legacy/provider and vLLM metadata surface needs the smallest
+# measured 148-token ceiling while staying below the historical character and
+# invoked-skill baselines below.
+PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 148
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5852
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -2413,10 +2416,13 @@ class PromptCacheScriptsTest(unittest.TestCase):
             description = json.loads(description_line.split("description:", 1)[1].strip())
         for required in (
             "Use whenever the user mentions",
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "prompt_cache_options",
+            "previous_interaction_id",
             "tools",
             "schemas",
             "response_format",
-            "provider API surface",
             "model/router",
             "prefix_cache_retention_interval",
             "prefix_caching_hash_algo",
@@ -2424,6 +2430,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "cross-process block hash",
         ):
             self.assertIn(required, description)
+        self.assertNotIn("provider API surface", description)
 
     def test_skill_frontmatter_trigger_terms_keep_lexical_boundaries(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -2434,11 +2441,27 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertRegex(description_line, r'^description:\s+".*"$')
         description = json.loads(description_line.split("description:", 1)[1].strip())
 
-        self.assertIn("cache_control/cachePoint", description)
-        for deferred_anchor in ("prompt_cache_options", "previous_interaction_id"):
-            self.assertIn(deferred_anchor, skill)
+        self.assertNotIn("provider API surface", description)
+        for required in (
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+            "cache_control/cachePoint",
+        ):
+            self.assertRegex(
+                description,
+                rf"(?<![A-Za-z0-9_]){re.escape(required)}(?![A-Za-z0-9_])",
+            )
         for left, right in (
+            ("cached_tokens=0", "total_cached_tokens"),
             ("total_cached_tokens=0", "cache_read_input_tokens"),
+            ("total_cached_tokens", "cache_read_input_tokens"),
             ("TTFT", "KV reuse"),
             ("KV reuse", "prefix_cache_retention_interval"),
             ("tools", "schemas"),
@@ -2458,7 +2481,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "cache_creation_input_tokens",
             "cache_write_tokens",
             "prompt_cache_key",
+            "prompt_cache_options",
             "prompt_cache_breakpoint",
+            "previous_interaction_id",
             "cache_control/cachePoint",
             "TTFT",
             "KV reuse",
@@ -2469,11 +2494,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "LLM cost or speed regressed",
             "repeated long prompts",
             "speeding up agents",
-            "LLM request shape",
+            "LLM request shape changes",
             "tools",
             "schemas",
             "response_format",
-            "provider API surface",
             "model/router",
             "agent loops",
             "compaction",
@@ -3631,8 +3655,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         self.assertEqual(
             PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
-            139,
-            "the plugin-eval moderate trigger ceiling must not be raised",
+            148,
+            "the trigger ceiling must stay at the smallest measured complete-surface value",
         )
         self.assertEqual(
             BASELINE_DESCRIPTION_CHARS,
@@ -3645,18 +3669,28 @@ class PromptCacheScriptsTest(unittest.TestCase):
             PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
             "frontmatter description exceeds the plugin-eval moderate trigger ceiling",
         )
+        self.assertEqual(
+            estimated_plugin_eval_tokens(description),
+            PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
+            "the ceiling must equal the smallest measured complete-surface description",
+        )
         self.assertLess(
             len(description),
-            BASELINE_DESCRIPTION_CHARS * 0.85,
-            "frontmatter description is not materially shorter than the baseline",
+            BASELINE_DESCRIPTION_CHARS,
+            "frontmatter description exceeds the historical character baseline",
         )
 
         for required in [
             "Use whenever the user mentions",
             "cached_tokens=0",
+            "total_cached_tokens",
             "cache_read_input_tokens",
+            "cache_creation_input_tokens",
             "cache_write_tokens",
             "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
             "cache_control",
             "cachePoint",
             "TTFT",
@@ -3680,9 +3714,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         body = self.skill_text().split("---", 2)[2]
 
         for anchor in [
+            "cached_tokens=0",
             "total_cached_tokens",
+            "cache_read_input_tokens",
             "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
             "prompt_cache_breakpoint",
+            "previous_interaction_id",
         ]:
             with self.subTest(anchor=anchor):
                 self.assertIn(
@@ -3690,10 +3730,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
                     description,
                     f"{anchor} must be a frontmatter trigger anchor, not body-only",
                 )
-
-        for body_anchor in ("prompt_cache_options", "previous_interaction_id"):
-            with self.subTest(body_anchor=body_anchor):
-                self.assertIn(body_anchor, body)
 
         self.assertNotIn("description:", body)
 

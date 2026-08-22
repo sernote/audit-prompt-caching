@@ -1,6 +1,6 @@
 ---
 name: audit-prompt-caching
-description: "Use whenever the user mentions: total_cached_tokens=0;cache_read_input_tokens;cache_creation_input_tokens;cache_write_tokens;prompt_cache_key;prompt_cache_breakpoint;cache_control/cachePoint;TTFT;KV reuse;prefix_cache_retention_interval;prefix_caching_hash_algo;Mamba/SWA/hybrid;cross-process block hash;LLM cost or speed regressed;repeated long prompts;speeding up agents;LLM request shape;tools;schemas;response_format;provider API surface;model/router;agent loops;compaction;Not for generic prompt writing;RAG;token counts;non-LLM perf"
+description: "Use whenever the user mentions cached_tokens=0,total_cached_tokens,cache_read_input_tokens,cache_creation_input_tokens,cache_write_tokens,prompt_cache_key,prompt_cache_options,prompt_cache_breakpoint,previous_interaction_id,cache_control/cachePoint,TTFT,KV reuse; prefix_cache_retention_interval,prefix_caching_hash_algo,Mamba/SWA/hybrid,cross-process block hash; LLM cost or speed regressed,repeated long prompts,speeding up agents; LLM request shape changes: tools,schemas,response_format,model/router,agent loops,compaction; Not for generic prompt writing,RAG,token counts,non-LLM perf"
 ---
 
 # Prompt Cache Audit
