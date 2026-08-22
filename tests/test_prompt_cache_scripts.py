@@ -17,10 +17,9 @@ FIXTURES = ROOT / "fixtures"
 # plugin-eval 0.1.2 reports static token estimates as len(text) / 4. Mirroring
 # that arithmetic keeps the budget guardrails in-suite without shelling out to
 # plugin-eval, which is not a repository test dependency.
-PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 155
+PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 139
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5852
-# The trigger surface now includes version/geometry/hash compatibility terms.
-BASELINE_DESCRIPTION_CHARS = 715
+BASELINE_DESCRIPTION_CHARS = 679
 
 
 def estimated_plugin_eval_tokens(text):
@@ -2340,13 +2339,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
         seed = "super-secret-seed-123"
         salt = "tenant-salt-456"
         raw_salt = "raw-salt-789"
+        quoted_seed = "quoted seed sentinel 8f2a"
+        quoted_salt = "quoted salt sentinel 4c7b"
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "vllm.service").write_text(
                 "ExecStart=env PYTHONHASHSEED="
-                f"{seed} CACHE_SALT={salt} SALT={raw_salt} "
-                "/usr/bin/vllm serve model --prefix-caching-hash-algo xxhash "
-                f"--cache-salt {salt} --salt {raw_salt}\n"
+                f"{seed} CACHE_SALT={salt} SALT={raw_salt} vllm "
+                f"--cache-salt {salt} --salt {raw_salt} "
+                "--prefix-caching-hash-algo xxhash\n"
+                "ExecStart=env vllm --prefix-caching-hash-algo xxhash "
+                f"PYTHONHASHSEED=\"{quoted_seed}\" "
+                f"CACHE_SALT='{quoted_salt}' "
+                f"--cache-salt '{quoted_salt}' --cache-salt \"{quoted_salt}\" "
+                f"--hash-seed \"{quoted_seed}\" --seed '{quoted_seed}'\n"
             )
 
             result = run_script("extract_llm_calls.py", tmp_path)
@@ -2356,6 +2362,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertNotIn(seed, result.stdout)
         self.assertNotIn(salt, result.stdout)
         self.assertNotIn(raw_salt, result.stdout)
+        self.assertNotIn(quoted_seed, result.stdout)
+        self.assertNotIn(quoted_salt, result.stdout)
         finding = output["findings"][0]
         self.assertIn("vllm", finding["signals"])
         self.assertIn("--prefix-caching-hash-algo", finding["signals"])
@@ -3557,6 +3565,17 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
     def test_skill_description_is_shorter_but_keeps_trigger_boundaries(self):
         description = self.skill_frontmatter_description()
+
+        self.assertEqual(
+            PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
+            139,
+            "the plugin-eval moderate trigger ceiling must not be raised",
+        )
+        self.assertEqual(
+            BASELINE_DESCRIPTION_CHARS,
+            679,
+            "the historical description baseline must remain a fixed contract",
+        )
 
         self.assertLessEqual(
             estimated_plugin_eval_tokens(description),

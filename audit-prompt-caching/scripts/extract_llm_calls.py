@@ -139,12 +139,33 @@ VLLM_SIGNAL_LABELS = {
 }
 
 
+SENSITIVE_ASSIGNMENT_NAME = (
+    r"(?:PYTHONHASHSEED|(?:CACHE[_-]?)?SALT|"
+    r"(?:EFFECTIVE|HASH|XXHASH|PREFIX[_-]?CACHE)?[_-]?SEED)"
+)
+SENSITIVE_OPTION_NAME = (
+    r"(?:CACHE[-_]?)?SALT|(?:HASH|XXHASH|PREFIX[-_]CACHE)?[-_]?SEED"
+)
+
+
 SENSITIVE_ASSIGNMENT_PATTERNS = (
     re.compile(
-        r'''(?ix)(?P<prefix>\b(?:PYTHONHASHSEED|(?:CACHE[_-]?)?SALT|(?:EFFECTIVE|HASH|XXHASH|PREFIX[_-]?CACHE)?[_-]?SEED)\s*[:=]\s*)(?P<quote>["']?)(?P<value>[^\s"'`,;]+)(?P=quote)'''
+        rf'''(?ix)(?P<prefix>\b{SENSITIVE_ASSIGNMENT_NAME}\s*[:=]\s*)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
     ),
     re.compile(
-        r'''(?ix)(?P<prefix>--(?:(?:CACHE[-_]?)?SALT|(?:HASH|XXHASH|PREFIX[-_]CACHE)?[-_]SEED)\s+)(?P<quote>["']?)(?P<value>[^\s"'`,;]+)(?P=quote)'''
+        rf"""(?ix)(?P<prefix>\b{SENSITIVE_ASSIGNMENT_NAME}\s*[:=]\s*)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
+    ),
+    re.compile(
+        rf'''(?ix)(?P<prefix>\b{SENSITIVE_ASSIGNMENT_NAME}\s*[:=]\s*)(?P<value>[^\s"'`,;]+)'''
+    ),
+    re.compile(
+        rf'''(?ix)(?P<prefix>--(?:{SENSITIVE_OPTION_NAME})\s+)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
+    ),
+    re.compile(
+        rf"""(?ix)(?P<prefix>--(?:{SENSITIVE_OPTION_NAME})\s+)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
+    ),
+    re.compile(
+        rf'''(?ix)(?P<prefix>--(?:{SENSITIVE_OPTION_NAME})\s+)(?P<value>[^\s"'`,;]+)'''
     ),
 )
 
@@ -154,9 +175,10 @@ def redact_sensitive_text(text):
     for pattern in SENSITIVE_ASSIGNMENT_PATTERNS:
         text = pattern.sub(
             lambda match: (
-                f"{match.group('prefix')}{match.group('quote')}"
+                f"{match.group('prefix')}"
+                f"{match.groupdict().get('quote', '')}"
                 "[REDACTED_SECRET]"
-                f"{match.group('quote')}"
+                f"{match.groupdict().get('quote', '')}"
             ),
             text,
         )
