@@ -100,6 +100,26 @@
       "id": 20,
       "prompt": "We only have a prompt builder diff: no usage logs, no routing data, no cost model, and no isolation review. Give me the cache clinic summary.",
       "expected_output": "Report every unproven clinic dimension as unknown instead of dropping it, and give no aggregate score, grade, or rank across dimensions."
+    },
+    {
+      "id": 21,
+      "prompt": "An unknown legacy vLLM line has no prefix_cache_retention_interval CLI flag, but its manifest contains VLLM_PREFIX_CACHE_RETENTION_INTERVAL. What retention value should we deploy?",
+      "expected_output": "Change needed: unknown until feature/version evidence. Establish image digest, vllm version or source SHA, help/resolved config/source feature presence, and effective source; do not transfer v0.27.1 or post-017e9f4 semantics from the env name alone."
+    },
+    {
+      "id": 22,
+      "prompt": "Compare stable vLLM v0.27.1 with source at 017e9f4448b700e85ee16023287b025693c72b9e and ef47a897e2ad9a404cce9c9e7df15934deb8ffbe: env-only retention None, pure-full env=0 error, and random defaults for all hash algorithms versus main CLI/config 0 no-op and split crypto/xxhash defaults.",
+      "expected_output": "Keep the version matrices separate: v0.27.1 already has env-only retention with default None; stable env=0 is a pure-full configuration error, and every supported algorithm has a random per-process default. Post-017e9f4 exposes CLI/config with default 0 and post-ef47a897 splits fixed deterministic sha256/sha256_cbor from random xxhash/xxhash_cbor. Verify the deployment SHA before exact advice."
+    },
+    {
+      "id": 23,
+      "prompt": "A hybrid vLLM model has FullAttentionSpec and SlidingWindowMLASpec/MambaSpec KV groups. Evaluate None, 0, and a positive prefix_cache_retention_interval and check scheduler_block_size.",
+      "expected_output": "Apply retention per concrete KV spec class: FullAttentionSpec is non-eligible while SlidingWindowMLASpec and MambaSpec are eligible. Use the runtime version matrix for None/0/positive, require positive values to align with effective scheduler_block_size, and do not classify by model name."
+    },
+    {
+      "id": 24,
+      "prompt": "FS, OBJ, and P2P vLLM workers share a KV tier, but sha256 and xxhash configurations disagree. Explain algorithm, effective seed, serialization/runtime, P2P handshake, and cache_salt isolation.",
+      "expected_output": "Separate compatibility from isolation: align algorithm, effective seed, serialization/runtime, model/config/token inputs within an authorized sharing group; P2P must handshake and reject mismatch, while FS/OBJ need independent config evidence and a real cross-process read. Keep cache_salt as the trust boundary, never log raw xxhash seed, and do not treat algorithm plus seed as sufficient cross-version proof."
     }
   ]
 }

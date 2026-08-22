@@ -2242,6 +2242,203 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertGreaterEqual(output["providers"]["vllm"], 2)
         self.assertGreaterEqual(output["providers"]["sglang"], 3)
 
+    def test_extract_llm_calls_collects_vllm_retention_and_hash_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "deployment.yaml").write_text(
+                "prefix_cache_retention_interval: 0\n"
+                "prefix_caching_hash_algo: sha256\n"
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL: 0\n"
+            )
+            (tmp_path / "engine.py").write_text(
+                "prefix_cache_retention_interval = 0\n"
+                "prefix_caching_hash_algo = 'sha256_cbor'\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0 "
+                "--prefix-caching-hash-algo sha256\n"
+            )
+            (tmp_path / "vllm.service").write_text(
+                "ExecStart=/usr/bin/vllm serve model "
+                "--prefix-cache-retention-interval 64\n"
+            )
+            (tmp_path / "Makefile").write_text(
+                "serve:\n\tvllm serve model --prefix-caching-hash-algo xxhash\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["files_scanned"], 5)
+        self.assertIn("vllm", output["providers"])
+        texts = "\n".join(finding["text"] for finding in output["findings"])
+        for signal in (
+            "--prefix-cache-retention-interval",
+            "prefix_cache_retention_interval",
+            "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+            "--prefix-caching-hash-algo",
+            "prefix_caching_hash_algo",
+        ):
+            self.assertIn(signal, texts)
+
+    def test_extract_llm_calls_keeps_generic_and_specific_vllm_signals_additive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0 "
+                "--prefix-caching-hash-algo sha256\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["providers"]["vllm"], 1)
+        self.assertEqual(output["matches"], 1)
+        finding = output["findings"][0]
+        self.assertEqual(finding["provider"], "vllm")
+        self.assertIn("vllm", finding["signals"])
+        self.assertIn("--prefix-cache-retention-interval", finding["signals"])
+        self.assertIn("--prefix-caching-hash-algo", finding["signals"])
+
+    def test_extract_llm_calls_does_not_classify_generic_pythonhashseed_as_vllm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "service.py").write_text(
+                "import os\nos.environ['PYTHONHASHSEED'] = '42'\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn("vllm", output["providers"])
+
+    def test_vllm_version_geometry_contract_is_documented(self):
+        root = ROOT / "audit-prompt-caching"
+        vllm = (root / "references" / "vllm.md").read_text()
+        skill = (root / "SKILL.md").read_text()
+        checklist = (root / "references" / "predeploy-checklist.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        rules = json.loads((root / "references" / "rules.json").read_text())
+
+        for required in (
+            "Version and capability gate",
+            "v0.27.1",
+            "017e9f4",
+            "ef47a897",
+            "prefix_cache_retention_interval",
+            "SlidingWindowSpec",
+            "SlidingWindowMLASpec",
+            "MambaSpec",
+            "RSWASpec",
+            "ChunkedLocalAttentionSpec",
+            "scheduler_block_size",
+            "prefix_match_unit",
+            "sha256_cbor",
+            "xxhash_cbor",
+            "P2P handshake",
+            "FS/OBJ",
+            "Compatibility is not isolation",
+            "cache_salt",
+            "raw seed",
+        ):
+            self.assertIn(required, vllm, required)
+
+        for required in (
+            "image digest",
+            "feature presence",
+            "effective retention",
+            "KV-group topology",
+            "scheduler block size",
+            "hash algorithm",
+            "seed compatibility status",
+            "tier type",
+            "retention/geometry mismatch",
+            "cross-process hash mismatch",
+            "feature detection",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "AP-1 through AP-14",
+            "AP-9b",
+            "AP-14",
+        ):
+            self.assertIn(required, skill, required)
+
+        for required in (
+            "retention flag/env",
+            "positive interval",
+            "different algorithms",
+            "different effective seeds",
+            "PYTHONHASHSEED",
+            "rolling upgrade",
+            "image digest",
+            "resolved cache config",
+            "compatibility status",
+        ):
+            self.assertIn(required, checklist, required)
+
+        for required in (
+            "engine_version",
+            "engine_commit",
+            "image_digest",
+            "retention_feature_present",
+            "retention_effective_value",
+            "attention_geometry",
+            "scheduler_block_size",
+            "hash_algorithm",
+            "seed_compatibility_status",
+            "pythonhashseed_present",
+            "pythonhashseed_match_status",
+            "kv_tier_type",
+            "cache_salt_boundary_fingerprint",
+            "matched",
+            "mismatched",
+            "unknown",
+            "Raw seed",
+            "bounded cardinality",
+        ):
+            self.assertIn(required, observability, required)
+
+        for required in (
+            "Deployment Audit",
+            "Engine version/commit/image:",
+            "Capability evidence:",
+            "Attention/KV geometry:",
+            "Effective retention and source:",
+            "Scheduler block size:",
+            "Hash algorithm:",
+            "Seed compatibility status:",
+            "KV tier:",
+            "Isolation/cache_salt boundary:",
+        ):
+            self.assertIn(required, report, required)
+
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+        for rule_id in ("AP-13", "AP-14"):
+            self.assertIn(rule_id, rule_map)
+            self.assertEqual(rule_map[rule_id]["default_severity"], "medium")
+        self.assertIn("raw seed", rule_map["AP-14"]["avoid"].lower())
+        self.assertIn("cache_salt", rule_map["AP-14"]["avoid"])
+
+    def test_vllm_contract_rejects_shortcuts_and_raw_isolation_identifiers(self):
+        root = ROOT / "audit-prompt-caching"
+        vllm = (root / "references" / "vllm.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        rules = json.loads((root / "references" / "rules.json").read_text())
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+
+        self.assertNotIn("positive interval ... full-attention no-op", vllm)
+        self.assertNotIn("0 means no retention", vllm)
+        self.assertNotIn("PYTHONHASHSEED as isolation", vllm)
+        self.assertIn("algorithm and effective seed are necessary but insufficient", vllm)
+        self.assertIn("serialization/runtime", vllm)
+        self.assertIn("tenant ID", observability)
+        self.assertIn("unbounded metric cardinality", observability)
+        self.assertIn("PYTHONHASHSEED", rule_map["AP-14"]["avoid"])
+
     def test_validate_skill_package_checks_required_files_and_references(self):
         result = run_script("validate_skill_package.py", ROOT / "audit-prompt-caching")
 

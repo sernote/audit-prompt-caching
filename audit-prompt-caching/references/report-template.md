@@ -8,6 +8,9 @@ Use for reusable handoff artifacts or when findings need more structure than cha
 - Code audit: decision summary, findings, clean checks, verification.
 - Provider migration risk: source/target semantics, layout, fields, routing, cost.
 - Agent Loop Audit: stable tools, early messages, prefix hashes, cache fields, output tokens, compaction.
+- Deployment Audit: version/commit/image, capability evidence, KV geometry,
+  retention source/value, scheduler block size, hash compatibility, tier, and
+  `cache_salt` isolation boundary.
 - Not Worth Caching: why cache is not the lever and what evidence would reopen it.
 
 ## Header
@@ -16,6 +19,15 @@ Use for reusable handoff artifacts or when findings need more structure than cha
 Provider/engine:
 Mode:
 Provider facts: verified on YYYY-MM-DD / unverified
+Engine version/commit/image:
+Capability evidence:
+Attention/KV geometry:
+Effective retention and source:
+Scheduler block size:
+Hash algorithm:
+Seed compatibility status:
+KV tier:
+Isolation/cache_salt boundary:
 Measurement change:
 Prompt behavior change:
 Provider/routing change:
@@ -62,7 +74,7 @@ An `ambiguous` or `invalid` usage denominator can never be reported as `usage_ac
 
 ## Evidence Needed Next
 
-List rendered prompt pair, usage fields, route/model/provider, prefix/tool/schema hashes, TTFT/prefill, output tokens, and deployment/router/KV metrics needed to raise or lower severity.
+List rendered prompt pair, usage fields, route/model/provider, prefix/tool/schema hashes, TTFT/prefill, output tokens, and deployment/router/KV metrics needed to raise or lower severity. For a Deployment Audit, include image digest/version/commit, capability and resolved config evidence, concrete KV spec classes and attention geometry, effective retention plus source, scheduler block size, hash algorithm, redacted seed compatibility status, KV tier, and the `cache_salt` boundary fingerprint policy.
 
 ## Clean Checks
 

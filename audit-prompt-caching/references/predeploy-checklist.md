@@ -12,6 +12,11 @@ Use for release, incident, deploy, or monitoring reviews.
 - vLLM/SGLang scale-out behind round robin without prefix-aware routing.
 - `max_model_len` or KV settings changed without p99 input/KV pressure review.
 - Cache controls, `cachePoint`, `prompt_cache_key`, TTL, retention, or salts changed without provider-doc checks.
+- vLLM retention flag/env is used without evidence that the deployed runtime supports the feature; an env name in a manifest is not enough.
+- A positive interval is selected without sparse KV-group topology and effective `scheduler_block_size` evidence.
+- An FS/OBJ/P2P sharing group uses different algorithms or different effective seeds.
+- `PYTHONHASHSEED` is used as an isolation mechanism instead of retaining a separately reviewed `cache_salt` boundary.
+- A rolling upgrade of a shared cache tier or prefix-reuse path mixes hash or retention semantics without canary evidence. This blocker does not apply automatically to a pure full-attention deployment with no shared reuse path.
 
 ## Minimum Release Evidence
 
@@ -20,6 +25,7 @@ Use for release, incident, deploy, or monitoring reviews.
 - Cache read/write fields by route/model/provider/region/replica.
 - TTFT or prefill, final latency, output tokens, and tool timing.
 - Prompt version, deploy SHA, SDK/provider version, router settings.
+- image digest/version/commit SHA, resolved cache config (including feature presence and retention source/value), concrete KV-group geometry, and redacted hash/seed compatibility status.
 - Privacy or isolation decision for cache key/salt boundaries.
 
 ## Triage Order

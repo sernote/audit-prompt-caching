@@ -14,6 +14,41 @@ Use for dashboards, alerts, traces, release guardrails, and CI smoke tests.
 
 Do not log raw prompts. Use keyed hashes for tenant/user-derived or low-entropy prompt content.
 
+### Self-hosted vLLM dimensions
+
+For engine KV, external KV, and shared-tier audits, add these dimensions to
+events, traces, or deployment evidence as applicable:
+
+```text
+engine_version
+engine_commit
+image_digest
+retention_feature_present
+retention_effective_value
+attention_geometry
+scheduler_block_size
+hash_algorithm
+seed_compatibility_status
+pythonhashseed_present
+pythonhashseed_match_status
+kv_tier_type
+cache_salt_boundary_fingerprint
+```
+
+Raw seed is prohibited. `seed_compatibility_status` and `pythonhashseed_match_status` use safe values
+such as `matched`, `mismatched`, and `unknown`; `pythonhashseed_present` is a
+boolean. For `xxhash`/`xxhash_cbor`, the effective seed
+is a protected secret, so expose only compatibility status, boolean presence,
+or a keyed fingerprint. A fixed cryptographic default after the verified
+upstream change is public and is not a secret, but runtime/handshake logs still
+need a separate redaction review.
+
+`cache_salt_boundary_fingerprint` is a keyed, non-reversible fingerprint. It
+must not contain raw salt, tenant ID, or user identity, and it is primarily a
+trace/log dimension. Metrics require bounded cardinality; never create an
+unbounded metric cardinality label per tenant or salt. The
+fingerprint records the isolation boundary and does not replace `cache_salt`.
+
 ## Usage Evidence Contract
 
 `analyze_usage_logs.py --jsonl-normalized` emits one canonical event per record. Four fields decide whether a cache ratio is decision-grade:

@@ -36,6 +36,8 @@ SOURCE_SUFFIXES = {
     ".py",
     ".rb",
     ".rs",
+    ".service",
+    ".sh",
     ".swift",
     ".toml",
     ".ts",
@@ -51,6 +53,7 @@ SOURCE_FILENAMES = {
     "docker-compose.yaml",
     "compose.yml",
     "compose.yaml",
+    "Makefile",
 }
 
 PROVIDER_PATTERNS = {
@@ -86,6 +89,11 @@ PROVIDER_PATTERNS = {
         r"\bvllm\b",
         r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])",
         r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])",
+        r"(^|[^A-Za-z0-9_])--prefix-cache-retention-interval($|[^A-Za-z0-9_-])",
+        r"\bprefix_cache_retention_interval\b",
+        r"\bVLLM_PREFIX_CACHE_RETENTION_INTERVAL\b",
+        r"(^|[^A-Za-z0-9_])--prefix-caching-hash-algo($|[^A-Za-z0-9_-])",
+        r"\bprefix_caching_hash_algo\b",
         r"\b(enable_kv_cache_events|kv_cache_events)\b",
         r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
         r"\bAsyncLLMEngine\b",
@@ -116,6 +124,21 @@ PROVIDER_PATTERNS = {
 }
 
 
+VLLM_SIGNAL_LABELS = {
+    r"\bvllm\b": "vllm",
+    r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])": "--enable-prefix-caching",
+    r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])": "--enable-kv-cache-events",
+    r"(^|[^A-Za-z0-9_])--prefix-cache-retention-interval($|[^A-Za-z0-9_-])": "--prefix-cache-retention-interval",
+    r"\bprefix_cache_retention_interval\b": "prefix_cache_retention_interval",
+    r"\bVLLM_PREFIX_CACHE_RETENTION_INTERVAL\b": "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+    r"(^|[^A-Za-z0-9_])--prefix-caching-hash-algo($|[^A-Za-z0-9_-])": "--prefix-caching-hash-algo",
+    r"\bprefix_caching_hash_algo\b": "prefix_caching_hash_algo",
+    r"\b(enable_kv_cache_events|kv_cache_events)\b": "kv_cache_events",
+    r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b": "kv_transfer_config",
+    r"\bAsyncLLMEngine\b": "AsyncLLMEngine",
+}
+
+
 def should_scan(path):
     return path.is_file() and (
         path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_FILENAMES
@@ -142,19 +165,29 @@ def find_matches(root):
             continue
         for lineno, line in enumerate(lines, 1):
             for provider, patterns in PROVIDER_PATTERNS.items():
-                for pattern in patterns:
-                    if re.search(pattern, line, flags=re.IGNORECASE):
-                        providers[provider] += 1
-                        findings.append(
-                            {
-                                "path": str(path.relative_to(root)),
-                                "line": lineno,
-                                "provider": provider,
-                                "pattern": pattern,
-                                "text": line.strip()[:200],
-                            }
+                matched_patterns = [
+                    pattern
+                    for pattern in patterns
+                    if re.search(pattern, line, flags=re.IGNORECASE)
+                ]
+                if not matched_patterns:
+                    continue
+                providers[provider] += 1
+                finding = {
+                    "path": str(path.relative_to(root)),
+                    "line": lineno,
+                    "provider": provider,
+                    "pattern": matched_patterns[0],
+                    "text": line.strip()[:200],
+                }
+                if provider == "vllm":
+                    finding["signals"] = list(
+                        dict.fromkeys(
+                            VLLM_SIGNAL_LABELS.get(pattern, pattern)
+                            for pattern in matched_patterns
                         )
-                        break
+                    )
+                findings.append(finding)
     providers = {name: count for name, count in providers.items() if count}
     return {
         "root": str(root),
