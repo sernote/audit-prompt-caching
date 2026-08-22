@@ -2425,6 +2425,69 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ):
             self.assertIn(required, description)
 
+    def test_skill_frontmatter_trigger_terms_keep_lexical_boundaries(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        frontmatter = skill.split("---", 2)[1]
+        description_line = next(
+            line for line in frontmatter.splitlines() if line.startswith("description:")
+        )
+        self.assertRegex(description_line, r'^description:\s+".*"$')
+        description = json.loads(description_line.split("description:", 1)[1].strip())
+
+        self.assertIn("cache_control/cachePoint", description)
+        for deferred_anchor in ("prompt_cache_options", "previous_interaction_id"):
+            self.assertIn(deferred_anchor, skill)
+        for left, right in (
+            ("total_cached_tokens=0", "cache_read_input_tokens"),
+            ("TTFT", "KV reuse"),
+            ("KV reuse", "prefix_cache_retention_interval"),
+            ("tools", "schemas"),
+            ("schemas", "response_format"),
+            ("Not for generic prompt writing", "RAG"),
+            ("RAG", "token counts"),
+            ("token counts", "non-LLM perf"),
+        ):
+            self.assertNotIn(
+                f"{left}{right}",
+                description,
+                f"glued trigger terms: {left!r} + {right!r}",
+            )
+
+        for term in (
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_breakpoint",
+            "cache_control/cachePoint",
+            "TTFT",
+            "KV reuse",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "Mamba/SWA/hybrid",
+            "cross-process block hash",
+            "LLM cost or speed regressed",
+            "repeated long prompts",
+            "speeding up agents",
+            "LLM request shape",
+            "tools",
+            "schemas",
+            "response_format",
+            "provider API surface",
+            "model/router",
+            "agent loops",
+            "compaction",
+            "Not for generic prompt writing",
+            "RAG",
+            "token counts",
+            "non-LLM perf",
+        ):
+            with self.subTest(term=term):
+                self.assertRegex(
+                    description,
+                    rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",
+                )
+
     def test_vllm_contract_rows_encode_version_geometry_and_hash_upgrade_delta(self):
         reference = (ROOT / "audit-prompt-caching" / "references" / "vllm.md").read_text()
         feature_rows = parse_markdown_table(
@@ -3594,7 +3657,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "cache_read_input_tokens",
             "cache_write_tokens",
             "prompt_cache_key",
-            "prompt_cache_options",
             "cache_control",
             "cachePoint",
             "TTFT",
@@ -3621,7 +3683,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "total_cached_tokens",
             "cache_creation_input_tokens",
             "prompt_cache_breakpoint",
-            "previous_interaction_id",
         ]:
             with self.subTest(anchor=anchor):
                 self.assertIn(
@@ -3629,6 +3690,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
                     description,
                     f"{anchor} must be a frontmatter trigger anchor, not body-only",
                 )
+
+        for body_anchor in ("prompt_cache_options", "previous_interaction_id"):
+            with self.subTest(body_anchor=body_anchor):
+                self.assertIn(body_anchor, body)
 
         self.assertNotIn("description:", body)
 
