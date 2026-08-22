@@ -139,6 +139,30 @@ VLLM_SIGNAL_LABELS = {
 }
 
 
+SENSITIVE_ASSIGNMENT_PATTERNS = (
+    re.compile(
+        r'''(?ix)(?P<prefix>\b(?:PYTHONHASHSEED|(?:CACHE[_-]?)?SALT|(?:EFFECTIVE|HASH|XXHASH|PREFIX[_-]?CACHE)?[_-]?SEED)\s*[:=]\s*)(?P<quote>["']?)(?P<value>[^\s"'`,;]+)(?P=quote)'''
+    ),
+    re.compile(
+        r'''(?ix)(?P<prefix>--(?:(?:CACHE[-_]?)?SALT|(?:HASH|XXHASH|PREFIX[-_]CACHE)?[-_]SEED)\s+)(?P<quote>["']?)(?P<value>[^\s"'`,;]+)(?P=quote)'''
+    ),
+)
+
+
+def redact_sensitive_text(text):
+    """Redact seed/salt assignment values before emitting source snippets."""
+    for pattern in SENSITIVE_ASSIGNMENT_PATTERNS:
+        text = pattern.sub(
+            lambda match: (
+                f"{match.group('prefix')}{match.group('quote')}"
+                "[REDACTED_SECRET]"
+                f"{match.group('quote')}"
+            ),
+            text,
+        )
+    return text
+
+
 def should_scan(path):
     return path.is_file() and (
         path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_FILENAMES
@@ -178,7 +202,7 @@ def find_matches(root):
                     "line": lineno,
                     "provider": provider,
                     "pattern": matched_patterns[0],
-                    "text": line.strip()[:200],
+                    "text": redact_sensitive_text(line.strip())[:200],
                 }
                 if provider == "vllm":
                     finding["signals"] = list(

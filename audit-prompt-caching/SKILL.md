@@ -1,6 +1,6 @@
 ---
 name: audit-prompt-caching
-description: Use whenever the user mentions cached_tokens=0,total_cached_tokens,cache_read_input_tokens,cache_creation_input_tokens,cache_write_tokens,prompt_cache_key,prompt_cache_options,prompt_cache_breakpoint,previous_interaction_id,cache_control/cachePoint,TTFT,KV reuse,prefix_cache_retention_interval,prefix_caching_hash_algo,Mamba/SWA/hybrid,cross-process block hash,LLM cost or speed regressed,repeated long prompts,speeding up agents. LLM request shape: response_format,agent loops,compaction. Not for generic prompt writing/RAG,token counts,non-LLM perf.
+description: "Use whenever the user mentions cached_tokens=0,total_cached_tokens,cache_read_input_tokens,cache_creation_input_tokens,cache_write_tokens,prompt_cache_key,prompt_cache_options,prompt_cache_breakpoint,previous_interaction_id,cache_control/cachePoint,TTFT,KV reuse,prefix_cache_retention_interval,prefix_caching_hash_algo,Mamba/SWA/hybrid,cross-process block hash,LLM cost or speed regressed,repeated long prompts,speeding up agents. LLM request shape: tools,schemas,response_format,provider API surface,model/router,agent loops,compaction. Not for generic prompt writing/RAG,token counts,non-LLM perf."
 ---
 
 # Prompt Cache Audit
@@ -36,8 +36,8 @@ Modes: code audit (repository available), advisory (no codebase, ask only the
 missing diagnostic questions), agent audit (tools, MCP, loops, compaction), and
 deployment audit (vLLM/SGLang, Kubernetes, gateways, replicas).
 
-For vLLM deployment audits, first record image digest/version/SHA, feature
-presence, effective retention/source, KV-group topology/geometry, effective
+vLLM audits: image digest/version/SHA, feature presence, effective
+retention/source, KV-group topology/geometry, effective
 scheduler block size (`scheduler_block_size`), hash algorithm, seed compatibility status, and tier
 type. Keep retention/geometry mismatch distinct from cross-process hash mismatch.
 Source/nightly builds use feature detection, not a guessed version

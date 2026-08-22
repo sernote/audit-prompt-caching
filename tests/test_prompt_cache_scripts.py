@@ -2,6 +2,7 @@ import csv
 import importlib.util
 import json
 import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,9 +17,10 @@ FIXTURES = ROOT / "fixtures"
 # plugin-eval 0.1.2 reports static token estimates as len(text) / 4. Mirroring
 # that arithmetic keeps the budget guardrails in-suite without shelling out to
 # plugin-eval, which is not a repository test dependency.
-PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 139
+PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 155
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5852
-BASELINE_DESCRIPTION_CHARS = 679
+# The trigger surface now includes version/geometry/hash compatibility terms.
+BASELINE_DESCRIPTION_CHARS = 715
 
 
 def estimated_plugin_eval_tokens(text):
@@ -51,6 +53,25 @@ def load_script_module(script_name):
     finally:
         sys.dont_write_bytecode = previous
     return module
+
+
+def parse_markdown_table(text, header):
+    """Parse one pipe table by its exact header using only the stdlib."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != header:
+            continue
+        headers = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        rows = []
+        for row_line in lines[index + 2 :]:
+            if not row_line.strip().startswith("|"):
+                break
+            values = [cell.strip() for cell in row_line.strip().strip("|").split("|")]
+            if len(values) != len(headers):
+                break
+            rows.append(dict(zip(headers, values)))
+        return rows
+    raise AssertionError(f"missing Markdown table header: {header}")
 
 
 class PromptCacheScriptsTest(unittest.TestCase):
@@ -2314,6 +2335,179 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
         self.assertNotIn("vllm", output["providers"])
+
+    def test_extract_llm_calls_redacts_secret_assignments_in_vllm_lines(self):
+        seed = "super-secret-seed-123"
+        salt = "tenant-salt-456"
+        raw_salt = "raw-salt-789"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "vllm.service").write_text(
+                "ExecStart=env PYTHONHASHSEED="
+                f"{seed} CACHE_SALT={salt} SALT={raw_salt} "
+                "/usr/bin/vllm serve model --prefix-caching-hash-algo xxhash "
+                f"--cache-salt {salt} --salt {raw_salt}\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn(seed, result.stdout)
+        self.assertNotIn(salt, result.stdout)
+        self.assertNotIn(raw_salt, result.stdout)
+        finding = output["findings"][0]
+        self.assertIn("vllm", finding["signals"])
+        self.assertIn("--prefix-caching-hash-algo", finding["signals"])
+        self.assertIn("[REDACTED_SECRET]", finding["text"])
+
+    def test_extract_llm_calls_excludes_dotenv_files_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / ".env").write_text(
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=0\n"
+                "PYTHONHASHSEED=dotenv-secret\n"
+            )
+            (tmp_path / ".env.production").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["files_scanned"], 1)
+        self.assertNotIn(".env", "\n".join(f["path"] for f in output["findings"]))
+        self.assertNotIn("dotenv-secret", result.stdout)
+
+    def test_skill_frontmatter_description_is_yaml_safe_and_retains_trigger_terms(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        frontmatter = skill.split("---", 2)[1]
+        lines = frontmatter.splitlines()
+        description_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("description:")
+        )
+        description_line = lines[description_index]
+        if re.match(r"^description:\s+>-?\s*$", description_line):
+            description_lines = []
+            for line in lines[description_index + 1 :]:
+                if not line.startswith("  "):
+                    break
+                description_lines.append(line.strip())
+            description = " ".join(description_lines)
+        else:
+            self.assertRegex(description_line, r'^description:\s+".*"$')
+            description = json.loads(description_line.split("description:", 1)[1].strip())
+        for required in (
+            "Use whenever the user mentions",
+            "tools",
+            "schemas",
+            "response_format",
+            "provider API surface",
+            "model/router",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "Mamba/SWA/hybrid",
+            "cross-process block hash",
+        ):
+            self.assertIn(required, description)
+
+    def test_vllm_contract_rows_encode_version_geometry_and_hash_upgrade_delta(self):
+        reference = (ROOT / "audit-prompt-caching" / "references" / "vllm.md").read_text()
+        feature_rows = parse_markdown_table(
+            reference,
+            "| Runtime evidence | Feature surface | Default/meaning |",
+        )
+        feature_by_runtime = {row["Runtime evidence"]: row for row in feature_rows}
+        self.assertEqual(
+            feature_by_runtime["stable `v0.27.1` source/release"]["Feature surface"],
+            "env `VLLM_PREFIX_CACHE_RETENTION_INTERVAL`; coordinator consumes it",
+        )
+        self.assertIn(
+            "default `None`",
+            feature_by_runtime["stable `v0.27.1` source/release"]["Default/meaning"],
+        )
+        self.assertIn(
+            "CLI/config `prefix_cache_retention_interval`",
+            feature_by_runtime["source/nightly containing `017e9f4`"]["Feature surface"],
+        )
+        self.assertIn(
+            "default `0`",
+            feature_by_runtime["source/nightly containing `017e9f4`"]["Default/meaning"],
+        )
+
+        retention_rows = parse_markdown_table(
+            reference,
+            "| Runtime | Effective value | Dense/non-eligible groups | SWA/Mamba/hybrid groups |",
+        )
+        retention = {
+            (row["Runtime"], row["Effective value"]): row for row in retention_rows
+        }
+        stable_none = retention[("stable `v0.27.1` env-only", "`None`")]
+        stable_zero = retention[("stable `v0.27.1` env-only", "`0`")]
+        stable_positive = retention[("stable `v0.27.1` env-only", "positive")]
+        post_zero = retention[("post-`017e9f4` source/main", "`0`")]
+        post_positive = retention[("post-`017e9f4` source/main", "positive")]
+        self.assertIn("interval does not apply", stable_none["Dense/non-eligible groups"])
+        self.assertIn("dense checkpoints", stable_none["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", stable_zero["Dense/non-eligible groups"])
+        self.assertIn("semantic checkpoints", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("latest replay boundary", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("shared-prefix junctions", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", stable_positive["Dense/non-eligible groups"])
+        self.assertIn("multiple of effective `scheduler_block_size`", stable_positive["SWA/Mamba/hybrid groups"])
+        self.assertIn("permitted no-op", post_zero["Dense/non-eligible groups"])
+        self.assertIn("semantic checkpoints", post_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", post_positive["Dense/non-eligible groups"])
+        self.assertIn("full-attention groups ignore it", post_positive["SWA/Mamba/hybrid groups"])
+
+        geometry_rows = parse_markdown_table(
+            reference,
+            "| Concrete KV spec class | Retention-interval eligibility |",
+        )
+        geometry = {row["Concrete KV spec class"]: row["Retention-interval eligibility"] for row in geometry_rows}
+        self.assertEqual(
+            geometry["`SlidingWindowSpec`, including `SlidingWindowMLASpec`"],
+            "eligible",
+        )
+        self.assertEqual(geometry["`MambaSpec`"], "eligible")
+        self.assertEqual(
+            geometry["`FullAttentionSpec` and subclasses, including `RSWASpec` and `SinkFullAttentionSpec`"],
+            "not eligible",
+        )
+        self.assertEqual(geometry["`ChunkedLocalAttentionSpec`"], "not eligible in the checked validator")
+        self.assertEqual(geometry["unknown/new spec"], "`unknown` until a source/runtime probe confirms it")
+
+        hash_rows = parse_markdown_table(
+            reference,
+            "| Runtime evidence | Algorithm | Default seed without `PYTHONHASHSEED` | Cross-process reuse |",
+        )
+        hash_by_key = {(row["Runtime evidence"], row["Algorithm"]): row for row in hash_rows}
+        self.assertIn(
+            "random `os.urandom(32)` per process",
+            hash_by_key[("stable `v0.27.1`", "every supported algorithm")]["Default seed without `PYTHONHASHSEED`"],
+        )
+        self.assertIn(
+            "deterministic from the supplied value",
+            hash_by_key[("stable `v0.27.1`", "any algorithm with an explicitly common `PYTHONHASHSEED`")]["Default seed without `PYTHONHASHSEED`"],
+        )
+        self.assertIn(
+            "fixed deterministic default",
+            hash_by_key[("post-`ef47a897` source/main", "`sha256`, `sha256_cbor`")]["Default seed without `PYTHONHASHSEED`"],
+        )
+        self.assertIn(
+            "random per process",
+            hash_by_key[("post-`ef47a897` source/main", "`xxhash`, `xxhash_cbor`")]["Default seed without `PYTHONHASHSEED`"],
+        )
+        self.assertIn(
+            "same algorithm and all other inputs",
+            hash_by_key[("post-`ef47a897` source/main", "`sha256`, `sha256_cbor`")]["Cross-process reuse"],
+        )
 
     def test_vllm_version_geometry_contract_is_documented(self):
         root = ROOT / "audit-prompt-caching"
