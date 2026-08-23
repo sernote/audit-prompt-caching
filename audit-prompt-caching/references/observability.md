@@ -91,27 +91,31 @@ granularity:
 filters:
 displayed_metric:
 displayed_value:
-definition_status: provider_documented | unknown
-denominator_status: provider_documented | unknown
-accounting_semantics: inclusive | additive | provider_defined | unknown
+evidence_definition_status: provider_documented | unknown
+evidence_denominator_status: provider_documented | unknown
+evidence_accounting_semantics: inclusive | additive | provider_defined | unknown
 request_correlation: present | absent
 route_correlation: present | absent
 ```
 
 Treat the Prompt Caching dashboard as `provider_dashboard_aggregate`. Unless
-the provider documents the formula and denominator, its definition status,
-denominator status, and accounting semantics remain `unknown`. It can confirm
-a trend but cannot establish a request-level or route-level cause.
+the provider documents the formula and denominator, its evidence definition,
+denominator, and accounting statuses remain `unknown`. It can confirm a trend
+but cannot establish a request-level or route-level cause.
 
 Treat the documented Organization Usage API completion fields as
 `provider_usage_api_aggregate`. Preserve its time buckets, grouping, filters,
 and bucket boundaries. Its `input_tokens` is inclusive of cached and
-cache-write tokens; `input_uncached_tokens` excludes cache-write tokens. These
-documented decomposition semantics use provider-defined accounting. For
-documented Usage API fields set `definition_status=provider_documented` and
-`accounting_semantics=provider_defined`; optional or missing fields remain
-absent/unknown; never zero. These semantics do not make a dashboard ratio
-equivalent to a Usage API ratio.
+cache-write tokens. Treat `input_uncached_tokens` as excluding cached and
+cache-write components only when the provider documents that additive identity;
+otherwise keep the provider field and infer no residual. The documented mixed
+decomposition uses provider-defined accounting, not permission to sum fields.
+For documented Usage API fields set `evidence_definition_status=provider_documented`,
+`evidence_denominator_status=unknown` for any derived ratio unless its
+denominator is explicitly defined and recorded, and
+`evidence_accounting_semantics=provider_defined`. Optional or missing fields
+remain absent/unknown; never zero. These semantics do not make a dashboard
+ratio equivalent to a Usage API ratio.
 
 Keep dashboard aggregate, Usage API aggregate, request-level provider usage,
 and gateway/replica telemetry in separate series. Do not compute a dashboard
@@ -134,8 +138,9 @@ Show cache read ratio, write/read ratio, cached-token share, output-token share,
 Normalize provider accounting before charting: OpenAI/Gemini cached-token fields are commonly inclusive in prompt input, while Bedrock cache read/write fields are additive. A dashboard that sums all fields indiscriminately will fabricate an apparent usage regression.
 
 Before charting any aggregate, attach its `evidence_source`, provider, time
-window, granularity, filters, `definition_status`, `denominator_status`, and
-`accounting_semantics`; do not merge dashboard and Usage API ratios silently.
+window, granularity, filters, `evidence_definition_status`,
+`evidence_denominator_status`, and `evidence_accounting_semantics`; do not
+merge dashboard and Usage API ratios silently.
 
 ## Alerts And CI
 

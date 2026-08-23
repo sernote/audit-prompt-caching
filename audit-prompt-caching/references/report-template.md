@@ -80,13 +80,13 @@ For provider aggregates, record each source separately from request-level usage
 and route telemetry:
 
 ```text
-Evidence source: provider_dashboard_aggregate | provider_usage_api_aggregate | request_level_provider_usage | gateway_or_replica_telemetry | rendered_prefix_evidence
-Scope/granularity:
-Time window:
-Filters:
-Metric definition status:
-Denominator status:
-Accounting semantics:
+evidence_source: provider_dashboard_aggregate | provider_usage_api_aggregate | request_level_provider_usage | gateway_or_replica_telemetry | rendered_prefix_evidence
+evidence_scope/granularity:
+evidence_time_window:
+evidence_filters:
+evidence_definition_status:
+evidence_denominator_status:
+evidence_accounting_semantics:
 Request correlation:
 Route/replica correlation:
 ```
@@ -95,11 +95,14 @@ Label Dashboard aggregate and Usage API aggregate explicitly. Do not combine
 their ratios or claim a causal finding until request-level usage and
 route/replica correlation are present.
 
-For documented Usage API fields, set `Metric definition status:
-provider_documented` and `Accounting semantics: provider_defined`, preserving
-the field-level inclusive/decomposition semantics. Optional/missing fields:
-absent/unknown, never zero. Dashboard statuses remain unknown unless the
-provider documents the relevant definition, denominator, and accounting.
+For documented Usage API fields, set `evidence_definition_status:
+provider_documented`, `evidence_denominator_status: unknown` for any derived
+ratio unless its denominator is explicitly defined and recorded, and
+`evidence_accounting_semantics: provider_defined`. This is a documented mixed
+decomposition, not permission to sum fields; preserve field-level
+inclusive/decomposition semantics. Optional/missing fields: absent/unknown,
+never zero. Dashboard statuses remain unknown unless the provider documents the
+relevant definition, denominator, and accounting.
 
 ## Clean Checks
 

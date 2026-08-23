@@ -81,7 +81,7 @@ const result = await generateText({
 accepted modes are mode: `auto` and mode: `required`. It overrides request-level
 `toolChoice`; `auto`
 lets the model answer without a tool, while `required` requires a call to an
-allowed tool. The applicability gate requires all of these facts:
+allowed tool. The allowedTools capability gate requires all of these facts:
 
 1. the selected factory is `openai.responses(...)`, not Chat Completions;
 2. the installed `ai` and `@ai-sdk/openai` versions are pinned in `package.json`
@@ -133,9 +133,11 @@ deployment/model, and `api-version`. Verify that exact API version's Responses
 tool_choice schema and final wire before using `allowed_tools`; do not claim
 universal support.
 
-Do not transfer this behavior to direct OpenAI Responses, Azure Responses,
-Chat Completions, or an arbitrary OpenAI-compatible wrapper without the
-surface's own schema and wire evidence. For diagnosis record package versions,
+The table describes direct OpenAI Responses wire capability. Do not transfer
+Vercel SDK's name-resolution, warnings, drop, or error semantics to direct
+OpenAI Responses, Azure Responses, Chat Completions, or an arbitrary
+OpenAI-compatible wrapper without that surface's own schema and wire evidence.
+For diagnosis record package versions,
 factory, model/tool capability, `toolNames`, `mode`, final request body and
 `tool_choice`, SDK warnings, HTTP status, raw provider usage, and stable
 tools/prefix hashes. A stable wire prefix plus usage evidence confirms cache

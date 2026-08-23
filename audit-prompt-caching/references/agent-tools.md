@@ -8,7 +8,7 @@ Agent prompts often grow append-only, which is cache-friendly, but tool lists, m
 
 ## Dynamic-tool decision rule
 
-Run the Applicability Gate and economics check before changing the catalog:
+Run the global Applicability Gate and economics check, then pass the allowedTools capability gate before changing the catalog:
 
 - If the endpoint and SDK support it, send a stable catalog and change an
   allowed-list; compare prefix hashes, provider usage, catalog size,

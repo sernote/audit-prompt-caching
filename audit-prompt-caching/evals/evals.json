@@ -124,22 +124,22 @@
     {
       "id": 25,
       "prompt": "A Vercel AI SDK OpenAI Responses agent changes activeTools on every step. Can I keep a stable full tools catalog and use providerOptions.openai.allowedTools with mode auto or required? Include function, custom, MCP server_label, and web_search wire entries, plus tool_search, deferLoading, namespaced-tool warnings and empty-list errors.",
-      "expected_output": "Run the endpoint/version/model/tool applicability and economics gates. Prefer the stable full tools catalog plus verified allowedTools only for the Responses surface; inspect toolNames, mode: auto, mode: required, final tool_choice wire mapping, warnings, and raw usage. Do not transfer the behavior to Chat Completions or an arbitrary wrapper."
+      "expected_output": "Run the endpoint/version/model/tool applicability and economics gates. Prefer the stable full tools catalog plus verified allowedTools only for the Responses surface. The final tool_choice wire mapping fixtures are {type: \"function\", name}, {type: \"custom\", name}, {type: \"mcp\", server_label}, and {type: \"web_search\"}; inspect toolNames, mode: auto, mode: required, warnings, and raw usage. tool_search, deferLoading, and namespaced tools are unsupported, warn, and an empty allow-list fails with an error. Do not transfer Vercel SDK's name-resolution, warnings, drop, or error semantics to another surface without its own wire evidence."
     },
     {
       "id": 26,
-      "prompt": "Which @ai-sdk/openai version should an OpenAI Responses agent use for allowedTools: 2.x unavailable, 3.0.62 through 3.0.97 base mapping, 3.0.98 corrected mapping, or 4.0.43 corrected mapping?",
+      "prompt": "An app's package.json pins @ai-sdk/openai ^3.0.70; it calls openai.responses() with openai.tools.webSearch(), and cache behavior changed after an SDK update. Which evidence should the audit collect before recommending allowedTools?",
       "expected_output": "Check package.json and the lockfile, then apply the exact matrix: 2.x unavailable in the checked schema; 3.x is available from 3.0.62 but corrected from 3.0.98; 4.x is corrected from 4.0.43. Do not move floors across majors or remove activeTools without wire evidence."
     },
     {
       "id": 27,
       "prompt": "The OpenAI Prompt Caching dashboard shows a high hit rate over time and cache reads per write. Is that enough to prove request-level prompt reuse and a routing fix?",
-      "expected_output": "Classify the dashboard as provider_dashboard_aggregate / Dashboard aggregate corroboration. Its formula, denominator, weighting, and route attribution remain unknown unless documented; request-level usage, prefix/tool/schema hashes, SDK/deploy version, and route correlation are required before a causal or savings claim."
+      "expected_output": "Classify the dashboard as provider_dashboard_aggregate / Dashboard aggregate corroboration. Record evidence_definition_status=unknown, evidence_denominator_status=unknown, and evidence_accounting_semantics=unknown unless documented. Its formula, denominator, weighting, and route attribution remain unknown unless documented; request-level usage, prefix/tool/schema hashes, SDK/deploy version, and route correlation are required before a causal or savings claim."
     },
     {
       "id": 28,
       "prompt": "The Organization Usage API returns input_tokens, input_cached_tokens, input_cache_write_tokens, and input_uncached_tokens in time buckets grouped by model and service tier. How should the audit account for them?",
-      "expected_output": "Classify it as provider_usage_api_aggregate / Usage API aggregate. Preserve buckets, grouping, and filters; input_tokens is inclusive of cached and cache-write tokens, while input_uncached_tokens excludes cache-write tokens. Do not assign this decomposition to the Dashboard UI or mix its ratio with request-level metrics without scope evidence."
+      "expected_output": "Classify it as provider_usage_api_aggregate / Usage API aggregate. Preserve buckets, grouping, and filters; record evidence_definition_status=provider_documented and evidence_accounting_semantics=provider_defined, while evidence_denominator_status=unknown for any derived ratio unless its denominator is explicitly defined and recorded. input_tokens is inclusive of cached and cache-write tokens; input_uncached_tokens excludes cached and cache-write components only when an additive identity is documented, otherwise no inferred residual. This documented mixed decomposition is not permission to sum fields. Do not assign it to the Dashboard UI or mix its ratio with request-level metrics without scope evidence."
     },
     {
       "id": 29,

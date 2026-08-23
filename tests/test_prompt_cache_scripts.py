@@ -4040,16 +4040,13 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("tool class", normalized)
         self.assertIn("package.json", normalized)
         self.assertIn("lockfile", normalized)
-        self.assertIn("availability gate", normalized)
+        self.assertIn("allowedTools capability gate", normalized)
         self.assertIn("corrected-mapping gate", normalized)
 
-        history = extract_markdown_section(
-            reference, "OpenAI Responses allowedTools"
-        )
         chronology = re.search(
             r"May 5, 2026.*?29e6ac6.*?base Responses option.*?"
             r"Aug 18, 2026.*?a062795.*?corrected.*?3\.0\.98.*?4\.0\.43",
-            " ".join(history.split()),
+            " ".join(section.split()),
         )
         self.assertIsNotNone(
             chronology,
@@ -4082,6 +4079,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
             normalized,
             r"For Azure.*references/azure-openai\.md.*endpoint.*deployment/model.*api-version.*Responses tool_choice schema.*final wire",
         )
+        self.assertIn("Vercel SDK's name-resolution", normalized)
+        self.assertIn("warnings, drop, or error semantics", normalized)
+        self.assertNotIn("Do not transfer this behavior to direct OpenAI Responses", normalized)
 
     def test_vercel_allowed_tools_contract_covers_wire_mapping_and_failure_modes(self):
         reference = (
@@ -4140,7 +4140,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         agent_normalized = " ".join(agent_section.split())
         self.assertRegex(
             agent_normalized,
-            r"stable catalog.*allowed-list.*prefix hashes.*provider usage",
+            r"global Applicability Gate.*allowedTools capability gate.*stable catalog.*allowed-list.*prefix hashes.*provider usage",
         )
         self.assertRegex(
             agent_normalized,
@@ -4165,7 +4165,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ap4 = next(rule for rule in rules["rules"] if rule["id"] == "AP-4")
         self.assertRegex(
             ap4["fix"],
-            r"After Applicability/economics Gate, use a stable full catalog plus an endpoint/version-verified allow-list",
+            r"After the global Applicability Gate and economics check, use a stable full catalog plus an endpoint/version-verified allow-list",
         )
         self.assertIn("Mutating activeTools without prefix/economics measurement", ap4["avoid"])
         self.assertIn("provider cache usage", ap4["validation"])
@@ -4179,21 +4179,30 @@ class PromptCacheScriptsTest(unittest.TestCase):
         openai_section = extract_markdown_section(
             openai, "Prompt Caching dashboard and aggregate evidence"
         )
-        dashboard, usage = openai_section.split(
-            "The Organization Usage API is a separate", 1
-        )
+        marker = "The Organization Usage API is a separate"
+        self.assertIn(marker, openai_section)
+        dashboard, _, usage = openai_section.partition(marker)
         self.assertIn("provider_dashboard_aggregate", dashboard)
         self.assertRegex(
             " ".join(dashboard.split()),
-            r"definition_status.*unknown.*denominator_status.*unknown.*accounting_semantics.*unknown",
+            r"evidence_definition_status.*unknown.*evidence_denominator_status.*unknown.*evidence_accounting_semantics.*unknown",
         )
         self.assertIn("provider_usage_api_aggregate", usage)
         usage_normalized = " ".join(usage.split())
-        self.assertIn("definition_status=provider_documented", usage_normalized)
-        self.assertIn("accounting_semantics=provider_defined", usage_normalized)
+        self.assertIn("evidence_definition_status=provider_documented", usage_normalized)
+        self.assertIn("evidence_denominator_status=unknown", usage_normalized)
+        self.assertIn("evidence_accounting_semantics=provider_defined", usage_normalized)
         self.assertRegex(
             usage_normalized,
-            r"input_tokens.*inclusive.*input_uncached_tokens.*excluding cache-write",
+            r"input_tokens.*inclusive.*input_uncached_tokens.*excludes cached and cache-write",
+        )
+        self.assertRegex(
+            usage_normalized.lower(),
+            r"documented mixed decomposition.*not permission to sum|do not naively sum",
+        )
+        self.assertRegex(
+            usage_normalized.lower(),
+            r"additive identity.*documented.*otherwise.*residual|otherwise.*no inferred residual",
         )
         self.assertRegex(
             usage_normalized.lower(),
@@ -4223,9 +4232,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 "filters",
                 "displayed_metric",
                 "displayed_value",
-                "definition_status",
-                "denominator_status",
-                "accounting_semantics",
+                "evidence_definition_status",
+                "evidence_denominator_status",
+                "evidence_accounting_semantics",
                 "request_correlation",
                 "route_correlation",
             },
@@ -4233,15 +4242,22 @@ class PromptCacheScriptsTest(unittest.TestCase):
         observability_normalized = " ".join(observability_section.split())
         self.assertIn("provider_dashboard_aggregate", observability_normalized)
         self.assertIn("provider_usage_api_aggregate", observability_normalized)
-        self.assertIn("definition_status=provider_documented", observability_normalized)
-        self.assertIn("accounting_semantics=provider_defined", observability_normalized)
-        self.assertIn("optional or missing fields remain absent/unknown", observability_normalized)
+        self.assertIn("evidence_definition_status=provider_documented", observability_normalized)
+        self.assertIn("evidence_denominator_status=unknown", observability_normalized)
+        self.assertIn("evidence_accounting_semantics=provider_defined", observability_normalized)
+        self.assertIn("optional or missing fields remain absent/unknown", observability_normalized.lower())
         self.assertIn("never zero", observability_normalized)
 
         report_section = extract_markdown_section(report, "Evidence Needed Next")
         report_normalized = " ".join(report_section.split())
         self.assertIn("Dashboard aggregate", report_normalized)
         self.assertIn("Usage API aggregate", report_normalized)
+        for key in (
+            "evidence_definition_status",
+            "evidence_denominator_status",
+            "evidence_accounting_semantics",
+        ):
+            self.assertIn(key, report_normalized)
         self.assertIn("provider_documented", report_normalized)
         self.assertIn("provider_defined", report_normalized)
         self.assertIn(
@@ -4257,15 +4273,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         section = extract_markdown_section(
             openai, "Prompt Caching dashboard and aggregate evidence"
         )
-        dashboard, usage = section.split(
-            "The Organization Usage API is a separate", 1
-        )
+        marker = "The Organization Usage API is a separate"
+        self.assertIn(marker, section)
+        dashboard, _, usage = section.partition(marker)
         dashboard_normalized = " ".join(dashboard.split())
         usage_normalized = " ".join(usage.split())
         self.assertIn("Dashboard UI", dashboard_normalized)
         self.assertIn("not causal proof", dashboard_normalized)
         self.assertIn("input_tokens` is inclusive", usage_normalized)
-        self.assertIn("input_uncached_tokens` is excluding cache-write", usage_normalized)
+        self.assertIn("input_uncached_tokens` excludes cached and cache-write", usage_normalized)
         self.assertIn("No same formula is assumed", usage_normalized)
         self.assertIn("denominator is not inferred", usage_normalized)
         self.assertNotIn("input_tokens` is inclusive", dashboard_normalized)
@@ -4275,6 +4291,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
             (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
         )
         by_id = {item["id"]: item for item in evals["evals"]}
+        required_ids = {25, 26, 27, 28, 29}
+        for eval_id in sorted(required_ids):
+            self.assertIn(eval_id, by_id, f"missing eval id {eval_id}")
 
         vercel = by_id[25]
         self.assertIn("activeTools", vercel["prompt"])
@@ -4283,14 +4302,24 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("mode: auto", vercel["expected_output"])
         self.assertIn("mode: required", vercel["expected_output"])
         self.assertIn("tool_choice wire mapping", vercel["expected_output"])
-        for tool_anchor in ("function", "custom", "MCP", "tool_search", "deferLoading"):
-            self.assertIn(tool_anchor, vercel["prompt"])
+        for wire_anchor in (
+            '{type: "function", name}',
+            '{type: "custom", name}',
+            '{type: "mcp", server_label}',
+            '{type: "web_search"}',
+        ):
+            self.assertIn(wire_anchor, vercel["expected_output"])
+        for unsupported in ("tool_search", "deferLoading", "namespaced tools"):
+            self.assertIn(unsupported, vercel["expected_output"])
+        self.assertIn("empty allow-list", vercel["expected_output"])
+        self.assertIn("fails with an error", vercel["expected_output"])
 
         version = by_id[26]
-        self.assertEqual(
-            version["prompt"].count("2.x unavailable"),
-            1,
-        )
+        self.assertIn("@ai-sdk/openai ^3.0.70", version["prompt"])
+        self.assertIn("openai.responses()", version["prompt"])
+        self.assertIn("openai.tools.webSearch()", version["prompt"])
+        for leaked_floor in ("2.x unavailable", "3.0.62", "3.0.98", "4.0.43"):
+            self.assertNotIn(leaked_floor, version["prompt"])
         self.assertRegex(
             version["expected_output"],
             r"2\.x unavailable.*3\.x.*3\.0\.62.*3\.0\.98.*4\.0\.43",
@@ -4299,7 +4328,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         dashboard = by_id[27]["expected_output"]
         self.assertRegex(
             dashboard,
-            r"provider_dashboard_aggregate.*Dashboard aggregate.*unknown",
+            r"provider_dashboard_aggregate.*Dashboard aggregate.*evidence_definition_status.*unknown.*evidence_denominator_status.*unknown.*evidence_accounting_semantics.*unknown",
         )
         self.assertNotIn("provider_documented", dashboard)
         self.assertIn("request-level usage", dashboard)
@@ -4308,10 +4337,11 @@ class PromptCacheScriptsTest(unittest.TestCase):
         usage = by_id[28]["expected_output"]
         self.assertRegex(
             usage,
-            r"provider_usage_api_aggregate.*Usage API aggregate.*input_tokens.*inclusive.*input_uncached_tokens.*excludes cache-write",
+            r"provider_usage_api_aggregate.*Usage API aggregate.*evidence_definition_status.*provider_documented.*evidence_denominator_status.*unknown.*input_tokens.*inclusive.*input_uncached_tokens.*excludes cached and cache-write",
         )
         self.assertIn("Dashboard UI", usage)
         self.assertIn("filters", usage)
+        self.assertIn("not permission to sum", usage)
 
         contrast = by_id[29]["expected_output"]
         self.assertRegex(
@@ -4341,15 +4371,29 @@ class PromptCacheScriptsTest(unittest.TestCase):
             parse_markdown_table(section, table_header)[0]["Tool class"],
             "function",
         )
-        for relative in [
-            "SKILL.md",
-            "references/agent-tools.md",
-            "references/openai.md",
-            "references/observability.md",
-        ]:
-            text = (root / relative).read_text()
-            self.assertNotIn(table_header, text, relative)
-            self.assertNotIn("toolNames", text, relative)
+        for path in root.rglob("*"):
+            if path == root / "references" / "vercel-ai-sdk.md":
+                continue
+            if path.suffix not in {".md", ".json"}:
+                continue
+            self.assertNotIn(table_header, path.read_text(), str(path.relative_to(root)))
+
+    def test_azure_responses_capability_gate_has_destination_content(self):
+        azure = (
+            ROOT / "audit-prompt-caching" / "references" / "azure-openai.md"
+        ).read_text()
+        section = extract_markdown_section(azure, "Responses endpoint capability gate")
+        normalized = " ".join(section.split())
+        for required in (
+            "Responses endpoint",
+            "endpoint",
+            "deployment/model",
+            "api-version",
+            "Responses `tool_choice` schema",
+            "final request wire",
+            "no universal Azure support claim",
+        ):
+            self.assertIn(required, normalized)
 
 
     def skill_text(self):

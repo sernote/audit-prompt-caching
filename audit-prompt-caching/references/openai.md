@@ -1,6 +1,6 @@
 # OpenAI Prefix Cache Reference
 
-Last reviewed: 2026-08-23. Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
+Last reviewed: 2026-08-10. Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
 
 Official sources:
 - Prompt caching: https://developers.openai.com/api/docs/guides/prompt-caching
@@ -13,6 +13,8 @@ Official sources:
 - API changelog: https://developers.openai.com/api/docs/changelog
 - Organization Usage API completions: https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/completions
 - Pricing: https://openai.com/api/pricing/
+
+Dashboard and Organization Usage API section reviewed: 2026-08-23.
 
 ## Mechanics
 
@@ -83,8 +85,9 @@ The Dashboard UI is a `provider_dashboard_aggregate`: its ratios are useful
 trend corroboration, but the public description does not define the formula,
 denominator, weighting, request scope, or route attribution. Keep those fields
 `unknown` unless a current provider document says otherwise. For Dashboard UI,
-record `definition_status=unknown`, `denominator_status=unknown`, and
-`accounting_semantics=unknown` unless the provider documents each one. Dashboard
+record `evidence_definition_status=unknown`,
+`evidence_denominator_status=unknown`, and
+`evidence_accounting_semantics=unknown` unless the provider documents each one. Dashboard
 UI metrics are not request-level evidence and are not causal proof of prompt
 drift, routing misses, or an SDK regression.
 
@@ -95,15 +98,21 @@ completion token decomposition is:
 - `input_tokens` is inclusive of cached and cache-write tokens;
 - `input_cached_tokens` aggregates cache reads;
 - `input_cache_write_tokens` aggregates cache writes;
-- `input_uncached_tokens` is excluding cache-write tokens.
+- `input_uncached_tokens` is the uncached component; do not treat it as an
+  additive residual unless the provider documents that identity.
 
 In the API field wording, `input_tokens` includes cached and cache-write tokens,
-while `input_uncached_tokens` excludes cache-write tokens.
+while `input_uncached_tokens` excludes cached and cache-write components only
+when an additive identity is documented; otherwise no residual is inferred.
 
 For documented Usage API fields, record
-`definition_status=provider_documented` and
-`accounting_semantics=provider_defined`, preserving the inclusive and
-decomposition semantics above. Optional or missing fields remain absent/unknown;
+`evidence_definition_status=provider_documented`,
+`evidence_denominator_status=unknown` for any ratio derived from these fields
+unless its denominator is explicitly defined and recorded, and
+`evidence_accounting_semantics=provider_defined`. The latter means a documented
+mixed decomposition: field-level `input_tokens` is inclusive, and the fields
+must not be naively summed; this is not permission to sum fields. Optional or
+missing fields remain absent/unknown;
 never replace them with zero or fabricate a bucket denominator.
 
 These are Usage API accounting semantics, not a formula to apply to Dashboard

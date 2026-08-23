@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-08-11.
+Last reviewed: 2026-08-23.
 
 Verify before exact claims:
 - supported Azure OpenAI models and deployment types
@@ -42,6 +42,14 @@ Azure does **not** document `prompt_cache_options` or `prompt_cache_breakpoint` 
 ### Tools, Images, And Schemas
 
 Treat tool definitions, structured outputs, and image representation as part of the cacheable input unless current docs say otherwise. Keep ordering, JSON serialization, `detail`, URL/base64 representation, and signed URL query strings stable.
+
+## Responses endpoint capability gate
+
+The Responses endpoint is a separate Azure deployment surface. Before considering
+`allowed_tools`, load current Azure docs and record the endpoint, deployment/model,
+and `api-version`. Verify the exact API version's Responses `tool_choice` schema
+and final request wire. Do not infer support from direct OpenAI or Vercel SDK
+behavior; make no universal Azure support claim.
 
 ### Azure Is Not Generic OpenAI
 

@@ -37,7 +37,7 @@
       "default_severity": "high",
       "summary": "Dynamic agent tools.",
       "search": "get_active_tools, listToolsets, prepareStep activeTools.",
-      "fix": "After Applicability/economics Gate, use a stable full catalog plus an endpoint/version-verified allow-list; otherwise use stable bundles/tool search/deferred loading or a smaller stable catalog.",
+      "fix": "After the global Applicability Gate and economics check, use a stable full catalog plus an endpoint/version-verified allow-list; otherwise use stable bundles/tool search/deferred loading or a smaller stable catalog.",
       "avoid": "Mutating activeTools without prefix/economics measurement; assuming Responses support on Chat Completions or wrappers; ignoring SDK warnings.",
       "validation": "Compare tools/prefix hashes, final wire tool_choice, warnings, provider cache usage, and cached/uncached economics."
     },
