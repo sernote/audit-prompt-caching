@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Find provider/cache signals while always eliding source snippets.
+"""Find provider/cache signals as lexical locators while eliding snippets.
 
 Findings retain a stable path, line, provider, pattern, and signal contract;
-the compatibility ``text`` field is always ``[SOURCE_SNIPPET_ELIDED]`` and the
-sole supported source-snippet policy is ``elided``. Paths are emitted verbatim
-as locators; use the reported path and line for authorized local inspection
-instead of relying on copied source text. Only closed-vocabulary vLLM values
-are emitted; bare boolean flags resolve to ``true`` and unknown values to
-``unspecified``.
+snippets are always elided: the ``text`` field is always
+``[SOURCE_SNIPPET_ELIDED]`` and the sole supported source-snippet policy is
+``elided``. This scanner is a lexical locator only: a
+line may match comments, dead code, or overridden configuration, and the
+scanner never resolves active/effective values or source precedence. Paths are
+emitted verbatim; open the reported path:line and verify the resolved runtime
+configuration during Deployment Audit.
 """
 
 import argparse
@@ -98,6 +99,7 @@ PROVIDER_PATTERNS = {
     ],
     "vllm": [
         r"\bvllm\b",
+        r"(^|[^A-Za-z0-9_])--no-enable-prefix-caching($|[^A-Za-z0-9_-])",
         r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])",
         r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])",
         r"(^|[^A-Za-z0-9_])--prefix-cache-retention-interval($|[^A-Za-z0-9_-])",
@@ -106,12 +108,8 @@ PROVIDER_PATTERNS = {
         r"(^|[^A-Za-z0-9_])--prefix-caching-hash-algo($|[^A-Za-z0-9_-])",
         r"\bprefix_caching_hash_algo\b",
         r"\benable_prefix_caching\b",
-        r"\bVLLM_ENABLE_PREFIX_CACHING\b",
         r"\benable_kv_cache_events\b",
         r"\bkv_cache_events\b",
-        r"\bVLLM_ENABLE_KV_CACHE_EVENTS\b",
-        r"\bVLLM_KV_CACHE_EVENTS\b",
-        r"\bVLLM_PREFIX_CACHING_HASH_ALGO\b",
         r"\bkv_transfer_config\b",
         r"\bkv_connector\b",
         r"\bLMCacheConnector\b",
@@ -173,6 +171,7 @@ SIGNAL_LABELS = {
     r"\bopenrouter/auto\b": "openrouter_auto",
     # vLLM
     r"\bvllm\b": "vllm",
+    r"(^|[^A-Za-z0-9_])--no-enable-prefix-caching($|[^A-Za-z0-9_-])": "--no-enable-prefix-caching",
     r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])": "--enable-prefix-caching",
     r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])": "--enable-kv-cache-events",
     r"(^|[^A-Za-z0-9_])--prefix-cache-retention-interval($|[^A-Za-z0-9_-])": "--prefix-cache-retention-interval",
@@ -180,13 +179,9 @@ SIGNAL_LABELS = {
     r"\bVLLM_PREFIX_CACHE_RETENTION_INTERVAL\b": "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
     r"(^|[^A-Za-z0-9_])--prefix-caching-hash-algo($|[^A-Za-z0-9_-])": "--prefix-caching-hash-algo",
     r"\bprefix_caching_hash_algo\b": "prefix_caching_hash_algo",
-    r"\benable_prefix_caching\b": "--enable-prefix-caching",
-    r"\bVLLM_ENABLE_PREFIX_CACHING\b": "--enable-prefix-caching",
-    r"\benable_kv_cache_events\b": "--enable-kv-cache-events",
+    r"\benable_prefix_caching\b": "enable_prefix_caching",
+    r"\benable_kv_cache_events\b": "enable_kv_cache_events",
     r"\bkv_cache_events\b": "kv_cache_events",
-    r"\bVLLM_ENABLE_KV_CACHE_EVENTS\b": "--enable-kv-cache-events",
-    r"\bVLLM_KV_CACHE_EVENTS\b": "kv_cache_events",
-    r"\bVLLM_PREFIX_CACHING_HASH_ALGO\b": "prefix_caching_hash_algo",
     r"\bkv_transfer_config\b": "kv_transfer_config",
     r"\bkv_connector\b": "kv_connector",
     r"\bLMCacheConnector\b": "LMCacheConnector",
@@ -233,118 +228,6 @@ LEGACY_PATTERN_ALIASES = {
 
 SOURCE_SNIPPET_POLICY = "elided"
 SOURCE_SNIPPET_TEXT = "[SOURCE_SNIPPET_ELIDED]"
-SIGNAL_VALUE_UNSPECIFIED = "unspecified"
-VLLM_BOOLEAN_VALUES = frozenset({"true", "false", "1", "0"})
-VLLM_HASH_VALUES = frozenset(
-    {"builtin", "sha256", "sha256_cbor", "xxhash", "xxhash_cbor"}
-)
-VLLM_RETENTION_VALUE_PATTERN = re.compile(r"\A\d{1,9}\Z")
-COMMENTED_LINE_PATTERN = re.compile(r"\A\s*(?:#|//|;|--\s)")
-VLLM_SIGNAL_VALUE_ALIASES = {
-    "--enable-prefix-caching": (
-        "--enable-prefix-caching",
-        "enable_prefix_caching",
-        "VLLM_ENABLE_PREFIX_CACHING",
-    ),
-    "--enable-kv-cache-events": (
-        "--enable-kv-cache-events",
-        "enable_kv_cache_events",
-        "kv_cache_events",
-        "VLLM_ENABLE_KV_CACHE_EVENTS",
-        "VLLM_KV_CACHE_EVENTS",
-    ),
-    "kv_cache_events": (
-        "--enable-kv-cache-events",
-        "enable_kv_cache_events",
-        "kv_cache_events",
-        "VLLM_ENABLE_KV_CACHE_EVENTS",
-        "VLLM_KV_CACHE_EVENTS",
-    ),
-    "--prefix-caching-hash-algo": (
-        "--prefix-caching-hash-algo",
-        "prefix_caching_hash_algo",
-        "VLLM_PREFIX_CACHING_HASH_ALGO",
-    ),
-    "prefix_caching_hash_algo": (
-        "--prefix-caching-hash-algo",
-        "prefix_caching_hash_algo",
-        "VLLM_PREFIX_CACHING_HASH_ALGO",
-    ),
-    "--prefix-cache-retention-interval": (
-        "--prefix-cache-retention-interval",
-        "prefix_cache_retention_interval",
-        "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
-    ),
-    "prefix_cache_retention_interval": (
-        "--prefix-cache-retention-interval",
-        "prefix_cache_retention_interval",
-        "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
-    ),
-    "VLLM_PREFIX_CACHE_RETENTION_INTERVAL": (
-        "--prefix-cache-retention-interval",
-        "prefix_cache_retention_interval",
-        "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
-    ),
-}
-
-
-def _consume_allowlisted_flag_value(line, aliases, vocabulary, numeric=False):
-    """Resolve a narrowly allow-listed setting without returning source text."""
-    for alias in aliases:
-        pattern = re.compile(
-            rf"(?<![A-Za-z0-9_-]){re.escape(alias)}(?![A-Za-z0-9_-])"
-        )
-        match = pattern.search(line)
-        if match is None:
-            continue
-        index = match.end()
-        while index < len(line) and line[index].isspace():
-            index += 1
-        has_separator = index < len(line) and line[index] in ":="
-        if has_separator:
-            index += 1
-            while index < len(line) and line[index].isspace():
-                index += 1
-        elif index >= len(line) or line[index] in "#;,)}]" or line[index] == "-":
-            return "true" if not numeric else SIGNAL_VALUE_UNSPECIFIED
-        if index >= len(line) or line[index] in "#;,)}]":
-            return "true" if not numeric else SIGNAL_VALUE_UNSPECIFIED
-
-        quote = line[index] if line[index] in {'"', "'"} else ""
-        if quote:
-            index += 1
-            value_start = index
-            while index < len(line) and line[index] != quote:
-                index += 1
-            candidate = line[value_start:index]
-        else:
-            value_start = index
-            while index < len(line) and not line[index].isspace() and line[index] not in ",;)}]":
-                index += 1
-            candidate = line[value_start:index]
-        candidate = candidate.lower()
-        if candidate in vocabulary:
-            return candidate
-        if numeric and VLLM_RETENTION_VALUE_PATTERN.fullmatch(candidate):
-            return candidate
-        return SIGNAL_VALUE_UNSPECIFIED
-    return SIGNAL_VALUE_UNSPECIFIED
-
-
-def _signal_value(signal, line):
-    aliases = VLLM_SIGNAL_VALUE_ALIASES.get(signal)
-    if aliases is None:
-        return SIGNAL_VALUE_UNSPECIFIED
-    if signal in {
-        "--enable-prefix-caching",
-        "--enable-kv-cache-events",
-        "kv_cache_events",
-    }:
-        return _consume_allowlisted_flag_value(line, aliases, VLLM_BOOLEAN_VALUES)
-    if signal in {"--prefix-caching-hash-algo", "prefix_caching_hash_algo"}:
-        return _consume_allowlisted_flag_value(line, aliases, VLLM_HASH_VALUES)
-    return _consume_allowlisted_flag_value(line, aliases, frozenset(), numeric=True)
-
 
 def should_scan(path):
     if path.name.startswith(".env"):
@@ -403,10 +286,6 @@ def find_matches(root):
                     ),
                     "text": SOURCE_SNIPPET_TEXT,
                     "signals": signals,
-                    "commented": bool(COMMENTED_LINE_PATTERN.match(line)),
-                    "signal_values": {
-                        signal: _signal_value(signal, line) for signal in signals
-                    },
                 }
                 findings.append(finding)
     providers = {name: count for name, count in providers.items() if count}

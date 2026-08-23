@@ -22,10 +22,9 @@ FIXTURES = ROOT / "fixtures"
 # The former 0.85 character heuristic was retired: the required complete
 # provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
-# Restoring the operational prompt-segment classification and locator-only
-# scanner policy and allow-listed value note raise the baseline only to the
-# measured 5943 tokens.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5943
+# Restoring the operational prompt-segment classification and the truthful
+# lexical-locator policy raises the baseline only to the measured 5979 tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5979
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -2272,81 +2271,106 @@ class PromptCacheScriptsTest(unittest.TestCase):
         for sentinel in sentinels:
             self.assertNotIn(sentinel, rendered)
 
-    def test_extract_llm_calls_reports_only_allowlisted_vllm_values_and_comments(self):
+    def test_extract_llm_calls_is_lexical_locator_without_value_or_comment_claims(self):
         module = load_script_module("extract_llm_calls.py")
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "compose.yaml").write_text(
                 "command: vllm serve model --enable-prefix-caching=false "
-                "--enable-kv-cache-events 1 --prefix-caching-hash-algo xxhash "
-                "--prefix-cache-retention-interval 300\n"
-                "# command: vllm serve model --enable-prefix-caching "
-                "--enable-kv-cache-events=false --prefix-caching-hash-algo unknown "
-                "--prefix-cache-retention-interval 1234567890\n"
-                "# command: vllm serve model --enable-prefix-caching=0 "
-                "--enable-kv-cache-events 0 --prefix-caching-hash-algo sha256 "
-                "--prefix-cache-retention-interval 0\n"
-            )
-            (tmp_path / "config.yaml").write_text(
-                "enable_prefix_caching: true vllm\n"
-                "VLLM_ENABLE_KV_CACHE_EVENTS=0 vllm serve model\n"
-                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=300 vllm serve model\n"
-                "VLLM_PREFIX_CACHING_HASH_ALGO=sha256_cbor vllm serve model\n"
+                "--prefix-caching-hash-algo xxhash # old setting\n"
+                "# command: vllm serve model --enable-prefix-caching\n"
+                "args: --no-enable-prefix-caching\n"
             )
 
             output = module.find_matches(tmp_path)
 
-        compose = {
-            finding["line"]: finding
-            for finding in output["findings"]
-            if finding["path"] == "compose.yaml"
-        }
-        self.assertEqual(compose[1]["commented"], False)
-        self.assertEqual(compose[1]["signal_values"]["--enable-prefix-caching"], "false")
-        self.assertEqual(compose[1]["signal_values"]["--enable-kv-cache-events"], "1")
-        self.assertEqual(compose[1]["signal_values"]["--prefix-caching-hash-algo"], "xxhash")
-        self.assertEqual(compose[1]["signal_values"]["--prefix-cache-retention-interval"], "300")
-        self.assertEqual(compose[2]["commented"], True)
-        self.assertEqual(compose[2]["signal_values"]["--enable-prefix-caching"], "true")
-        self.assertEqual(compose[2]["signal_values"]["--enable-kv-cache-events"], "false")
-        self.assertEqual(compose[2]["signal_values"]["--prefix-caching-hash-algo"], "unspecified")
-        self.assertEqual(compose[2]["signal_values"]["--prefix-cache-retention-interval"], "unspecified")
-        self.assertEqual(compose[3]["commented"], True)
-        self.assertEqual(compose[3]["signal_values"]["--prefix-caching-hash-algo"], "sha256")
-        self.assertEqual(compose[3]["signal_values"]["--prefix-cache-retention-interval"], "0")
-        config = {
-            finding["line"]: finding
-            for finding in output["findings"]
-            if finding["path"] == "config.yaml"
-        }
-        self.assertEqual(config[1]["signal_values"]["--enable-prefix-caching"], "true")
-        self.assertEqual(config[2]["signal_values"]["--enable-kv-cache-events"], "0")
-        self.assertEqual(
-            config[3]["signal_values"]["VLLM_PREFIX_CACHE_RETENTION_INTERVAL"], "300"
-        )
-        self.assertEqual(
-            config[4]["signal_values"]["prefix_caching_hash_algo"], "sha256_cbor"
-        )
+        self.assertEqual(output["matches"], 3)
         for finding in output["findings"]:
-            for value in finding["signal_values"].values():
-                if value.isdigit():
-                    self.assertLessEqual(len(value), 9)
-                else:
-                    self.assertIn(
-                        value,
-                        {
-                            "true",
-                            "false",
-                            "0",
-                            "1",
-                            "builtin",
-                            "sha256",
-                            "sha256_cbor",
-                            "xxhash",
-                            "xxhash_cbor",
-                            "unspecified",
-                        },
-                    )
+            self.assertEqual(
+                set(finding),
+                {"path", "line", "provider", "pattern", "text", "signals"},
+            )
+            self.assertEqual(finding["text"], "[SOURCE_SNIPPET_ELIDED]")
+        self.assertIn("--enable-prefix-caching", output["findings"][0]["signals"])
+        self.assertIn("--prefix-caching-hash-algo", output["findings"][0]["signals"])
+        self.assertIn("--no-enable-prefix-caching", output["findings"][2]["signals"])
+
+    def test_extract_llm_calls_uses_real_vllm_spellings_as_labels(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "unknown-env.yaml").write_text(
+                "VLLM_ENABLE_PREFIX_CACHING=0\n"
+                "VLLM_ENABLE_KV_CACHE_EVENTS=0\n"
+                "VLLM_KV_CACHE_EVENTS=0\n"
+                "VLLM_PREFIX_CACHING_HASH_ALGO=sha256\n"
+            )
+            (tmp_path / "real-config.yaml").write_text(
+                "enable_prefix_caching: true\n"
+                "enable_kv_cache_events: true\n"
+                "prefix_caching_hash_algo: sha256\n"
+                "prefix_cache_retention_interval: 300\n"
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=300\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --enable-prefix-caching "
+                "--no-enable-prefix-caching --enable-kv-cache-events "
+                "--prefix-caching-hash-algo sha256 "
+                "--prefix-cache-retention-interval 300\n"
+            )
+            output = module.find_matches(tmp_path)
+
+        unknown = [
+            finding
+            for finding in output["findings"]
+            if finding["path"] == "unknown-env.yaml"
+        ]
+        self.assertEqual(unknown, [])
+        by_path = {
+            path: {
+                signal
+                for finding in output["findings"]
+                if finding["path"] == path
+                for signal in finding["signals"]
+            }
+            for path in ("real-config.yaml", "serve.sh")
+        }
+        self.assertEqual(
+            by_path["real-config.yaml"],
+            {
+                "enable_prefix_caching",
+                "enable_kv_cache_events",
+                "prefix_caching_hash_algo",
+                "prefix_cache_retention_interval",
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+            },
+        )
+        self.assertEqual(
+            by_path["serve.sh"],
+            {
+                "vllm",
+                "--enable-prefix-caching",
+                "--no-enable-prefix-caching",
+                "--enable-kv-cache-events",
+                "--prefix-caching-hash-algo",
+                "--prefix-cache-retention-interval",
+            },
+        )
+        for pattern, label in module.SIGNAL_LABELS.items():
+            if pattern in module.PROVIDER_PATTERNS["vllm"] and label not in {
+                "vllm",
+                "kv_cache_events",
+                "kv_transfer_config",
+                "kv_connector",
+                "LMCacheConnector",
+                "AsyncLLMEngine",
+            }:
+                token = label[2:] if label.startswith("--") else label
+                self.assertIn(
+                    token,
+                    pattern.replace("\\b", ""),
+                    f"label {label!r} is not represented by pattern {pattern!r}",
+                )
 
     def test_extract_llm_calls_signal_labels_cover_patterns_without_regex_source(self):
         module = load_script_module("extract_llm_calls.py")
@@ -2413,8 +2437,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "pattern",
             "text",
             "signals",
-            "commented",
-            "signal_values",
         }
         allowed_values = set(module.SIGNAL_LABELS.values())
 
@@ -2424,10 +2446,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
                     if key == "providers":
                         self.assertIn(child_key, module.PROVIDER_PATTERNS)
                         assert_structure(child_value, "provider_count")
-                        continue
-                    if key == "signal_values":
-                        self.assertIn(child_key, allowed_values)
-                        assert_structure(child_value, "signal_values")
                         continue
                     self.assertIn(child_key, allowed_keys)
                     assert_structure(child_value, child_key)
@@ -2441,15 +2459,34 @@ class PromptCacheScriptsTest(unittest.TestCase):
                     self.assertEqual(value, "[SOURCE_SNIPPET_ELIDED]")
                 elif key == "signals":
                     self.assertIn(value, allowed_values)
-                elif key == "signal_values":
-                    if value.isdigit():
-                        self.assertLessEqual(len(value), 9)
-                    else:
-                        self.assertIn(value, allowed_values | {"true", "false", "0", "1", "unspecified"})
                 else:
                     self.assertIn(value, allowed_values | {"elided"})
 
         assert_structure(output)
+
+    def test_extract_llm_calls_docs_describe_locator_only_contract(self):
+        module = load_script_module("extract_llm_calls.py")
+        expected = (
+            "lexical locator only",
+            "snippets are always elided",
+            "comments, dead code, or overridden configuration",
+            "never resolves active/effective values or source precedence",
+            "path:line",
+            "verify the resolved runtime configuration",
+        )
+        documents = (
+            module.__doc__,
+            (ROOT / "README.md").read_text(),
+            (ROOT / "audit-prompt-caching" / "SKILL.md").read_text(),
+        )
+        for document in documents:
+            document = " ".join(document.split())
+            for phrase in expected:
+                self.assertIn(phrase, document)
+        for document in documents:
+            document = " ".join(document.split())
+            self.assertNotIn("closed signal/value allow-lists", document)
+            self.assertNotIn("bare boolean flag means", document)
 
     def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -4414,7 +4451,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            5943,
+            5979,
             "the whole-skill baseline must equal the measured restored content",
         )
         self.assertLessEqual(

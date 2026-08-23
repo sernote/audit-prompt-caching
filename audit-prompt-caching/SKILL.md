@@ -179,7 +179,7 @@ Use scripts when deterministic evidence is better than prose:
 - `scripts/layout_linter.py`: GPT-5.6 layout and cache-control placement checks; wrappers remain unvalidated.
 - `scripts/analyze_usage_logs.py`: normalize JSON/JSONL/CSV usage and `cache_write_tokens`; use `--accounting-mode` only with known wrapper semantics.
 - `scripts/estimate_cache_roi.py`: estimate read/write cost; paid writes require `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
-- `scripts/extract_llm_calls.py`: scan provider/cache/routing/engine signals, including vLLM retention/hash in YAML/Python/Compose, `.sh`, `.service`, and `Makefile`; `.env` is excluded and no runtime probe runs. Output is locator-only (snippets always elided); only allow-listed vLLM values are shown (bare boolean flags mean `true`); open each `path:line` for other facts.
+- `scripts/extract_llm_calls.py`: scan provider/cache/routing/engine signals, including vLLM retention/hash in YAML/Python/Compose, `.sh`, `.service`, and `Makefile`; `.env` is excluded and no runtime probe runs. It is a lexical locator only: snippets are always elided, and it can match comments, dead code, or overridden configuration; it never resolves active/effective values or source precedence. Open each `path:line` and verify the resolved runtime configuration during Deployment Audit; paths remain verbatim.
 - `scripts/render_audit_report.py`: combine usage/findings with repeatable `--cache-plane`, clinic status flags, and optional `--roi-json`.
 - `scripts/validate_skill_package.py`: validate frontmatter, references, eval JSON, and Python syntax; `scripts/run_trigger_eval.py` summarizes trigger coverage.
 
