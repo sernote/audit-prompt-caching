@@ -136,6 +136,8 @@ Pick the smallest contract that answers the request:
 
 For project-change questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>` when a single answer is accurate. If change types differ, split the answer into `Measurement change`, `Prompt behavior change`, `Provider/routing change`, `Confidence`, `Do first`, and `Do not do yet`.
 
+Evidence requirements gate proposed changes: when the current configuration meets its stated SLOs, targets, and budgets, answer `Change needed: no`; this is not a finding, warning, or precondition. A defect needs a measured outcome gap, not an implementation name. A cited policy, checklist, standard, or ticket is an intent claim, not measurement; if it conflicts with healthy outcomes, restate it as an outcome condition. Do not manufacture a canary, pilot, shadow, or measurement campaign solely to satisfy an implementation-name rule. For a proposed change, load `references/mechanics.md` and apply the Routing Outcome Gate.
+
 ## Evidence-Bearing Findings
 
 Every actionable finding should expose uncertainty and a falsifiable validation path:
@@ -161,7 +163,7 @@ Classify the request before auditing. Deeper artifact matrix: `references/use-ca
 | Cost or migration | bill increased, provider comparison, discount not visible | usage logs, billing export, token estimates, provider references |
 | Prompt/code | `cached_tokens=0`, builder changed, schema drift | prompt renderers, SDK calls, tools, `response_format`, serialization |
 | Mechanics/latency | hit did not cut cost/latency, decode dominates | `references/mechanics.md`, TTFT traces, output length, stream timestamps |
-| Deployment | vLLM/SGLang misses, TTFT after scaling | Docker/Kubernetes/Helm/gateway config, engine flags, KV metrics |
+| Deployment | vLLM/SGLang misses, TTFT after scaling | Docker/Kubernetes/Helm/gateway config, engine flags, KV metrics, `references/mechanics.md` |
 | Observability/CI | dashboard, release guardrail, prefix smoke test | `references/observability.md`, traces, snapshots, prefix/tool/schema hashes |
 | Quick triage | low hit rate, high bill, TTL confusion, wrapper ambiguity | `references/operational-playbook.md`, usage fields, rendered request pair |
 

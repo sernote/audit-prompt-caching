@@ -23,10 +23,11 @@ FIXTURES = ROOT / "fixtures"
 # provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # Restoring the operational prompt-segment classification and the truthful
-# Combined vLLM geometry and dynamic-tool evidence contracts measure 6010 tokens.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6010
-# Review-round ceiling after restoring pre-existing guidance and pretty eval JSON.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 53800
+# Combined vLLM geometry, dynamic-tool evidence, and no-change contracts measure
+# 6173 tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6173
+# Review-round ceiling after the always-loaded no-change contract and worked eval.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 54100
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -3970,7 +3971,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
         for required in (
             "continued operation",
             "emergency rollback",
-            "unchanged/known policy",
+            "release",
+            "scale-out",
+            "stated outcomes",
         ):
             with self.subTest(predeploy_anchor=required):
                 self.assertIn(required, predeploy)
@@ -3999,16 +4002,19 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertIn(required, mechanics)
             self.assertIn(required, gate)
         for required in (
-            "An unchanged current production policy",
-            "not a defect or blocker by algorithm name",
-            "do not require migration",
-            "a waiver",
-            "a candidate canary",
-            "new objective or measured outcome gap",
-            "a proposed policy change still uses this gate",
+            "meets its stated SLOs",
+            "no change is needed",
+            "cited policy",
+            "not itself an outcome gap",
+            "For a candidate under evaluation",
+            "pilot/canary only",
         ):
             with self.subTest(gate_anchor=required):
                 self.assertIn(required.lower(), gate.lower())
+        self.assertNotIn("declared objective", gate.lower())
+        sentences = [sentence.strip().lower() for sentence in re.split(r"(?<=[.!?])\s+", gate.strip())]
+        self.assertNotIn("missing evidence is pilot/canary only.", sentences)
+        self.assertLess(gate.index("Before applying this gate"), gate.index("Require:"))
         for required in (
             "Use this reference when the symptom is latency",
             "### High Hit Rate, Low Savings",
@@ -4076,6 +4082,54 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("cannot by itself", report)
         self.assertIn("approve a routing-policy rollout", report)
 
+    def test_routing_change_contract_is_always_loaded_and_policy_neutral(self):
+        # These structural checks pin loading, ordering, and fixture safety only;
+        # fresh-context behavioral evaluation remains the proof of agent behavior.
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        skill_contract = (
+            "Evidence requirements gate proposed changes",
+            "stated SLOs, targets, and budgets",
+            "Change needed: no",
+            "not a finding, warning, or precondition",
+            "A defect needs a measured outcome gap, not an implementation name",
+            "policy, checklist, standard, or ticket",
+            "intent claim, not measurement",
+            "Do not manufacture a canary, pilot, shadow, or measurement campaign",
+        )
+        for required in skill_contract:
+            with self.subTest(always_loaded_anchor=required):
+                self.assertIn(required, skill)
+
+        section = extract_markdown_section(skill, "Agent-First Output Contracts")
+        self.assertIn("Evidence requirements gate proposed changes", section)
+        self.assertLess(
+            skill.index("Evidence requirements gate proposed changes"),
+            skill.index("## Evidence-Bearing Findings"),
+        )
+
+        package = ROOT / "audit-prompt-caching"
+        package_text = "\n".join(
+            path.read_text()
+            for path in package.rglob("*")
+            if path.is_file() and path.suffix in {".md", ".json"}
+        ).lower()
+        for forbidden in (
+            "round robin without prefix-aware routing",
+            "cache-blind routing fragments prefix reuse across replicas",
+        ):
+            with self.subTest(policy_name_as_blocker=forbidden):
+                self.assertNotIn(forbidden, package_text)
+        for policy in ("round robin", "prefix-aware", "sticky", "hash"):
+            with self.subTest(policy_name_as_blocker=policy):
+                self.assertNotRegex(
+                    package_text,
+                    rf"{re.escape(policy)}[^.\n]*\bblocker\b|\bblocker\b[^.\n]*{re.escape(policy)}",
+                )
+
+        fixture = json.loads((FIXTURES / "vllm" / "apc_deployment.json").read_text())
+        self.assertIn("outcome", fixture["expected_issue"].lower())
+        self.assertNotIn("fragment", fixture["expected_issue"].lower())
+
     def test_evals_cover_routing_harmful_hit_and_evidence_gap(self):
         evals = json.loads(
             (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
@@ -4105,6 +4159,19 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "rewarm",
         ):
             self.assertIn(required.lower(), harmful_hit_text.lower(), required)
+
+        sibling = by_id[31]
+        sibling_text = sibling["prompt"] + "\n" + sibling["expected_output"]
+        for required in (
+            "SGLang",
+            "approximate-radix-tree",
+            "stated outcomes",
+            "internal runbook",
+            "Change needed: no",
+            "intent claim",
+            "outcome condition",
+        ):
+            self.assertIn(required.lower(), sibling_text.lower(), required)
 
     def test_trigger_eval_preserves_negative_non_cache_cases(self):
         trigger_eval = json.loads(
@@ -4742,8 +4809,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6010,
-            "the whole-skill baseline must equal the measured restored content",
+            6173,
+            "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(
             estimated_plugin_eval_tokens(self.skill_text()),

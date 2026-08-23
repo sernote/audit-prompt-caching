@@ -50,9 +50,9 @@ For vLLM/SGLang, a prefix hit can still leave bottlenecks in dynamic prefill, de
 
 ## Routing Outcome Gate
 
-For routing-policy or replica/KV-topology changes, baseline is current production and candidate is proposed; either may be cache-aware. Round robin, prefix-aware, sticky, and hash policies are candidates, not defaults or defects. Hit/locality/affinity/cached-token share are mechanism evidence only.
+Before applying this gate, establish whether a change is under evaluation. If the current production configuration meets its stated SLOs, targets, and budgets, no change is needed; the requirements below do not apply to unchanged continued operation, release, or scale-out. A cited policy, checklist, standard, or ticket is an intent claim, not itself an outcome gap. Without a new objective or measured outcome gap, an unchanged policy needs no migration, waiver, or candidate canary.
 
-An unchanged current production policy that meets its declared objective and guardrails is not a defect or blocker by algorithm name. Without a new objective or measured outcome gap, do not require migration, a waiver, or a candidate canary; a proposed policy change still uses this gate.
+For a candidate under evaluation, baseline is current production and candidate is proposed; either may be cache-aware. Round robin, prefix-aware, sticky, and hash policies are candidates, not defaults or defects. Hit/locality/affinity/cached-token share are mechanism evidence only.
 
 Require:
 
@@ -60,7 +60,7 @@ Require:
 - **capacity at SLO:** separate open-loop arrival-rate sweep for maximum sustainable throughput while latency/error SLOs hold; never infer it from one point or hit rate.
 - **rewarm:** restart, scale, and failover tests measuring cache/route loss, recovery time, and SLO violations.
 
-Predeclare the primary objective, SLO guardrails, and rollback trigger. Accept conditionally only when the objective improves, the comparison/capacity/rewarm gates and guardrails pass, and isolation is unchanged. Missing evidence is pilot/canary only; guardrail failure is reject/rollback even with hit/locality gains.
+For a candidate under evaluation, state the primary objective, SLO guardrails, and rollback trigger. Accept conditionally only when the objective improves, the comparison/capacity/rewarm gates and guardrails pass, and isolation is unchanged. For a candidate under evaluation, missing evidence is pilot/canary only; guardrail failure is reject/rollback even with hit/locality gains.
 
 CacheRoute ([arXiv:2608.19677](https://arxiv.org/abs/2608.19677)) supports: hit/locality and capacity are separate; residual imbalance can erase affinity gains; matched replay beats workload statistics. Transplant no algorithm, threshold, or number.
 

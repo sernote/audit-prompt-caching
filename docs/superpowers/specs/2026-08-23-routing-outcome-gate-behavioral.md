@@ -8,6 +8,7 @@
 - Runs: three independent fresh contexts per case, same model and effort before and after.
 - The agent receives the invoked skill package and one deployment prompt. It does not receive this spec, the expected verdict, or the rubric.
 - Raw model responses are not stored in the repository.
+- For behavioral debugging, the controller may record the ordered references opened and the verbatim decision sentence outside the repository; this spec stores only aggregate results and bounded trace summaries.
 - Majority across the three runs determines each case result.
 
 ## Prompts
@@ -87,6 +88,31 @@ Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdic
 All three case-6 runs still required a waiver/canary or treated healthy round robin as a blocker, despite no measured outcome gap. The main After columns above remain pending for the post-revision rerun.
 
 After columns are pending: Task 8 (post-change three-context run) has not been executed; the P0-2 behavioral gate is unproven.
+
+## After attempt 2 — HEAD 768d4b3
+
+The controller reran all six original cases in three fresh `gpt-5.6-luna` max contexts per case after the focused deferred-reference revision. Cases 1–5 remained decision-correct at 3/3 each. The original case 6 remained 0/3: all three runs acknowledged healthy SLO/capacity/queue/KV/retry/rewarm outcomes but still required migration, a waiver, or a prefix-aware canary, or called round robin a release/scale/compliance blocker. Raw decisions and ordered reference traces are stored outside the repository; no raw responses are reproduced here.
+
+| Case | Attempt-2 decision-correct | Bounded result |
+|---|---:|---|
+| 1 | 3/3 | Evidence gap; canary only |
+| 2 | 3/3 | Reject/rollback harmful hit |
+| 3 | 3/3 | Conditional candidate rollout |
+| 4 | 3/3 | Reject/hold for rewarm |
+| 5 | 3/3 | Preserve isolation |
+| 6 | 0/3 | Healthy current policy still treated as a blocker |
+
+## Diagnostic ablations — HEAD 768d4b3, before final correction
+
+The Opus diagnosis predicted `A6-nogov` at approximately 3/3, `A6-declared` at 2–3/3, and `A6-forced` at 1–2/3. The controller ran three independent fresh contexts for each arm (nine runs total). All nine were decision-correct and all nine opened `references/mechanics.md`. These are ablations, not post-fix acceptance evidence, and they do not change the original case-6 result above.
+
+| Ablation | Run 1 | Run 2 | Run 3 | Prediction | Opened reference summary |
+|---|---:|---:|---:|---|---|
+| `A6-nogov` — checklist sentence removed | correct | correct | correct | ~3/3 | `mechanics.md` |
+| `A6-declared` — objective prepended | correct | correct | correct | 2–3/3 | `mechanics.md` |
+| `A6-forced` — gate pasted into context | correct | correct | correct | 1–2/3 | `mechanics.md` |
+
+No post-final-correction six-case run has been performed in this spec yet. The final correction is therefore not claimed as behavioral GREEN; the controller owns the next fresh-context run and must update the After columns only from that evidence.
 
 ## RED result
 
