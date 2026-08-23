@@ -28,6 +28,14 @@
     "should_trigger": true
   },
   {
+    "query": "Vercel OpenAI Responses activeTools changes every step; compare stable tools with allowedTools and prompt-cache usage",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenAI Prompt Caching dashboard shows cache reads per write and a high hit rate; audit the aggregate evidence",
+    "should_trigger": true
+  },
+  {
     "query": "Use $audit-prompt-caching. Сделай ревью.",
     "should_trigger": true
   },
@@ -61,6 +69,18 @@
   },
   {
     "query": "vLLM KV cache events show transfer failures after enabling a KV connector",
+    "should_trigger": true
+  },
+  {
+    "query": "Audit vLLM prefix_cache_retention_interval and VLLM_PREFIX_CACHE_RETENTION_INTERVAL across stable and nightly versions",
+    "should_trigger": true
+  },
+  {
+    "query": "Hybrid vLLM Mamba/SWA geometry has a SlidingWindowMLASpec group and a full-attention group with scheduler_block_size mismatch",
+    "should_trigger": true
+  },
+  {
+    "query": "Cross-process vLLM block hash mismatch between sha256 and xxhash workers on a shared FS/OBJ/P2P cache",
     "should_trigger": true
   },
   {

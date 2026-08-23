@@ -2,9 +2,11 @@ import csv
 import importlib.util
 import json
 import math
+import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -16,8 +18,13 @@ FIXTURES = ROOT / "fixtures"
 # plugin-eval 0.1.2 reports static token estimates as len(text) / 4. Mirroring
 # that arithmetic keeps the budget guardrails in-suite without shelling out to
 # plugin-eval, which is not a repository test dependency.
-PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 139
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5852
+# plugin-eval measures the parsed description value, not its YAML source slice.
+# The former 0.85 character heuristic was retired: the required complete
+# provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
+PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
+# Restoring the operational prompt-segment classification and the truthful
+# Combined vLLM geometry and dynamic-tool evidence contracts measure 6010 tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6010
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -51,6 +58,37 @@ def load_script_module(script_name):
     finally:
         sys.dont_write_bytecode = previous
     return module
+
+
+def parse_markdown_table(text, header):
+    """Parse one pipe table by its exact header using only the stdlib."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != header:
+            continue
+        headers = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        rows = []
+        for row_line in lines[index + 2 :]:
+            if not row_line.strip().startswith("|"):
+                break
+            values = [cell.strip() for cell in row_line.strip().strip("|").split("|")]
+            if len(values) != len(headers):
+                break
+            rows.append(dict(zip(headers, values)))
+        return rows
+    raise AssertionError(f"missing Markdown table header: {header}")
+
+
+def extract_markdown_section(text, heading):
+    """Return one level-two Markdown section without unrelated sections."""
+    pattern = rf"^## {re.escape(heading)}\s*$"
+    match = re.search(pattern, text, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"missing Markdown section: {heading}")
+    body_start = match.end()
+    next_heading = re.search(r"^## (?!#)", text[body_start:], re.MULTILINE)
+    body_end = body_start + next_heading.start() if next_heading else len(text)
+    return text[body_start:body_end]
 
 
 class PromptCacheScriptsTest(unittest.TestCase):
@@ -2174,6 +2212,287 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 2)
             self.assertEqual(output["findings"][0]["path"], "src/llm.py")
 
+    def test_extract_llm_calls_elides_arbitrary_source_shapes_from_json(self):
+        cases = {
+            "serve.sh": (
+                "VLLM_API_KEY=48915732 vllm serve model --enable-prefix-caching",
+                "vllm serve model --api-key 1234567890 --enable-prefix-caching",
+                'AUTH_TOKEN=00000000 vllm serve model --prefix-caching-hash-algo sha256',
+                'api_key: str = "sk-type-SECRET-01" vllm serve model',
+                'if os.environ["OPENAI_API_KEY"] == "sk-eq-SECRET-02": vllm serve model',
+                'export ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} vllm serve model',
+                'vllm serve model --api-key `sk-backtick-SECRET-03` --enable-prefix-caching',
+                'http -u admin:http-SECRET-04 https://api.anthropic.com/v1 # vllm',
+            ),
+            "app.py": (
+                'password: 987654321  # anthropic',
+                'cfg = {"openrouter": {"api_keys": ["sk-array-SECRET-05", "sk-array-SECRET-06"]}}',
+                'client = Anthropic(api_key=f"sk-f-SECRET-07")',
+            ),
+            "Makefile": (
+                'serve:\n\t$(CURL) --user svc:make-SECRET-08 https://openrouter.ai/api/v1/models # openrouter',
+            ),
+        }
+        sentinels = {
+            "48915732",
+            "1234567890",
+            "00000000",
+            "sk-type-SECRET-01",
+            "sk-eq-SECRET-02",
+            "sk-backtick-SECRET-03",
+            "http-SECRET-04",
+            "987654321",
+            "sk-array-SECRET-05",
+            "sk-array-SECRET-06",
+            "sk-f-SECRET-07",
+            "make-SECRET-08",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for filename, lines in cases.items():
+                (tmp_path / filename).write_text("\n".join(lines) + "\n")
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        rendered = result.stdout
+
+        self.assertEqual(output.get("source_snippet_policy"), "elided")
+        self.assertGreater(output["matches"], 0)
+        for finding in output["findings"]:
+            self.assertEqual(finding["text"], "[SOURCE_SNIPPET_ELIDED]")
+            self.assertIn("path", finding)
+            self.assertIn("line", finding)
+            self.assertIn("provider", finding)
+            self.assertIn("pattern", finding)
+        self.assertIn("signals", output["findings"][0])
+        for sentinel in sentinels:
+            self.assertNotIn(sentinel, rendered)
+
+    def test_extract_llm_calls_is_lexical_locator_without_value_or_comment_claims(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "command: vllm serve model --enable-prefix-caching=false "
+                "--prefix-caching-hash-algo xxhash # old setting\n"
+                "# command: vllm serve model --enable-prefix-caching\n"
+                "args: --no-enable-prefix-caching\n"
+            )
+
+            output = module.find_matches(tmp_path)
+
+        self.assertEqual(output["matches"], 3)
+        for finding in output["findings"]:
+            self.assertEqual(
+                set(finding),
+                {"path", "line", "provider", "pattern", "text", "signals"},
+            )
+            self.assertEqual(finding["text"], "[SOURCE_SNIPPET_ELIDED]")
+        self.assertIn("--enable-prefix-caching", output["findings"][0]["signals"])
+        self.assertIn("--prefix-caching-hash-algo", output["findings"][0]["signals"])
+        self.assertIn("--no-enable-prefix-caching", output["findings"][2]["signals"])
+
+    def test_extract_llm_calls_uses_real_vllm_spellings_as_labels(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "unknown-env.yaml").write_text(
+                "VLLM_ENABLE_PREFIX_CACHING=0\n"
+                "VLLM_ENABLE_KV_CACHE_EVENTS=0\n"
+                "VLLM_KV_CACHE_EVENTS=0\n"
+                "VLLM_PREFIX_CACHING_HASH_ALGO=sha256\n"
+            )
+            (tmp_path / "stale-flag.sh").write_text(
+                "--enable-kv-cache-events\n"
+            )
+            (tmp_path / "real-config.yaml").write_text(
+                "enable_prefix_caching: true\n"
+                "enable_kv_cache_events: true\n"
+                "prefix_caching_hash_algo: sha256\n"
+                "prefix_cache_retention_interval: 300\n"
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=300\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --enable-prefix-caching "
+                "--no-enable-prefix-caching --kv-events-config config.json "
+                "--prefix-caching-hash-algo sha256 "
+                "--prefix-cache-retention-interval 300\n"
+            )
+            output = module.find_matches(tmp_path)
+
+        unknown = [
+            finding
+            for finding in output["findings"]
+            if finding["path"] == "unknown-env.yaml"
+        ]
+        self.assertEqual(unknown, [])
+        stale = [
+            finding
+            for finding in output["findings"]
+            if finding["path"] == "stale-flag.sh"
+        ]
+        self.assertEqual(len(stale), 1)
+        self.assertEqual(stale[0]["signals"], ["--enable-kv-cache-events"])
+        by_path = {
+            path: {
+                signal
+                for finding in output["findings"]
+                if finding["path"] == path
+                for signal in finding["signals"]
+            }
+            for path in ("real-config.yaml", "serve.sh")
+        }
+        self.assertEqual(
+            by_path["real-config.yaml"],
+            {
+                "enable_prefix_caching",
+                "enable_kv_cache_events",
+                "prefix_caching_hash_algo",
+                "prefix_cache_retention_interval",
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+            },
+        )
+        self.assertEqual(
+            by_path["serve.sh"],
+            {
+                "vllm",
+                "--enable-prefix-caching",
+                "--no-enable-prefix-caching",
+                "--kv-events-config",
+                "--prefix-caching-hash-algo",
+                "--prefix-cache-retention-interval",
+            },
+        )
+        for pattern, label in module.SIGNAL_LABELS.items():
+            if pattern in module.PROVIDER_PATTERNS["vllm"]:
+                token = label[2:] if label.startswith("--") else label
+                self.assertIn(
+                    token,
+                    pattern.replace("\\b", ""),
+                    f"label {label!r} is not represented by pattern {pattern!r}",
+                )
+
+    def test_extract_llm_calls_signal_labels_cover_patterns_without_regex_source(self):
+        module = load_script_module("extract_llm_calls.py")
+        self.assertFalse(hasattr(module, "VLLM_SIGNAL_LABELS"))
+        patterns = {
+            pattern
+            for provider_patterns in module.PROVIDER_PATTERNS.values()
+            for pattern in provider_patterns
+        }
+        self.assertEqual(patterns, set(module.SIGNAL_LABELS))
+        for label in module.SIGNAL_LABELS.values():
+            self.assertNotRegex(label, r"[\\()]")
+
+    def test_extract_llm_calls_preserves_legacy_pattern_for_split_signals(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "bedrock.py").write_text("CacheWriteInputTokens = 128\n")
+            (tmp_path / "vllm.yaml").write_text("connector: LMCacheConnector\n")
+            (tmp_path / "sglang.py").write_text("pd_disaggregation = true\n")
+            output = module.find_matches(tmp_path)
+
+        by_provider = {
+            finding["provider"]: finding for finding in output["findings"]
+        }
+        self.assertEqual(
+            by_provider["bedrock"]["pattern"],
+            r"\bCache(Read|Write)InputTokens\b",
+        )
+        self.assertEqual(
+            by_provider["vllm"]["pattern"],
+            r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
+        )
+        self.assertEqual(
+            by_provider["sglang"]["pattern"],
+            r"\b(disaggregation_mode|pd_disaggregation)\b",
+        )
+        self.assertIn("CacheWriteInputTokens", by_provider["bedrock"]["signals"])
+        self.assertIn("LMCacheConnector", by_provider["vllm"]["signals"])
+        self.assertIn("pd_disaggregation", by_provider["sglang"]["signals"])
+
+    def test_extract_llm_calls_output_has_recursive_structural_allowlist(self):
+        module = load_script_module("extract_llm_calls.py")
+        sentinel = "recursive-source-secret-7f4a"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "serve.sh").write_text(
+                f"vllm serve model --api-key {sentinel} --enable-prefix-caching\n"
+            )
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn(sentinel, result.stdout)
+        allowed_keys = {
+            "root",
+            "files_scanned",
+            "matches",
+            "providers",
+            "findings",
+            "source_snippet_policy",
+            "path",
+            "line",
+            "provider",
+            "pattern",
+            "text",
+            "signals",
+        }
+        allowed_values = set(module.SIGNAL_LABELS.values())
+
+        def assert_structure(value, key=None):
+            if isinstance(value, dict):
+                for child_key, child_value in value.items():
+                    if key == "providers":
+                        self.assertIn(child_key, module.PROVIDER_PATTERNS)
+                        assert_structure(child_value, "provider_count")
+                        continue
+                    self.assertIn(child_key, allowed_keys)
+                    assert_structure(child_value, child_key)
+            elif isinstance(value, list):
+                for child_value in value:
+                    assert_structure(child_value, key)
+            elif isinstance(value, str):
+                if key in {"root", "path", "pattern"}:
+                    return
+                if key == "text":
+                    self.assertEqual(value, "[SOURCE_SNIPPET_ELIDED]")
+                elif key == "signals":
+                    self.assertIn(value, allowed_values)
+                else:
+                    self.assertIn(value, allowed_values | {"elided"})
+
+        assert_structure(output)
+
+    def test_extract_llm_calls_docs_describe_locator_only_contract(self):
+        module = load_script_module("extract_llm_calls.py")
+        expected = (
+            "lexical locator only",
+            "snippets are always elided",
+            "comments, dead code, or overridden configuration",
+            "never resolves active/effective values or source precedence",
+            "path:line",
+            "verify the resolved runtime configuration",
+        )
+        documents = (
+            module.__doc__,
+            (ROOT / "README.md").read_text(),
+            (ROOT / "audit-prompt-caching" / "SKILL.md").read_text(),
+        )
+        for document in documents:
+            document = " ".join(document.split())
+            for phrase in expected:
+                self.assertIn(phrase, document)
+        for document in documents:
+            document = " ".join(document.split())
+            self.assertNotIn("closed signal/value allow-lists", document)
+            self.assertNotIn("allow-listed vLLM values", document)
+            self.assertNotRegex(document, r"bare boolean flags? mean")
+
     def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2226,7 +2545,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             (tmp_path / "compose.yaml").write_text(
                 "\n".join(
                     [
-                        "command: vllm serve model --enable-kv-cache-events",
+                        "command: vllm serve model --kv-events-config config.json",
                         "kv_transfer_config: {kv_connector: LMCacheConnectorV1}",
                         "command: sglang.launch_server --enable-hierarchical-cache",
                         "hicache_storage_backend: disk",
@@ -2241,6 +2560,555 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertGreaterEqual(output["providers"]["vllm"], 2)
         self.assertGreaterEqual(output["providers"]["sglang"], 3)
+
+    def test_extract_llm_calls_collects_vllm_retention_and_hash_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "deployment.yaml").write_text(
+                "prefix_cache_retention_interval: 0\n"
+                "prefix_caching_hash_algo: sha256\n"
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL: 0\n"
+            )
+            (tmp_path / "engine.py").write_text(
+                "prefix_cache_retention_interval = 0\n"
+                "prefix_caching_hash_algo = 'sha256_cbor'\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0 "
+                "--prefix-caching-hash-algo sha256\n"
+            )
+            (tmp_path / "vllm.service").write_text(
+                "ExecStart=/usr/bin/vllm serve model "
+                "--prefix-cache-retention-interval 64\n"
+            )
+            (tmp_path / "Makefile").write_text(
+                "serve:\n\tvllm serve model --prefix-caching-hash-algo xxhash\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["files_scanned"], 5)
+        self.assertIn("vllm", output["providers"])
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        for signal in (
+            "--prefix-cache-retention-interval",
+            "prefix_cache_retention_interval",
+            "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+            "--prefix-caching-hash-algo",
+            "prefix_caching_hash_algo",
+        ):
+            self.assertIn(signal, signals)
+
+    def test_extract_llm_calls_keeps_generic_and_specific_vllm_signals_additive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0 "
+                "--prefix-caching-hash-algo sha256\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["providers"]["vllm"], 1)
+        self.assertEqual(output["matches"], 1)
+        finding = output["findings"][0]
+        self.assertEqual(finding["provider"], "vllm")
+        self.assertIn("vllm", finding["signals"])
+        self.assertIn("--prefix-cache-retention-interval", finding["signals"])
+        self.assertIn("--prefix-caching-hash-algo", finding["signals"])
+
+    def test_extract_llm_calls_does_not_classify_generic_pythonhashseed_as_vllm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "service.py").write_text(
+                "import os\nos.environ['PYTHONHASHSEED'] = '42'\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn("vllm", output["providers"])
+
+    def test_extract_llm_calls_elides_source_snippet_for_long_lines(self):
+        module = load_script_module("extract_llm_calls.py")
+        long_line = "vllm " + ("A-" * 6000) + "\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "long.yaml").write_text(long_line)
+
+            started = time.monotonic()
+            output = module.find_matches(tmp_path)
+            elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 2.0, f"long-line scan took {elapsed:.3f}s")
+        self.assertEqual(output["providers"].get("vllm"), 1)
+        self.assertEqual(len(output["findings"]), 1)
+        self.assertEqual(output["findings"][0]["text"], "[SOURCE_SNIPPET_ELIDED]")
+        self.assertEqual(output["source_snippet_policy"], "elided")
+
+    def test_extract_llm_calls_excludes_dotenv_files_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / ".env").write_text(
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=0\n"
+                "PYTHONHASHSEED=dotenv-secret\n"
+            )
+            (tmp_path / ".env.production").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".env.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".env.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".env.json").write_text(
+                '{"command": "vllm serve model --prefix-cache-retention-interval 0"}\n'
+            )
+            (tmp_path / ".env.d").mkdir()
+            (tmp_path / ".env.d" / "production.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".envs").mkdir()
+            (tmp_path / ".envs" / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["files_scanned"], 1)
+        scanned_paths = "\n".join(f["path"] for f in output["findings"])
+        for env_name in (
+            ".env",
+            ".env.production",
+            ".env.yaml",
+            ".env.sh",
+            ".env.json",
+            ".env.d",
+            ".envs",
+        ):
+            self.assertNotIn(env_name, scanned_paths)
+        self.assertNotIn("dotenv-secret", result.stdout)
+
+    def test_extract_llm_calls_excludes_dotenv_root_target(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            env_root = Path(tmp) / ".env.d"
+            env_root.mkdir()
+            (env_root / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            output = module.find_matches(env_root)
+
+        self.assertEqual(output["files_scanned"], 0)
+        self.assertEqual(output["matches"], 0)
+
+    def test_extract_llm_calls_scans_root_under_skipped_named_ancestor(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            service_root = Path(tmp) / "build" / "pkg"
+            service_root.mkdir(parents=True)
+            (service_root / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            output = module.find_matches(service_root)
+
+        self.assertEqual(output["files_scanned"], 1)
+        self.assertEqual(output["matches"], 1)
+
+    def test_skill_frontmatter_description_is_yaml_safe_and_retains_trigger_terms(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        frontmatter = skill.split("---", 2)[1]
+        lines = frontmatter.splitlines()
+        description_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("description:")
+        )
+        description_line = lines[description_index]
+        self.assertRegex(description_line, r'^description:\s+".*"$')
+        description = json.loads(description_line.split("description:", 1)[1].strip())
+        for required in (
+            "Use whenever the user mentions",
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "prompt_cache_options",
+            "previous_interaction_id",
+            "tools",
+            "schemas",
+            "response_format",
+            "model/router",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "Mamba/SWA/hybrid",
+            "cross-process block hash",
+        ):
+            self.assertIn(required, description)
+        self.assertNotIn("provider API surface", description)
+
+    def test_skill_frontmatter_trigger_terms_keep_lexical_boundaries(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        frontmatter = skill.split("---", 2)[1]
+        description_line = next(
+            line for line in frontmatter.splitlines() if line.startswith("description:")
+        )
+        self.assertRegex(description_line, r'^description:\s+".*"$')
+        description = json.loads(description_line.split("description:", 1)[1].strip())
+
+        self.assertNotIn("provider API surface", description)
+        for required in (
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+            "cache_control/cachePoint",
+        ):
+            self.assertRegex(
+                description,
+                rf"(?<![A-Za-z0-9_]){re.escape(required)}(?![A-Za-z0-9_])",
+            )
+        for left, right in (
+            ("cached_tokens=0", "total_cached_tokens"),
+            ("total_cached_tokens=0", "cache_read_input_tokens"),
+            ("total_cached_tokens", "cache_read_input_tokens"),
+            ("TTFT", "KV reuse"),
+            ("KV reuse", "prefix_cache_retention_interval"),
+            ("tools", "schemas"),
+            ("schemas", "response_format"),
+            ("Not for generic prompt writing", "RAG"),
+            ("RAG", "token counts"),
+            ("token counts", "non-LLM perf"),
+        ):
+            self.assertNotIn(
+                f"{left}{right}",
+                description,
+                f"glued trigger terms: {left!r} + {right!r}",
+            )
+
+        for term in (
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+            "cache_control/cachePoint",
+            "TTFT",
+            "KV reuse",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "Mamba/SWA/hybrid",
+            "cross-process block hash",
+            "LLM cost or speed regressed",
+            "repeated long prompts",
+            "speeding up agents",
+            "LLM request shape changes",
+            "tools",
+            "schemas",
+            "response_format",
+            "model/router",
+            "agent loops",
+            "compaction",
+            "Not for generic prompt writing",
+            "RAG",
+            "token counts",
+            "non-LLM perf",
+        ):
+            with self.subTest(term=term):
+                self.assertRegex(
+                    description,
+                    rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",
+                )
+
+    def test_vllm_contract_rows_encode_version_geometry_and_hash_upgrade_delta(self):
+        reference = (ROOT / "audit-prompt-caching" / "references" / "vllm.md").read_text()
+        feature_rows = parse_markdown_table(
+            reference,
+            "| Runtime evidence | Feature surface | Default/meaning |",
+        )
+        feature_by_runtime = {row["Runtime evidence"]: row for row in feature_rows}
+        self.assertEqual(
+            feature_by_runtime["stable `v0.27.1` source/release"]["Feature surface"],
+            "env `VLLM_PREFIX_CACHE_RETENTION_INTERVAL`; coordinator consumes it",
+        )
+        self.assertIn(
+            "default `None`",
+            feature_by_runtime["stable `v0.27.1` source/release"]["Default/meaning"],
+        )
+        self.assertIn(
+            "CLI/config `prefix_cache_retention_interval`",
+            feature_by_runtime["source/nightly containing `017e9f4`"]["Feature surface"],
+        )
+        self.assertIn(
+            "default `0`",
+            feature_by_runtime["source/nightly containing `017e9f4`"]["Default/meaning"],
+        )
+
+        retention_rows = parse_markdown_table(
+            reference,
+            "| Runtime | Effective value | Dense/non-eligible groups | SWA/Mamba/hybrid groups |",
+        )
+        retention = {
+            (row["Runtime"], row["Effective value"]): row for row in retention_rows
+        }
+        stable_none = retention[("stable `v0.27.1` env-only", "`None`")]
+        stable_zero = retention[("stable `v0.27.1` env-only", "`0`")]
+        stable_positive = retention[("stable `v0.27.1` env-only", "positive")]
+        post_zero = retention[("post-`017e9f4` source/main", "`0`")]
+        post_positive = retention[("post-`017e9f4` source/main", "positive")]
+        self.assertIn("interval does not apply", stable_none["Dense/non-eligible groups"])
+        self.assertIn("dense checkpoints", stable_none["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", stable_zero["Dense/non-eligible groups"])
+        self.assertIn("semantic checkpoints", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("latest replay boundary", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("shared-prefix junctions", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", stable_positive["Dense/non-eligible groups"])
+        self.assertIn("multiple of effective `scheduler_block_size`", stable_positive["SWA/Mamba/hybrid groups"])
+        self.assertIn("permitted no-op", post_zero["Dense/non-eligible groups"])
+        self.assertIn("semantic checkpoints", post_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", post_positive["Dense/non-eligible groups"])
+        self.assertIn("full-attention groups ignore it", post_positive["SWA/Mamba/hybrid groups"])
+
+        geometry_rows = parse_markdown_table(
+            reference,
+            "| Concrete KV spec class | Retention-interval eligibility |",
+        )
+        geometry = {row["Concrete KV spec class"]: row["Retention-interval eligibility"] for row in geometry_rows}
+        self.assertEqual(
+            geometry["`SlidingWindowSpec`, including `SlidingWindowMLASpec`"],
+            "eligible",
+        )
+        self.assertEqual(geometry["`MambaSpec`"], "eligible")
+        self.assertEqual(
+            geometry["`FullAttentionSpec` and subclasses, including `RSWASpec` and `SinkFullAttentionSpec`"],
+            "not eligible",
+        )
+        self.assertEqual(geometry["`ChunkedLocalAttentionSpec`"], "not eligible in the checked validator")
+        self.assertEqual(geometry["unknown/new spec"], "`unknown` until a source/runtime probe confirms it")
+
+        hash_rows = parse_markdown_table(
+            reference,
+            "| Runtime evidence | Algorithm | Effective default seed | Cross-process reuse |",
+        )
+        hash_by_key = {(row["Runtime evidence"], row["Algorithm"]): row for row in hash_rows}
+        self.assertIn(
+            "random `os.urandom(32)` per process",
+            hash_by_key[("stable `v0.27.1`", "every supported algorithm")]["Effective default seed"],
+        )
+        self.assertIn(
+            "deterministic from the supplied value",
+            hash_by_key[("stable `v0.27.1`", "any algorithm with an explicitly common `PYTHONHASHSEED`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "fixed deterministic default",
+            hash_by_key[("post-`ef47a897` source/main", "`sha256`, `sha256_cbor`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "random per process",
+            hash_by_key[("post-`ef47a897` source/main", "`xxhash`, `xxhash_cbor`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "explicit `PYTHONHASHSEED` wins",
+            hash_by_key[("post-`ef47a897` source/main", "any algorithm with an explicit `PYTHONHASHSEED`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "same algorithm and all other inputs",
+            hash_by_key[("post-`ef47a897` source/main", "`sha256`, `sha256_cbor`")]["Cross-process reuse"],
+        )
+
+    def test_vllm_version_geometry_contract_is_documented(self):
+        root = ROOT / "audit-prompt-caching"
+        vllm = (root / "references" / "vllm.md").read_text()
+        skill = (root / "SKILL.md").read_text()
+        checklist = (root / "references" / "predeploy-checklist.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        rules = json.loads((root / "references" / "rules.json").read_text())
+
+        vllm_locator_docs = " ".join(vllm.split())
+        self.assertIn("--kv-events-config", vllm_locator_docs)
+        self.assertIn(
+            "If a deployment line uses `--enable-kv-cache-events`, treat it as "
+            "stale/integration-specific deployment guidance; verify exact runtime "
+            "parser/version/startup acceptance, and do not assume upstream vLLM "
+            "support.",
+            vllm_locator_docs,
+        )
+
+        for required in (
+            "Version and capability gate",
+            "v0.27.1",
+            "017e9f4",
+            "ef47a897",
+            "prefix_cache_retention_interval",
+            "SlidingWindowSpec",
+            "SlidingWindowMLASpec",
+            "MambaSpec",
+            "RSWASpec",
+            "ChunkedLocalAttentionSpec",
+            "scheduler_block_size",
+            "prefix_match_unit",
+            "sha256_cbor",
+            "xxhash_cbor",
+            "P2P handshake",
+            "FS/OBJ",
+            "Compatibility is not isolation",
+            "cache_salt",
+            "raw seed",
+        ):
+            self.assertIn(required, vllm, required)
+
+        for required in (
+            "image digest",
+            "feature presence",
+            "effective retention",
+            "KV-group topology",
+            "scheduler block size",
+            "hash algorithm",
+            "seed compatibility status",
+            "tier type",
+            "retention/geometry mismatch",
+            "cross-process hash mismatch",
+            "feature detection",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "AP-1 through AP-14",
+            "AP-9b",
+            "AP-14",
+        ):
+            self.assertIn(required, skill, required)
+
+        for required in (
+            "retention flag/env",
+            "positive interval",
+            "different algorithms",
+            "different effective seeds",
+            "PYTHONHASHSEED",
+            "rolling upgrade",
+            "image digest",
+            "resolved cache config",
+            "compatibility status",
+        ):
+            self.assertIn(required, checklist, required)
+
+        for required in (
+            "engine_version",
+            "engine_commit",
+            "image_digest",
+            "retention_feature_present",
+            "retention_effective_value",
+            "attention_geometry",
+            "scheduler_block_size",
+            "hash_algorithm",
+            "seed_compatibility_status",
+            "pythonhashseed_present",
+            "pythonhashseed_match_status",
+            "kv_tier_type",
+            "cache_salt_boundary_fingerprint",
+            "matched",
+            "mismatched",
+            "unknown",
+            "Raw seed",
+            "bounded cardinality",
+        ):
+            self.assertIn(required, observability, required)
+
+        for required in (
+            "Deployment Audit",
+            "Engine version/commit/image:",
+            "Capability evidence:",
+            "Attention/KV geometry:",
+            "Effective retention and source:",
+            "Scheduler block size:",
+            "Hash algorithm:",
+            "Seed compatibility status:",
+            "KV tier:",
+            "Isolation/cache_salt boundary:",
+        ):
+            self.assertIn(required, report, required)
+
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+        for rule_id in ("AP-13", "AP-14"):
+            self.assertIn(rule_id, rule_map)
+            self.assertEqual(rule_map[rule_id]["default_severity"], "medium")
+        self.assertIn("raw seed", rule_map["AP-14"]["avoid"].lower())
+        self.assertIn("cache_salt", rule_map["AP-14"]["avoid"])
+
+    def test_vllm_contract_rejects_shortcuts_and_raw_isolation_identifiers(self):
+        root = ROOT / "audit-prompt-caching"
+        vllm = (root / "references" / "vllm.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        rules = json.loads((root / "references" / "rules.json").read_text())
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+
+        def assert_retention_semantics(reference_text):
+            retention_rows = parse_markdown_table(
+                reference_text,
+                "| Runtime | Effective value | Dense/non-eligible groups | SWA/Mamba/hybrid groups |",
+            )
+            retention = {
+                (row["Runtime"], row["Effective value"]): row
+                for row in retention_rows
+            }
+            self.assertIn(
+                "startup/config error",
+                retention[("stable `v0.27.1` env-only", "`0`")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "startup/config error",
+                retention[("stable `v0.27.1` env-only", "positive")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "permitted no-op",
+                retention[("post-`017e9f4` source/main", "`0`")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "full-attention groups ignore it",
+                retention[("post-`017e9f4` source/main", "positive")]["SWA/Mamba/hybrid groups"],
+            )
+
+        assert_retention_semantics(vllm)
+        for original, replacement in (
+            (
+                "startup/config error: any non-`None` env value requires SWA/Mamba groups",
+                "permitted no-op",
+            ),
+            ("permitted no-op", "startup/config error"),
+            ("full-attention groups ignore it", "full-attention groups keep it"),
+        ):
+            mutated_reference = vllm.replace(original, replacement, 1)
+            self.assertNotEqual(mutated_reference, vllm)
+            with self.subTest(original=original):
+                with self.assertRaises(AssertionError):
+                    assert_retention_semantics(mutated_reference)
+
+        self.assertIn("algorithm and effective seed are necessary but insufficient", vllm)
+        self.assertIn("serialization/runtime", vllm)
+        self.assertIn("tenant ID", observability)
+        self.assertIn("unbounded metric cardinality", observability)
+        self.assertIn("PYTHONHASHSEED", rule_map["AP-14"]["avoid"])
 
     def test_validate_skill_package_checks_required_files_and_references(self):
         result = run_script("validate_skill_package.py", ROOT / "audit-prompt-caching")
@@ -3155,6 +4023,449 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, reference)
 
+    def test_vercel_allowed_tools_contract_is_responses_only_and_version_aware(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "vercel-ai-sdk.md"
+        ).read_text()
+        section = extract_markdown_section(reference, "OpenAI Responses allowedTools")
+        normalized = " ".join(section.split())
+
+        self.assertIn("stable full `tools` catalog", normalized)
+        self.assertIn("providerOptions.openai.allowedTools", normalized)
+        self.assertIn("Responses-only", normalized)
+        self.assertIn("mode: `auto`", normalized)
+        self.assertIn("mode: `required`", normalized)
+        self.assertIn("toolChoice", normalized)
+        self.assertIn("model capability", normalized)
+        self.assertIn("tool class", normalized)
+        self.assertIn("package.json", normalized)
+        self.assertIn("lockfile", normalized)
+        self.assertIn("allowedTools capability gate", normalized)
+        self.assertIn("allowedTools capability and economics gates", normalized)
+        self.assertNotIn("applicability and economics gates", normalized)
+        self.assertIn("corrected-mapping gate", normalized)
+
+        chronology = re.search(
+            r"May 5, 2026.*?29e6ac6.*?base Responses option.*?"
+            r"Aug 18, 2026.*?a062795.*?corrected.*?3\.0\.98.*?4\.0\.43",
+            " ".join(section.split()),
+        )
+        self.assertIsNotNone(
+            chronology,
+            "base introduction and Aug 18 correction must be distinct chronological evidence",
+        )
+
+        rows = parse_markdown_table(
+            reference,
+            "| `@ai-sdk/openai` line | Availability | Corrected provider-tool mapping |",
+        )
+        self.assertEqual(len(rows), 4)
+        by_line = {row["`@ai-sdk/openai` line"]: row for row in rows}
+        self.assertIn("`allowedTools` is absent", by_line["`2.x` / AI SDK v5"]["Availability"])
+        self.assertIn("not applicable", by_line["`2.x` / AI SDK v5"]["Corrected provider-tool mapping"])
+        self.assertEqual(
+            by_line["`3.x` / AI SDK v6"]["Availability"],
+            "available from `3.0.62`",
+        )
+        self.assertEqual(
+            by_line["`3.x` / AI SDK v6"]["Corrected provider-tool mapping"],
+            "corrected at `>=3.0.98`",
+        )
+        self.assertEqual(
+            by_line["`4.x`"]["Corrected provider-tool mapping"],
+            "corrected at `>=4.0.43`",
+        )
+        self.assertIn("unknown line", by_line)
+        self.assertIn("do not transfer floors", by_line["unknown line"]["Corrected provider-tool mapping"])
+        self.assertRegex(
+            normalized,
+            r"For Azure.*references/azure-openai\.md.*endpoint.*deployment/model.*api-version.*Responses tool_choice schema.*final wire",
+        )
+        self.assertIn("Vercel SDK's name-resolution", normalized)
+        self.assertIn("warnings, drop, or error semantics", normalized)
+        self.assertNotIn("Do not transfer this behavior to direct OpenAI Responses", normalized)
+
+    def test_vercel_allowed_tools_contract_covers_wire_mapping_and_failure_modes(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "vercel-ai-sdk.md"
+        ).read_text()
+        section = extract_markdown_section(reference, "OpenAI Responses allowedTools")
+        rows = parse_markdown_table(
+            section,
+            "| Tool class | Entry in `allowed_tools.tools` |",
+        )
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "Tool class": "function",
+                    "Entry in `allowed_tools.tools`": "`{type: \"function\", name}`",
+                },
+                {
+                    "Tool class": "custom",
+                    "Entry in `allowed_tools.tools`": "`{type: \"custom\", name}`",
+                },
+                {
+                    "Tool class": "MCP",
+                    "Entry in `allowed_tools.tools`": "`{type: \"mcp\", server_label}`",
+                },
+                {
+                    "Tool class": "supported built-in/provider-defined tool",
+                    "Entry in `allowed_tools.tools`": "`{type}`",
+                },
+            ],
+        )
+
+        normalized = " ".join(section.split())
+        for required in [
+            "`tool_search`",
+            "`deferLoading`",
+            "namespaced tools",
+            "ambiguous",
+            "declared tool name has priority",
+            "server-level",
+            "empty allow-list",
+            "fails with an error",
+        ]:
+            self.assertIn(required, normalized, required)
+
+    def test_dynamic_tool_references_use_wrapper_aware_economics_gate(self):
+        agent_tools = (
+            ROOT / "audit-prompt-caching" / "references" / "agent-tools.md"
+        ).read_text()
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        rules = json.loads(
+            (ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text()
+        )
+
+        agent_section = extract_markdown_section(agent_tools, "Dynamic-tool decision rule")
+        agent_normalized = " ".join(agent_section.split())
+        self.assertRegex(
+            agent_normalized,
+            r"global Applicability Gate.*allowedTools capability gate.*stable catalog.*allowed-list.*prefix hashes.*provider usage",
+        )
+        self.assertRegex(
+            agent_normalized,
+            r"A direct OpenAI Responses.*Vercel.*different API surfaces",
+        )
+        self.assertRegex(
+            agent_normalized,
+            r"Chat Completions.*arbitrary OpenAI-compatible wrapper.*do not inherit",
+        )
+        self.assertIn("activeTools", agent_normalized)
+        self.assertIn("cold or low-reuse route", agent_normalized)
+        self.assertNotIn("blanket ban on `activeTools`", agent_normalized)
+
+        playbooks = extract_markdown_section(skill, "Audit Playbooks")
+        dynamic_line = next(
+            line for line in playbooks.splitlines() if "Dynamic tools in long agent loops" in line
+        )
+        self.assertIn("economics", dynamic_line)
+        self.assertIn("version/model-verified allow-list", dynamic_line)
+        self.assertIn("wire proof", dynamic_line)
+
+        ap4 = next(rule for rule in rules["rules"] if rule["id"] == "AP-4")
+        self.assertRegex(
+            ap4["fix"],
+            r"After the global Applicability Gate and economics check, use a stable full catalog plus an endpoint/version-verified allow-list",
+        )
+        self.assertIn("Mutating activeTools without prefix/economics measurement", ap4["avoid"])
+        self.assertIn("provider cache usage", ap4["validation"])
+        self.assertNotIn("ban activeTools", ap4["fix"].lower())
+
+    def test_provider_aggregate_evidence_contract_keeps_dashboard_usage_and_request_scopes_separate(self):
+        root = ROOT / "audit-prompt-caching"
+        openai = (root / "references" / "openai.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        evals_text = (root / "evals" / "evals.json").read_text()
+        for source_text in (openai, observability, report, evals_text):
+            self.assertNotIn(
+                "unless its denominator is explicitly defined and recorded",
+                source_text,
+            )
+        openai_section = extract_markdown_section(
+            openai, "Prompt Caching dashboard and aggregate evidence"
+        )
+        marker = "The documented OpenAI Organization Usage API is a separate"
+        self.assertIn(marker, openai_section)
+        dashboard, _, usage = openai_section.partition(marker)
+        self.assertIn("provider_dashboard_aggregate", dashboard)
+        self.assertRegex(
+            " ".join(dashboard.split()),
+            r"evidence_definition_status.*unknown.*evidence_denominator_status.*unknown.*evidence_accounting_semantics.*unknown",
+        )
+        self.assertIn("provider_usage_api_aggregate", usage)
+        usage_normalized = " ".join(usage.split())
+        self.assertIn("evidence_definition_status=provider_documented", usage_normalized)
+        self.assertIn("evidence_denominator_status=unknown", usage_normalized)
+        self.assertIn("evidence_accounting_semantics=provider_defined", usage_normalized)
+        self.assertRegex(
+            usage_normalized,
+            r"input_tokens.*inclusive.*input_uncached_tokens.*uncached input.*excluding cache-write.*neither cache reads nor writes",
+        )
+        self.assertIn("OpenAI Organization Usage API", usage_normalized)
+        self.assertIn("OpenAI prompt-caching guide", usage_normalized)
+        self.assertIn("read/write/neither partition", usage_normalized)
+        self.assertIn(
+            "do not add breakdowns onto inclusive `input_tokens`",
+            usage_normalized.lower(),
+        )
+        self.assertIn("mismatched bucket/group/filter scope", usage_normalized)
+        self.assertRegex(
+            usage_normalized.lower(),
+            r"documented mixed decomposition.*not permission to sum|do not naively sum",
+        )
+        self.assertRegex(
+            usage_normalized.lower(),
+            r"optional or missing.*absent/unknown.*never.*zero",
+        )
+        self.assertNotIn("provider_documented", dashboard)
+
+        observability_section = extract_markdown_section(
+            observability, "Provider aggregate evidence boundary"
+        )
+        contract = re.search(r"```text\n(.*?)\n```", observability_section, re.DOTALL)
+
+        def parse_contract(match, label):
+            self.assertIsNotNone(match, label)
+            values = {}
+            for line in match.group(1).splitlines():
+                self.assertRegex(
+                    line,
+                    r"^[a-z][a-z0-9_]*: .+$",
+                    f"malformed {label} line: {line!r}",
+                )
+                key, value = line.split(":", 1)
+                self.assertNotIn(key, values, f"duplicate {label} field: {key}")
+                values[key] = value.strip()
+            return values
+
+        contract_values = parse_contract(contract, "observability provenance block")
+        contract_fields = set(contract_values)
+        self.assertEqual(
+            contract_fields,
+            {
+                "evidence_source",
+                "provider",
+                "time_window",
+                "granularity",
+                "filters",
+                "displayed_metric",
+                "displayed_value",
+                "evidence_definition_status",
+                "evidence_denominator_status",
+                "evidence_accounting_semantics",
+                "request_correlation",
+                "route_correlation",
+            },
+        )
+        observability_normalized = " ".join(observability_section.split())
+        self.assertIn("provider_dashboard_aggregate", observability_normalized)
+        self.assertIn("provider_usage_api_aggregate", observability_normalized)
+        self.assertIn("evidence_definition_status=provider_documented", observability_normalized)
+        self.assertIn("evidence_denominator_status=unknown", observability_normalized)
+        self.assertIn("evidence_accounting_semantics=provider_defined", observability_normalized)
+        self.assertIn("optional or missing fields remain absent/unknown", observability_normalized.lower())
+        self.assertIn("never zero", observability_normalized)
+
+        report_section = extract_markdown_section(report, "Evidence Needed Next")
+        report_normalized = " ".join(report_section.split())
+        report_contract = re.search(r"```text\n(.*?)\n```", report_section, re.DOTALL)
+        report_values = parse_contract(report_contract, "report provenance block")
+        self.assertEqual(
+            report_values,
+            contract_values,
+            "report-template provenance block must mirror observability schema and enums",
+        )
+        self.assertIn("Dashboard aggregate", report_normalized)
+        self.assertIn("Usage API aggregate", report_normalized)
+        for key in (
+            "evidence_definition_status",
+            "evidence_denominator_status",
+            "evidence_accounting_semantics",
+        ):
+            self.assertIn(key, report_normalized)
+        self.assertIn("provider_documented", report_normalized)
+        self.assertIn("provider_defined", report_normalized)
+        self.assertIn("OpenAI Organization Usage API", report_normalized)
+        self.assertIn("OpenAI prompt-caching guide", report_normalized)
+        self.assertIn(
+            "input_uncached_tokens` is uncached input excluding cache-write tokens",
+            report_normalized,
+        )
+        self.assertIn("read/write/neither partition", report_normalized)
+        self.assertIn(
+            "optional/missing fields: absent/unknown, never zero",
+            report_normalized.lower(),
+        )
+        self.assertIn("Dashboard statuses remain unknown", report_normalized)
+
+    def test_additive_provider_aggregate_rule_preserves_documented_denominators(self):
+        root = ROOT / "audit-prompt-caching"
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        for reference in (observability, report):
+            normalized = " ".join(reference.split())
+            self.assertRegex(
+                normalized,
+                r"additive provider.*full total/denominator.*"
+                r"evidence_accounting_semantics=additive.*"
+                r"evidence_denominator_status=provider_documented",
+            )
+            self.assertIn("mismatched bucket/group/filter scopes", normalized)
+            self.assertIn("keep the denominator unknown", normalized)
+            self.assertIn("Do not apply this additive rule to OpenAI", normalized)
+
+    def test_usage_api_accounting_contract_is_not_reused_for_dashboard_ratios(self):
+        openai = (
+            ROOT / "audit-prompt-caching" / "references" / "openai.md"
+        ).read_text()
+        section = extract_markdown_section(
+            openai, "Prompt Caching dashboard and aggregate evidence"
+        )
+        marker = "The documented OpenAI Organization Usage API is a separate"
+        self.assertIn(marker, section)
+        dashboard, _, usage = section.partition(marker)
+        dashboard_normalized = " ".join(dashboard.split())
+        usage_normalized = " ".join(usage.split())
+        self.assertIn("Dashboard UI", dashboard_normalized)
+        self.assertIn("not causal proof", dashboard_normalized)
+        self.assertIn("input_tokens` is inclusive", usage_normalized)
+        self.assertIn(
+            "input_uncached_tokens` is uncached input excluding cache-write tokens",
+            usage_normalized,
+        )
+        self.assertIn("neither cache reads nor writes", usage_normalized)
+        self.assertIn("read/write/neither partition", usage_normalized)
+        self.assertIn("No same formula is assumed", usage_normalized)
+        self.assertIn("denominator is not inferred", usage_normalized)
+        self.assertIn("evidence_denominator_status=unknown", usage_normalized)
+        self.assertIn("unless the provider documents the denominator", usage_normalized)
+        self.assertIn("auditor-defined ratio", usage_normalized)
+        self.assertNotIn("input_tokens` is inclusive", dashboard_normalized)
+
+    def test_dynamic_evals_cover_version_wire_contrast_and_aggregate_evidence(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        by_id = {item["id"]: item for item in evals["evals"]}
+        required_ids = {25, 26, 27, 28, 29}
+        for eval_id in sorted(required_ids):
+            self.assertIn(eval_id, by_id, f"missing eval id {eval_id}")
+
+        vercel = by_id[25]
+        self.assertIn("activeTools", vercel["prompt"])
+        self.assertIn("providerOptions.openai.allowedTools", vercel["prompt"])
+        self.assertNotIn("server_label", vercel["prompt"])
+        for tool_class in ("function", "custom", "MCP", "web-search"):
+            self.assertIn(tool_class, vercel["prompt"])
+        self.assertNotIn("{type:", vercel["prompt"])
+        self.assertRegex(vercel["expected_output"], r"stable full tools catalog.*Responses")
+        self.assertIn("mode: auto", vercel["expected_output"])
+        self.assertIn("mode: required", vercel["expected_output"])
+        self.assertIn("tool_choice wire mapping", vercel["expected_output"])
+        self.assertIn("allowedTools capability", vercel["expected_output"])
+        self.assertNotIn("tool applicability", vercel["expected_output"])
+        for wire_anchor in (
+            '{type: "function", name}',
+            '{type: "custom", name}',
+            '{type: "mcp", server_label}',
+            '{type: "web_search"}',
+        ):
+            self.assertIn(wire_anchor, vercel["expected_output"])
+        for unsupported in ("tool_search", "deferLoading", "namespaced tools"):
+            self.assertIn(unsupported, vercel["expected_output"])
+        self.assertIn("empty allow-list", vercel["expected_output"])
+        self.assertIn("fails with an error", vercel["expected_output"])
+
+        version = by_id[26]
+        self.assertIn("@ai-sdk/openai ^3.0.70", version["prompt"])
+        self.assertIn("openai.responses()", version["prompt"])
+        self.assertIn("openai.tools.webSearch()", version["prompt"])
+        self.assertIn("Which version evidence and version floors decide", version["prompt"])
+        for leaked_floor in ("2.x unavailable", "3.0.62", "3.0.98", "4.0.43"):
+            self.assertNotIn(leaked_floor, version["prompt"])
+        self.assertRegex(
+            version["expected_output"],
+            r"2\.x unavailable.*3\.x.*3\.0\.62.*3\.0\.98.*4\.0\.43",
+        )
+
+        dashboard = by_id[27]["expected_output"]
+        self.assertRegex(
+            dashboard,
+            r"provider_dashboard_aggregate.*Dashboard aggregate.*evidence_definition_status.*unknown.*evidence_denominator_status.*unknown.*evidence_accounting_semantics.*unknown",
+        )
+        self.assertNotIn("provider_documented", dashboard)
+        self.assertIn("request-level usage", dashboard)
+        self.assertIn("route correlation", dashboard)
+
+        usage = by_id[28]["expected_output"]
+        self.assertRegex(
+            usage,
+            r"provider_usage_api_aggregate.*Usage API aggregate.*evidence_definition_status.*provider_documented.*evidence_denominator_status.*unknown.*input_tokens.*inclusive.*input_uncached_tokens.*uncached input.*excluding cache-write.*neither cache reads nor writes",
+        )
+        self.assertIn("Dashboard UI", usage)
+        self.assertIn("filters", usage)
+        self.assertIn("not permission to sum", usage)
+        self.assertIn("read/write/neither partition", usage)
+        self.assertIn("auditor-defined ratio", usage)
+        self.assertIn("OpenAI Organization Usage API", usage)
+
+        contrast = by_id[29]["expected_output"]
+        self.assertRegex(
+            contrast,
+            r"Azure.*references/azure-openai\.md.*endpoint.*deployment/model.*api-version",
+        )
+        self.assertIn("Responses tool_choice schema", contrast)
+        self.assertIn("final wire", contrast)
+        self.assertIn("without claiming universal support", contrast)
+
+    def test_dynamic_trigger_eval_adds_positive_tool_and_dashboard_pressure(self):
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        positives = [item["query"] for item in trigger_eval if item["should_trigger"]]
+        self.assertTrue(any("activeTools" in query and "allowedTools" in query for query in positives))
+        self.assertTrue(any("Prompt Caching dashboard" in query for query in positives))
+
+    def test_wire_mapping_is_not_duplicated_outside_vercel_reference(self):
+        root = ROOT / "audit-prompt-caching"
+        vercel = (root / "references" / "vercel-ai-sdk.md").read_text()
+        section = extract_markdown_section(vercel, "OpenAI Responses allowedTools")
+        table_header = "| Tool class | Entry in `allowed_tools.tools` |"
+        self.assertEqual(section.count(table_header), 1)
+        self.assertEqual(vercel.count(table_header), 1)
+        self.assertEqual(
+            parse_markdown_table(section, table_header)[0]["Tool class"],
+            "function",
+        )
+        for path in root.rglob("*"):
+            if path == root / "references" / "vercel-ai-sdk.md":
+                continue
+            if path.suffix not in {".md", ".json"}:
+                continue
+            self.assertNotIn(table_header, path.read_text(), str(path.relative_to(root)))
+
+    def test_azure_responses_capability_gate_has_destination_content(self):
+        azure = (
+            ROOT / "audit-prompt-caching" / "references" / "azure-openai.md"
+        ).read_text()
+        self.assertIn("Last reviewed: 2026-08-11.", azure)
+        section = extract_markdown_section(azure, "Responses endpoint capability gate")
+        normalized = " ".join(section.split())
+        self.assertIn("Section reviewed: 2026-08-23.", normalized)
+        for required in (
+            "Responses endpoint",
+            "endpoint",
+            "deployment/model",
+            "api-version",
+            "Responses `tool_choice` schema",
+            "final request wire",
+            "no universal Azure support claim",
+        ):
+            self.assertIn(required, normalized)
+
 
     def skill_text(self):
         return (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -3162,10 +4473,25 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def skill_frontmatter_description(self):
         frontmatter = self.skill_text().split("---", 2)[1]
         self.assertIn("description:", frontmatter)
-        return frontmatter.split("description:", 1)[1]
+        description_line = next(
+            line for line in frontmatter.splitlines() if line.startswith("description:")
+        )
+        self.assertRegex(description_line, r'^description:\s+".*"$')
+        return json.loads(description_line.split("description:", 1)[1].strip())
 
     def test_skill_description_is_shorter_but_keeps_trigger_boundaries(self):
         description = self.skill_frontmatter_description()
+
+        self.assertEqual(
+            PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
+            147,
+            "the trigger ceiling must stay at the smallest measured parsed-description value",
+        )
+        self.assertEqual(
+            BASELINE_DESCRIPTION_CHARS,
+            679,
+            "the historical description baseline must remain a fixed contract",
+        )
 
         self.assertLessEqual(
             estimated_plugin_eval_tokens(description),
@@ -3174,17 +4500,21 @@ class PromptCacheScriptsTest(unittest.TestCase):
         )
         self.assertLess(
             len(description),
-            BASELINE_DESCRIPTION_CHARS * 0.85,
-            "frontmatter description is not materially shorter than the baseline",
+            BASELINE_DESCRIPTION_CHARS,
+            "frontmatter description exceeds the historical character baseline",
         )
 
         for required in [
             "Use whenever the user mentions",
             "cached_tokens=0",
+            "total_cached_tokens",
             "cache_read_input_tokens",
+            "cache_creation_input_tokens",
             "cache_write_tokens",
             "prompt_cache_key",
             "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
             "cache_control",
             "cachePoint",
             "TTFT",
@@ -3208,8 +4538,13 @@ class PromptCacheScriptsTest(unittest.TestCase):
         body = self.skill_text().split("---", 2)[2]
 
         for anchor in [
+            "cached_tokens=0",
             "total_cached_tokens",
+            "cache_read_input_tokens",
             "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
             "prompt_cache_breakpoint",
             "previous_interaction_id",
         ]:
@@ -3222,7 +4557,33 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         self.assertNotIn("description:", body)
 
+    def test_skill_preserves_operational_audit_flow_order_and_classification(self):
+        skill = self.skill_text()
+        required_flow = (
+            "Map prompt structure in order: tools, schemas, system/developer instructions, "
+            "examples, static documents, retrieved context, history, user data, volatile values; "
+            "mark each segment static, semi-static, dynamic, or volatile."
+        )
+        self.assertIn(required_flow, skill)
+        self.assertLess(
+            skill.index("Map prompt structure in order:"),
+            skill.index("Ask for usage logs"),
+        )
+        for required in (
+            "a reported hit rate is not trusted",
+            "cache salts",
+            "tokenizer/chat-template drift",
+            "KV pressure",
+            "OpenAI-compatible wrapper ambiguity",
+        ):
+            self.assertIn(required, skill)
+
     def test_skill_stays_within_invoked_token_baseline(self):
+        self.assertEqual(
+            PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
+            6010,
+            "the whole-skill baseline must equal the measured restored content",
+        )
         self.assertLessEqual(
             estimated_plugin_eval_tokens(self.skill_text()),
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,

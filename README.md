@@ -206,6 +206,12 @@ python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-cach
 python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 ```
 
+`extract_llm_calls.py` is a lexical locator only: snippets are always elided.
+It can match comments, dead code, or overridden configuration; it never
+resolves active/effective values or source precedence. Open each reported
+`path:line` and verify the resolved runtime configuration during Deployment
+Audit. Paths remain verbatim.
+
 `layout_linter.py` accepts rendered Chat-style `messages` payloads and
 Responses-style `input` payloads.
 

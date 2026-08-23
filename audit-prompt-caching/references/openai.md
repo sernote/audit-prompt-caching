@@ -10,7 +10,11 @@ Official sources:
 - API reference: https://developers.openai.com/api/docs/api-reference
 - Tool/function calling: https://developers.openai.com/api/docs/guides/function-calling
 - Tool search: https://developers.openai.com/api/docs/guides/tools-tool-search
+- API changelog: https://developers.openai.com/api/docs/changelog
+- Organization Usage API completions: https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/completions
 - Pricing: https://openai.com/api/pricing/
+
+Dashboard and Organization Usage API section reviewed: 2026-08-23.
 
 ## Mechanics
 
@@ -71,3 +75,59 @@ total = completion.usage.prompt_tokens
 ```
 
 If `cached_tokens == 0`, check prefix drift, prompt length, tools/schema drift, image drift, inconsistent key/retention, wrapper routing, model/API changes, or a hot prefix/key. If cached tokens are high but savings are low, check output-token share, decode/final latency, TPM rate limits, and traffic cadence.
+
+## Prompt Caching dashboard and aggregate evidence
+
+OpenAI's 2026-08-20 changelog entry describes a Prompt Caching dashboard with
+cache hit rate over time, cache reads per write, a breakdown of
+cache-read/cache-write/uncached tokens, and filters by model and service tier.
+The Dashboard UI is a `provider_dashboard_aggregate`: its ratios are useful
+trend corroboration, but the public description does not define the formula,
+denominator, weighting, request scope, or route attribution. Keep those fields
+`unknown` unless a current provider document says otherwise. For Dashboard UI,
+record `evidence_definition_status=unknown`,
+`evidence_denominator_status=unknown`, and
+`evidence_accounting_semantics=unknown` unless the provider documents each one. Dashboard
+UI metrics are not request-level evidence and are not causal proof of prompt
+drift, routing misses, or an SDK regression.
+
+The documented OpenAI Organization Usage API is a separate `provider_usage_api_aggregate`. Record
+its time buckets, filters, grouping, and bucket boundaries. Its documented
+completion token decomposition is:
+
+- `input_tokens` is inclusive of cached and cache-write tokens;
+- `input_cached_tokens` aggregates cache reads;
+- `input_cache_write_tokens` aggregates cache writes;
+- `input_uncached_tokens` is uncached input excluding cache-write tokens; it is
+  neither cache reads nor writes.
+
+The OpenAI prompt-caching guide documents a request-level read/write/neither partition.
+Do not add breakdowns onto inclusive `input_tokens` or manufacture a
+denominator/residual from missing optional fields or mismatched
+bucket/group/filter scope.
+
+For documented OpenAI Organization Usage API fields, record
+`evidence_definition_status=provider_documented`,
+`evidence_denominator_status=unknown` unless the provider documents the
+denominator, and
+`evidence_accounting_semantics=provider_defined`. The latter means a documented
+mixed decomposition: field-level `input_tokens` is inclusive, and the fields
+must not be naively summed; this is not permission to sum fields. Optional or
+missing fields remain absent/unknown;
+never replace them with zero or fabricate a bucket denominator.
+
+An auditor-defined ratio is not provider-documented or decision-grade aggregate
+evidence without scope proof.
+
+These are Usage API accounting semantics, not a formula to apply to Dashboard
+UI ratios. Do not compare a dashboard hit rate with a per-request ratio as one
+series without proving the same scope, filters, denominator, and accounting
+semantics. No same formula is assumed across these sources; the Dashboard
+denominator is not inferred from Usage API fields. Do not normalize its
+displayed ratio automatically without matching provider documentation.
+
+For a causal finding, retain request-level `cached_tokens`/
+`cache_write_tokens`, rendered prefix/tool/schema hashes, SDK/deploy version,
+and actual route/replica evidence. Dashboard and Usage API aggregates may
+corroborate a trend, but they do not replace request-level or route-level
+correlation.

@@ -37,9 +37,9 @@
       "default_severity": "high",
       "summary": "Dynamic agent tools.",
       "search": "get_active_tools, listToolsets, prepareStep activeTools.",
-      "fix": "Stable bundles, allowed tools, search, or masking.",
-      "avoid": "Single-step optimization.",
-      "validation": "Tool/prefix hashes stable."
+      "fix": "After the global Applicability Gate and economics check, use a stable full catalog plus an endpoint/version-verified allow-list; otherwise use stable bundles/tool search/deferred loading or a smaller stable catalog.",
+      "avoid": "Mutating activeTools without prefix/economics measurement; assuming Responses support on Chat Completions or wrappers; ignoring SDK warnings.",
+      "validation": "Compare tools/prefix hashes, final wire tool_choice, warnings, provider cache usage, and cached/uncached economics."
     },
     {
       "id": "AP-5",
@@ -130,6 +130,26 @@
       "fix": "Preserve the documented opaque handle within one intended conversation.",
       "avoid": "Reusing raw IDs across tenants or logging them in plaintext.",
       "validation": "Compare keyed handle hash, cache fields, and TTFT across continuation steps."
+    },
+    {
+      "id": "AP-13",
+      "category": "engine-config-compatibility",
+      "default_severity": "medium",
+      "summary": "vLLM retention advice ignores runtime capability or KV-group geometry.",
+      "search": "prefix_cache_retention_interval, VLLM_PREFIX_CACHE_RETENTION_INTERVAL, missing vllm version/SHA, unknown SlidingWindowSpec or MambaSpec topology.",
+      "fix": "Establish the runtime version/SHA and feature presence, inspect every KV group and scheduler block size, verify the shared tier, then resolve the effective interval.",
+      "avoid": "Guessing a version floor or treating an env name, model architecture, or full-attention group as proof that retention applies.",
+      "validation": "Startup is accepted; resolved config and per-group behavior match the runtime matrix; hit/TTFT are compared with deployment version and route."
+    },
+    {
+      "id": "AP-14",
+      "category": "cache-identity-compatibility",
+      "default_severity": "medium",
+      "summary": "Cross-process hash compatibility is conflated with cache isolation.",
+      "search": "prefix_caching_hash_algo, PYTHONHASHSEED, seed mismatch, mixed vLLM versions, shared FS/OBJ/P2P KV tier, missing cache_salt boundary.",
+      "fix": "Within an authorized sharing group, align algorithm, effective seed, serialization/runtime, and all cache-key inputs; retain a separate cache_salt boundary.",
+      "avoid": "Logging raw seed, storing or transmitting a shared xxhash seed outside protected secret configuration, using a predictable non-crypto seed, using PYTHONHASHSEED as tenant isolation, or replacing cache_salt with a hash seed.",
+      "validation": "For P2P, verify handshake and reject-on-mismatch plus config fingerprint/block length and a read; for FS/OBJ, independently verify config and a real cross-process read without exposing the seed."
     }
   ]
 }

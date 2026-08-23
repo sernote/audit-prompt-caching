@@ -6,12 +6,29 @@ Use this reference for agents, coding assistants, MCP clients, compaction, mode 
 
 Agent prompts often grow append-only, which is cache-friendly, but tool lists, mode instructions, memory blocks, and compaction can rewrite early prefix content. A shorter per-step prompt can cost more when it destroys reuse over a long trajectory.
 
+## Dynamic-tool decision rule
+
+Run the global Applicability Gate and economics check, then pass the allowedTools capability gate before changing the catalog:
+
+- If the endpoint and SDK support it, send a stable catalog and change an
+  allowed-list; compare prefix hashes, provider usage, catalog size,
+  latency, and cached versus uncached billing.
+- A direct OpenAI Responses `allowed_tools` surface and Vercel
+  `providerOptions.openai.allowedTools` are different API surfaces. Verify the
+  installed version, model/tool capability, final wire body, and warnings.
+- Chat Completions and an arbitrary OpenAI-compatible wrapper do not inherit
+  Responses behavior. Keep `activeTools` as a measured option when a smaller
+  catalog has better economics for a cold or low-reuse route.
+
+Do not call a dynamic-tool change a cache fix merely because the callable set
+got smaller: validate stable `tools`/prefix hashes and provider usage per step.
+
 ## Checks
 
 - Log per step: cache read fields, `cached_tokens`, `prefix_hash`, `tools_count`, sorted tool-name hash, output tokens, first/final token timing, actual routed provider/model.
 - Compare cache drops with tool-list changes, mode changes, compaction, memory injection, or provider fallback.
 - Keep route-level tool bundles stable and sorted when possible.
-- Use provider-supported allowed tools, tool search, or deferred loading only after checking current docs.
+- Use provider-supported allowed tools, tool search, or deferred loading only after checking the endpoint, current docs, and reuse economics.
 - For self-hosted inference, consider masking/constrained decoding instead of changing `tools`.
 - Preserve a stable anchor: system/developer instructions, tools, schemas, first stable messages.
 - Compact bulky tool results before summarizing early history; preserve paths, IDs, URLs, and small structured facts.

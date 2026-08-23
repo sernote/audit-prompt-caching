@@ -100,6 +100,51 @@
       "id": 20,
       "prompt": "We only have a prompt builder diff: no usage logs, no routing data, no cost model, and no isolation review. Give me the cache clinic summary.",
       "expected_output": "Report every unproven clinic dimension as unknown instead of dropping it, and give no aggregate score, grade, or rank across dimensions."
+    },
+    {
+      "id": 21,
+      "prompt": "An unknown legacy vLLM line has no prefix_cache_retention_interval CLI flag, but its manifest contains VLLM_PREFIX_CACHE_RETENTION_INTERVAL. What retention value should we deploy?",
+      "expected_output": "Change needed: unknown until feature/version evidence. Establish image digest, vllm version or source SHA, help/resolved config/source feature presence, and effective source; do not transfer v0.27.1 or post-017e9f4 semantics from the env name alone."
+    },
+    {
+      "id": 22,
+      "prompt": "Compare stable vLLM v0.27.1 with source at 017e9f4448b700e85ee16023287b025693c72b9e and ef47a897e2ad9a404cce9c9e7df15934deb8ffbe: env-only retention None, pure-full env=0 error, and random defaults for all hash algorithms versus main CLI/config 0 no-op and split crypto/xxhash defaults.",
+      "expected_output": "Keep the version matrices separate: v0.27.1 already has env-only retention with default None; stable env=0 is a pure-full configuration error, and every supported algorithm has a random per-process default. Post-017e9f4 exposes CLI/config with default 0 and post-ef47a897 splits fixed deterministic sha256/sha256_cbor from random xxhash/xxhash_cbor. Verify the deployment SHA before exact advice."
+    },
+    {
+      "id": 23,
+      "prompt": "A hybrid vLLM model has FullAttentionSpec and SlidingWindowMLASpec/MambaSpec KV groups. Evaluate None, 0, and a positive prefix_cache_retention_interval and check scheduler_block_size.",
+      "expected_output": "Apply retention per concrete KV spec class: FullAttentionSpec is non-eligible while SlidingWindowMLASpec and MambaSpec are eligible. Use the runtime version matrix for None/0/positive, require positive values to align with effective scheduler_block_size, and do not classify by model name."
+    },
+    {
+      "id": 24,
+      "prompt": "FS, OBJ, and P2P vLLM workers share a KV tier, but sha256 and xxhash configurations disagree. Explain algorithm, effective seed, serialization/runtime, P2P handshake, and cache_salt isolation.",
+      "expected_output": "Separate compatibility from isolation: align algorithm, effective seed, serialization/runtime, model/config/token inputs within an authorized sharing group; P2P must handshake and reject mismatch, while FS/OBJ need independent config evidence and a real cross-process read. Keep cache_salt as the trust boundary, never log raw xxhash seed, and do not treat algorithm plus seed as sufficient cross-version proof."
+    },
+    {
+      "id": 25,
+      "prompt": "A Vercel AI SDK OpenAI Responses agent changes activeTools on every step. Can I keep a stable full tools catalog and use providerOptions.openai.allowedTools with mode auto or required? Explain the function, custom, MCP, and web-search tool classes, plus endpoint/version/tool evidence, final wire mapping, warnings, unsupported classes, and empty-list error.",
+      "expected_output": "Run the allowedTools capability and economics gates. Verify endpoint, version, model, and tool class before using the option. Prefer the stable full tools catalog plus verified allowedTools only for the Responses surface. The final tool_choice wire mapping fixtures are {type: \"function\", name}, {type: \"custom\", name}, {type: \"mcp\", server_label}, and {type: \"web_search\"}; inspect toolNames, mode: auto, mode: required, warnings, and raw usage. tool_search, deferLoading, and namespaced tools are unsupported, warn, and an empty allow-list fails with an error. Do not transfer Vercel SDK's name-resolution, warnings, drop, or error semantics to another surface without its own wire evidence."
+    },
+    {
+      "id": 26,
+      "prompt": "An app's package.json pins @ai-sdk/openai ^3.0.70; it calls openai.responses() with openai.tools.webSearch(), and cache behavior changed after an SDK update. Which version evidence and version floors decide whether allowedTools is safe here?",
+      "expected_output": "Check package.json and the lockfile, then apply the exact matrix: 2.x unavailable in the checked schema; 3.x is available from 3.0.62 but corrected from 3.0.98; 4.x is corrected from 4.0.43. Do not move floors across majors or remove activeTools without wire evidence."
+    },
+    {
+      "id": 27,
+      "prompt": "The OpenAI Prompt Caching dashboard shows a high hit rate over time and cache reads per write. Is that enough to prove request-level prompt reuse and a routing fix?",
+      "expected_output": "Classify the dashboard as provider_dashboard_aggregate / Dashboard aggregate corroboration. Record evidence_definition_status=unknown, evidence_denominator_status=unknown, and evidence_accounting_semantics=unknown unless documented. Its formula, denominator, weighting, and route attribution remain unknown unless documented; request-level usage, prefix/tool/schema hashes, SDK/deploy version, and route correlation are required before a causal or savings claim."
+    },
+    {
+      "id": 28,
+      "prompt": "The Organization Usage API returns input_tokens, input_cached_tokens, input_cache_write_tokens, and input_uncached_tokens in time buckets grouped by model and service tier. How should the audit account for them?",
+      "expected_output": "Classify it as provider_usage_api_aggregate / OpenAI Organization Usage API aggregate. Preserve buckets, grouping, and filters; record evidence_definition_status=provider_documented and evidence_accounting_semantics=provider_defined, while evidence_denominator_status=unknown unless the provider documents the denominator. For the OpenAI Organization Usage API, input_tokens is inclusive of cached and cache-write tokens; input_uncached_tokens is uncached input excluding cache-write tokens, neither cache reads nor writes. The OpenAI prompt-caching guide documents a request-level read/write/neither partition. Do not add breakdowns onto inclusive input_tokens or manufacture a denominator/residual from missing optional fields or mismatched bucket/group/filter scope. This documented mixed decomposition is not permission to sum fields; an auditor-defined ratio is not provider-documented or decision-grade aggregate evidence without scope proof. Do not assign it to the Dashboard UI or mix its ratio with request-level metrics without scope evidence."
+    },
+    {
+      "id": 29,
+      "prompt": "Contrast direct OpenAI Responses, Vercel Responses, Azure Responses with an api-version gate, Chat Completions, and an arbitrary OpenAI-compatible wrapper for allowedTools and prompt-cache preservation.",
+      "expected_output": "Treat each API surface and wrapper separately. For Azure, load references/azure-openai.md and record the endpoint, deployment/model, and api-version; verify that exact API version's Responses tool_choice schema and final wire before using allowedTools, without claiming universal support. Do not transfer direct Responses or Vercel allowedTools behavior to Azure, Chat Completions, or an arbitrary wrapper without wire evidence."
     }
   ]
 }

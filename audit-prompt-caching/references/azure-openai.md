@@ -43,7 +43,17 @@ Azure does **not** document `prompt_cache_options` or `prompt_cache_breakpoint` 
 
 Treat tool definitions, structured outputs, and image representation as part of the cacheable input unless current docs say otherwise. Keep ordering, JSON serialization, `detail`, URL/base64 representation, and signed URL query strings stable.
 
-### Azure Is Not Generic OpenAI
+## Responses endpoint capability gate
+
+Section reviewed: 2026-08-23.
+
+The Responses endpoint is a separate Azure deployment surface. Before considering
+`allowed_tools`, load current Azure docs and record the endpoint, deployment/model,
+and `api-version`. Verify the exact API version's Responses `tool_choice` schema
+and final request wire. Do not infer support from direct OpenAI or Vercel SDK
+behavior; make no universal Azure support claim.
+
+## Azure Is Not Generic OpenAI
 
 Do not recommend `prompt_cache_key`, extended retention, or OpenAI-only parameters on Azure unless current Azure docs support them. If the code uses the OpenAI SDK with an Azure endpoint, load this reference rather than only `openai.md`.
 

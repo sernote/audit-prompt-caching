@@ -1,14 +1,6 @@
 ---
 name: audit-prompt-caching
-description: >
-  Use whenever the user mentions cached_tokens=0, total_cached_tokens,
-  cache_read_input_tokens, cache_creation_input_tokens, cache_write_tokens,
-  prompt_cache_key, prompt_cache_options, prompt_cache_breakpoint,
-  previous_interaction_id, cache_control/cachePoint, TTFT, KV reuse,
-  LLM cost or speed regressed on repeated long prompts, or speeding up agents.
-  LLM request shape changes: tools, schemas, response_format, model/router,
-  agent loops, compaction. Not for generic prompt writing/RAG, token counts,
-  or non-LLM perf.
+description: "Use whenever the user mentions cached_tokens=0,total_cached_tokens,cache_read_input_tokens,cache_creation_input_tokens,cache_write_tokens,prompt_cache_key,prompt_cache_options,prompt_cache_breakpoint,previous_interaction_id,cache_control/cachePoint,TTFT,KV reuse; prefix_cache_retention_interval,prefix_caching_hash_algo,Mamba/SWA/hybrid,cross-process block hash; LLM cost or speed regressed,repeated long prompts,speeding up agents; LLM request shape changes: tools,schemas,response_format,model/router,agent loops,compaction; Not for generic prompt writing,RAG,token counts,non-LLM perf"
 ---
 
 # Prompt Cache Audit
@@ -25,14 +17,10 @@ until the applicability, telemetry, and trust-boundary checks justify them.
 Use this skill for LLM calls where repeated prompt prefixes may affect cost,
 TTFT, prefill latency, or self-hosted KV reuse. Typical triggers:
 
-- `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, writes without reads, or unclear provider usage fields.
-- GPT-5.6 `prompt_cache_options`, `prompt_cache_breakpoint`, paid writes, or migration from `prompt_cache_retention`.
-- Cache hit rate, TTFT, prefill latency, or input-token cost changed, or a reported hit rate is not trusted.
-- LLM cost or speed regressed around repeated long prompts, shared static context, long-context agents, or tool-heavy loops.
-- LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter.
-- Any prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loop structure, or context compaction changed.
-- The route uses long system prompts, tool catalogs, schemas, static documents, few-shot examples, repeated RAG/CAG context, or provider cache APIs.
-- vLLM/SGLang/self-hosted deployments have multi-replica routing, KV pressure, tokenizer/chat-template drift, cache salts, or APC benchmarks such as `vllm bench serve`, `prefix_repetition`, or `benchmark_prefix_caching.py`.
+- `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, writes without reads, or unclear usage fields; GPT-5.6 `prompt_cache_options`/`prompt_cache_breakpoint`; or migration from `prompt_cache_retention`.
+- Cache hit rate, TTFT, prefill latency, or input-token cost changed; LLM cost or speed regressed around repeated long prompts, shared context, long agents, or tool loops, or a reported hit rate is not trusted.
+- LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter: inspect prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loops, or context compaction.
+- Long system prompts, tool catalogs, schemas, static documents, few-shot/RAG context, provider cache APIs, or vLLM/SGLang multi-replica KV deployments with KV pressure, tokenizer/chat-template drift, cache salts, or APC benchmarks such as `vllm bench serve`, `prefix_repetition`, and `benchmark_prefix_caching.py`.
 
 ## When not to use
 
@@ -47,6 +35,13 @@ Do not use this skill for:
 Modes: code audit (repository available), advisory (no codebase, ask only the
 missing diagnostic questions), agent audit (tools, MCP, loops, compaction), and
 deployment audit (vLLM/SGLang, Kubernetes, gateways, replicas).
+
+vLLM audits: image digest/version/SHA, feature presence, effective
+retention/source, KV-group topology/geometry, effective
+scheduler block size (`scheduler_block_size`), hash algorithm, seed compatibility status, and tier
+type. Keep retention/geometry mismatch distinct from cross-process hash mismatch.
+Source/nightly builds use feature detection, not a guessed version
+floor; see `references/vllm.md` for the version × behavior matrices.
 
 ## Cache Plane Gate
 
@@ -148,7 +143,7 @@ Every actionable finding should expose uncertainty and a falsifiable validation 
 source | severity | provider/engine | issue | evidence | evidence_type | confidence | impact_condition | cache impact | safe_first_action | fix | validation | do_not_do_yet
 ```
 
-Use evidence types such as `confirmed from code`, `confirmed from telemetry`, `provider-doc hypothesis`, or `needs validation`. State impact conditions such as "matters if this path is hot, repeated, and has a long stable prefix" rather than implying guaranteed savings.
+Evidence: code/telemetry, provider-doc hypothesis, needs validation. Keep `provider_dashboard_aggregate` and `provider_usage_api_aggregate` separate; no causal claim sans request/route correlation. Impact only for hot, repeated, long-stable-prefix paths; no guaranteed savings.
 
 Group output as **Confirmed findings** (code/config/telemetry evidence applicable to this path), **Hypotheses** (need usage logs, rendered payloads, route metrics, or provider docs), and **Not applicable** (generic advice ruled out by project context).
 
@@ -180,14 +175,13 @@ migration, `references/predeploy-checklist.md` for release or incident work,
 
 Use scripts when deterministic evidence is better than prose:
 
-- `scripts/prefix_stability_check.py`: raw whole-input comparison; use `--canonical-json` only when sorted-key normalization is intentional. It does not prove explicit breakpoint reuse.
-- `scripts/layout_linter.py`: inspect layout anti-patterns and validate direct GPT-5.6 `prompt_cache_options` and `prompt_cache_breakpoint` placement; provider wrappers remain unvalidated.
-- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage, including `cache_write_tokens`, with evidence fields per record. Use `--accounting-mode` only to resolve wrapper fields whose inclusive/additive meaning is known externally.
-- `scripts/estimate_cache_roi.py`: estimate read/write cost with caller-supplied prices; for paid writes pass `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
-- `scripts/extract_llm_calls.py`: scan a repository for provider calls, cache-control fields, routing signals, and self-hosted engine hints.
-- `scripts/render_audit_report.py`: combine usage summaries and findings into Markdown or JSON with repeatable `--cache-plane` and one status flag per clinic dimension, such as `--evidence-quality` or `--usage-accounting`; pass estimator output through `--roi-json` before making a cost-direction claim.
-- `scripts/validate_skill_package.py`: validate frontmatter, referenced files, eval JSON, and Python helper syntax.
-- `scripts/run_trigger_eval.py`: summarize positive and negative trigger-eval coverage.
+- `scripts/prefix_stability_check.py`: whole-input comparison; `--canonical-json` is opt-in and does not prove explicit breakpoint reuse.
+- `scripts/layout_linter.py`: GPT-5.6 layout and cache-control placement checks; wrappers remain unvalidated.
+- `scripts/analyze_usage_logs.py`: normalize JSON/JSONL/CSV usage and `cache_write_tokens`; use `--accounting-mode` only with known wrapper semantics.
+- `scripts/estimate_cache_roi.py`: estimate read/write cost; paid writes require `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
+- `scripts/extract_llm_calls.py`: scan provider/cache/routing/engine signals, including vLLM retention/hash in YAML/Python/Compose, `.sh`, `.service`, and `Makefile`; `.env` is excluded and no runtime probe runs. It is a lexical locator only: snippets are always elided, and it can match comments, dead code, or overridden configuration; it never resolves active/effective values or source precedence. Open each `path:line` and verify the resolved runtime configuration during Deployment Audit; paths remain verbatim.
+- `scripts/render_audit_report.py`: combine usage/findings with repeatable `--cache-plane`, clinic status flags, and optional `--roi-json`.
+- `scripts/validate_skill_package.py`: validate frontmatter, references, eval JSON, and Python syntax; `scripts/run_trigger_eval.py` summarizes trigger coverage.
 
 These scripts are tokenizer and billing approximations; provider usage and billing exports remain authoritative.
 
@@ -214,17 +208,14 @@ If detection is ambiguous, ask which provider/engine is in use.
 
 ## Audit Flow
 
-1. Detect mode, provider/engine, cache planes, and scenario; load only the matching scenario and provider references and apply the Freshness Gate.
-2. Run the Project Context Gate and Applicability Gate.
-3. With a repository, start from code and config: provider calls, cache controls, routing hints, prompt builders and rendering, tool/schema registries, history and compaction, SDK parameters, and self-hosted engine signals. `scripts/extract_llm_calls.py` makes that scan deterministic.
-4. Inspect env defaults, feature flags, gateway/router settings, Compose, Kubernetes, Helm, vLLM/SGLang flags, and replica topology.
-5. Map prompt structure in order: tools, schemas, system/developer instructions, examples, static documents, retrieved context, history, user data, volatile values; mark each segment static, semi-static, dynamic, or volatile.
-6. Ask for usage logs, rendered payload pairs, traces, or billing exports only when telemetry is needed to confirm a finding, compare prefixes, calculate ROI, or correlate incidents.
-7. Apply the Usage Evidence Contract, then measure cache ratio, TTFT/prefill, decode time, writes vs reads, and correlation with deploys, SDK/prompt changes, replica count, or agent steps.
-8. Apply `references/rules.json` anti-patterns and provider-specific checks from the loaded reference.
-9. For agents, log per-step `cached_tokens` or `cache_read_input_tokens`, `prefix_hash`, `tools_count`, sorted tool-name hash, output tokens, streaming timestamps, compaction events, and the actual routed provider/model.
-10. Report findings with evidence type, confidence, impact condition, safe first action, fix, validation, and `do_not_do_yet`, plus the Cache Clinic Summary.
-11. When changing code, verify prefix stability before claiming success.
+1. Detect mode, provider/engine, cache planes, and scenario; load matching references and apply the Freshness Gate.
+2. Run the Project Context and Applicability Gates, then scan code/config with `scripts/extract_llm_calls.py` when deterministic evidence helps.
+3. Inspect provider calls, prompt builders, cache controls, SDK parameters, env defaults, gateway/router, Compose/Kubernetes/Helm, engine flags, and replica topology.
+4. Map prompt structure in order: tools, schemas, system/developer instructions, examples, static documents, retrieved context, history, user data, volatile values; mark each segment static, semi-static, dynamic, or volatile. Ask for usage logs, rendered payload pairs, traces, or billing only where they confirm a finding, compare prefixes, calculate ROI, or correlate an incident.
+5. Apply the Usage Evidence Contract and measure reads/writes, TTFT/prefill, decode, route/replica, deploy, and agent-step effects; for agents include `prefix_hash`, `tools_count`, hashes, output, streaming, compaction, and routed provider/model.
+6. Apply `references/rules.json`; report evidence type, confidence, impact condition, safe action, fix, validation, and `do_not_do_yet` plus the Clinic Summary.
+7. For vLLM, verify version/SHA and feature surface before retention; audit per-group geometry, `scheduler_block_size`, tier, and hash compatibility, keeping retention/geometry, cross-process hash, and `cache_salt` isolation distinct.
+8. When changing code, verify prefix stability before claiming success.
 
 Bundled fixtures are examples and regression data; scripts accept normal JSON,
 JSONL, CSV usage logs and request payloads.
@@ -238,15 +229,24 @@ Use these starts after provider detection and Freshness Gate:
 - **Claude/Bedrock/OpenRouter writes without reads**: distinguish write/create from read/hit fields, then inspect breakpoint placement, dynamic content before it, TTL/retention, model/region/API support, fallback routing, and the routed provider/model.
 - **Gemini Interactions or managed session cache**: distinguish an explicit cache object from an opaque continuation handle (`previous_interaction_id`, `previous_response_id`), keep it inside the intended conversation, and normalize `total_cached_tokens` as inclusive before comparing routes.
 - **KV events, HiCache, or PD disaggregation**: separate prefix mismatch from eviction, tier transfer/offload, event delivery, and decode-side KV reuse. Compare TTFT/prefill and worker/tier metrics first.
-- **Dynamic tools in long agent loops**: compare `tools_count`, sorted tool-name hash, `prefix_hash`, mode state, and cache fields per step. Prefer stable route-level tool bundles, sorted schemas, provider allowed tools/tool search/deferred loading, or self-hosted masking.
+- **Dynamic tools in long agent loops**: inspect `tools_count`, sorted tool-name/prefix hashes, mode, usage, economics; direct OpenAI Responses/Vercel use a version/model-verified allow-list; Chat Completions/unsupported wrappers/endpoints need wire proof; self-hosted may mask.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and read/write pricing assumptions.
 - **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first.
 - **Self-hosted multi-replica miss**: inspect gateway/service routing, prefix-aware hashing, tokenizer/chat-template drift, `max_model_len`, KV block pressure, eviction, and route/replica hit metrics.
+- **vLLM retention and cross-process hash**: collect image digest/version/SHA,
+  feature presence, effective retention source/value, concrete
+  `SlidingWindowSpec`/`SlidingWindowMLASpec`/`MambaSpec` versus full-attention
+  groups, `scheduler_block_size`, tier type, hash algorithm, and safe seed
+  compatibility status. Apply the release-line matrix; never infer eligibility
+  from an architecture name, and never treat `PYTHONHASHSEED` as isolation.
 - **New provider docs**: compare new provider facts against current code, references, evals, and tests; recommend no change when the project already encodes the behavior.
 
 ## Rule Categories
 
-`references/rules.json` holds the machine-readable AP-1 to AP-12 inventory. Turn rules into findings with this priority taxonomy:
+`references/rules.json` holds the machine-readable AP-1 through AP-14 inventory.
+AP-9b is the isolation/trust boundary; AP-14 is technical hash compatibility
+inside an already authorized sharing group. Turn rules into findings with this
+priority taxonomy:
 
 | Priority | Category | Examples |
 |---|---|---|
