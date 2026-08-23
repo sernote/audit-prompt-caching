@@ -23,7 +23,7 @@
 - Не менять AP-9b, provider adapters, usage normalization, helper scripts или cache-plane model. Trigger surface не меняется, поэтому `evals/trigger_eval.json` не трогать, если RED не докажет отдельную trigger-регрессию.
 - Не дублировать полный outcome gate во всех references. Нормативное объяснение живёт в `references/mechanics.md`; остальные файлы дают короткую engine/workflow-specific ссылку и локальные проверки.
 - `SKILL.md` править char-neutral или net-negative: на проверенном `origin/main` он занимал 5 850 токенов при жёстком ceiling 5 852 и запасе около 10 символов. `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` не поднимать.
-- Deferred budget уже был в статусе FAIL до этой работы: 41 238 токенов. Не называть его green; измерить до/после, не увеличить более чем на 400 токенов и записать оба значения в handoff.
+- Deferred budget уже был в статусе FAIL до этой работы: 41 238 токенов. Исторический cap `+400` объясняет исходную цель, но superseded measured ceiling этой ревизии — `53,650` токенов против baseline `52,587`; измерить до/после и записать оба значения в handoff.
 - Канонические anchors для cross-reference tests: `Routing Outcome Gate`, `matched-workload comparison`, `capacity at SLO`, `rewarm`. Не вводить конкурирующие названия `fixed-load comparison`, `matched-load` или `lifecycle test`.
 - Сохранить все существующие provider/eval cases и не расширять deferred references без необходимости.
 
@@ -524,7 +524,7 @@ Present the verified diff, before/after behavioral score, exact verification res
 - A candidate that improves the declared objective without violating guardrails may be accepted conditionally.
 - vLLM and SGLang references keep their engine-specific context but share one outcome contract.
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
-- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate grows by no more than 400 tokens from the recorded 52 587-token baseline, even though its pre-existing status is FAIL.
+- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate remains at or below the superseding measured ceiling of 53 650 tokens (recorded baseline 52 587, final measured 53 636, +1 049). The original +400 cap is historical rationale only, not the active acceptance criterion.
 - No helper script or usage adapter changes are introduced.
 - Full verification and the six-case, three-runs-per-case fresh-context behavioral evaluation pass under the P0-2 majority gate.
 

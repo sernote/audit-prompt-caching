@@ -84,7 +84,7 @@ exactly one status of `pass/warning/fail/unknown/not_applicable`.
 Leave every unproven dimension `unknown` instead of dropping it, and
 never aggregate them into a score, rank, or grade. `usage_accounting: pass`
 needs a valid denominator; `routing_locality: pass` is locality only, not
-rollout approval. See report-template.md.
+rollout approval. See references/report-template.md.
 
 ## Evidence Boundaries
 
