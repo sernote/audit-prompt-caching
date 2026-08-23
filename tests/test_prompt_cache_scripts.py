@@ -2326,9 +2326,16 @@ class PromptCacheScriptsTest(unittest.TestCase):
         unknown = [
             finding
             for finding in output["findings"]
-            if finding["path"] in {"unknown-env.yaml", "stale-flag.sh"}
+            if finding["path"] == "unknown-env.yaml"
         ]
         self.assertEqual(unknown, [])
+        stale = [
+            finding
+            for finding in output["findings"]
+            if finding["path"] == "stale-flag.sh"
+        ]
+        self.assertEqual(len(stale), 1)
+        self.assertEqual(stale[0]["signals"], ["--enable-kv-cache-events"])
         by_path = {
             path: {
                 signal
@@ -2940,8 +2947,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         report = (root / "references" / "report-template.md").read_text()
         rules = json.loads((root / "references" / "rules.json").read_text())
 
-        self.assertIn("--kv-events-config", vllm)
-        self.assertNotIn("--enable-kv-cache-events", vllm)
+        vllm_locator_docs = " ".join(vllm.split())
+        self.assertIn("--kv-events-config", vllm_locator_docs)
+        self.assertIn(
+            "If a deployment line uses `--enable-kv-cache-events`, treat it as "
+            "stale/integration-specific deployment guidance; verify exact runtime "
+            "parser/version/startup acceptance, and do not assume upstream vLLM "
+            "support.",
+            vllm_locator_docs,
+        )
 
         for required in (
             "Version and capability gate",

@@ -192,6 +192,9 @@ vLLM Automatic Prefix Caching reuses KV blocks for identical token prefixes. Vis
   connectors. Inspect `--kv-events-config`, `kv_transfer_config`, and
   `kv_connector` before attributing a TTFT regression only to prompt drift:
   transfer, offload, or event loss can explain a cold-looking request.
+- If a deployment line uses `--enable-kv-cache-events`, treat it as
+  stale/integration-specific deployment guidance; verify exact runtime
+  parser/version/startup acceptance, and do not assume upstream vLLM support.
 
 ## Benchmark Validation
 
