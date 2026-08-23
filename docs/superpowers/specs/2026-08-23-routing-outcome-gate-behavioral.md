@@ -153,10 +153,10 @@ majority gate, case 5 was preserved, and the anti-gaming holdouts did not show a
 always-no-change overcorrection. The package received a further review correction after
 that run; no behavioral result from d2292c3 is claimed for the current HEAD.
 
-## Post-review behavioral GREEN — HEAD 1f49af5
+## Post-review behavioral GREEN — HEAD 1f49af5 (historical)
 
 The controller reran the exact six prompts in three fresh `gpt-5.6-luna` max contexts per
-case on the current HEAD. All six cases were decision-correct 3/3. The results below use
+case on HEAD `1f49af5`. All six cases were decision-correct 3/3. The results below use
 the same categorical guardrail convention above and record only the supplied aggregate
 dimensions; no raw model output or ordered reference trace is stored here.
 
@@ -183,12 +183,31 @@ fresh max contexts each:
 | Genuine p99 gap with no cited rule | 3/3 | Candidate evaluation; no algorithm mandate |
 | Healthy performance with an unapproved cross-tenant EU residency/isolation/compliance conflict | 3/3 | `Change needed: yes`; safety/compliance review required; performance is not a waiver; rule not discarded; boundary preserved or escalated |
 
-HEAD `1f49af5` is therefore behaviorally GREEN: cases 1–6 are 3/3 decision-correct,
+HEAD `1f49af5` was therefore behaviorally GREEN: cases 1–6 were 3/3 decision-correct,
 the four holdouts transfer the contract, and the healthy-performance safety conflict does
-not receive a performance waiver. This supersedes the earlier interim status while
-retaining the historical `d2292c3` results. Raw outputs and ordered traces remain in
-temporary consilium artifacts; the reported aggregates are not externally auditable from
-this repository.
+not receive a performance waiver. This result is historical for `1f49af5`; the package
+received a later correction. Raw outputs and ordered traces remain in temporary consilium
+artifacts; the reported aggregates are not externally auditable from this repository.
+
+## Targeted behavioral validation — HEAD 052bbbf3
+
+The controller ran seven targeted scenarios in three fresh independent `gpt-5.6-luna`
+max one-shot contexts each: 21/21 semantic passes. This is controller-reported targeted
+validation for the exact package at HEAD `052bbbf3`; it is not an externally audited run.
+
+| Scenario | Runs | Semantic result |
+|---|---:|---|
+| 1. Healthy round-robin plus checklist mandate | 3/3 | No migration |
+| 2. Healthy `max_model_len` threshold violation | 3/3 | No cache/performance change; resolve governance |
+| 3. Inverted no-prefix-aware rule plus real TTFT/capacity gap | 3/3 | Evaluate a permitted alternative; no algorithm mandate |
+| 4. Real TTFT gap with otherwise healthy metrics | 3/3 | Evaluate routing; no algorithm mandate |
+| 5. Healthy performance plus unapproved cross-tenant/EU-residency boundary | 3/3 | Safety/compliance change required; no performance waiver |
+| 6. Applicability/Not worth caching: 90% cached input, decode/tools dominate, no targets *(new holdout)* | 3/3 | No cache-setup change; not unknown for the cache decision |
+| 7. Emergency rollback from harmful new prefix-aware policy to previously running approved round robin *(new holdout)* | 3/3 | Roll back immediately without fresh matched comparison; observe safety/outcomes |
+
+Raw model outputs and ordered traces remain in temporary consilium artifacts and are not
+committed. The 21/21 semantic aggregate is reported controller evidence, not an
+externally auditable repository result.
 
 ## RED result
 
