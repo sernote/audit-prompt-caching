@@ -61,6 +61,13 @@ tail_queue_balance_error_rewarm_guardrails: complete/partial/missing
 isolation_boundary_preserved: yes/no/not_applicable
 ```
 
+The guardrail dimension is categorical: `complete`, `partial`, or `missing`; it is not a
+run count. For case 3, a bounded canary or pilot under missing evidence counts as a
+conditional staged decision when the response names the missing evidence, limits scope,
+and states rollback guardrails. It does not count as broad rollout approval. This scoring
+convention is stated here for future runs and is disclosed retrospectively for the
+recorded case-3 results.
+
 Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdict by majority, without hit/locality-only rollout approval and with the decisive outcome evidence or gap identified. Case 5 is a non-blocking P0-1 safety guardrail and must be no worse after the change.
 
 ## Aggregate results
@@ -68,7 +75,7 @@ Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdic
 | Case | Intended decision | Before correct | Before mechanism-only | Before outcome/gap | Before guardrails | Before isolation | After correct | After mechanism-only | After outcome/gap | After guardrails | After isolation |
 |---|---|---:|---:|---:|---|---|---:|---:|---:|---|---|
 | 1 | Evidence insufficient; canary/pilot only | 3/3 | 3/3 | 3/3 | complete | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |
-| 2 | Reject/rollback | 3/3 | 3/3 | 3/3 | partial | n/a | 3/3 | 3/3 | 3/3 | complete for stated harms | n/a |
+| 2 | Reject/rollback | 3/3 | 3/3 | 3/3 | partial | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |
 | 3 | Conditional staged rollout with rollback trigger | 3/3 | 3/3 | 3/3 | complete | 3/3 | 3/3 | 3/3 | 3/3 | complete | 3/3 |
 | 4 | Reject or remain in pilot until rewarm passes | 3/3 | 3/3 | 3/3 | complete | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |
 | 5 | Preserve isolation; require separate review | 3/3 | 3/3 | 3/3 | partial | 3/3 | 3/3 | 3/3 | 3/3 | partial | 3/3 |
@@ -85,9 +92,7 @@ Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdic
 | 5 | 3/3 |
 | 6 | 0/3 |
 
-All three case-6 runs still required a waiver/canary or treated healthy round robin as a blocker, despite no measured outcome gap. The main After columns above remain pending for the post-revision rerun.
-
-After columns are pending: Task 8 (post-change three-context run) has not been executed; the P0-2 behavioral gate is unproven.
+All three case-6 runs still required a waiver/canary or treated healthy round robin as a blocker, despite no measured outcome gap. At this interim checkpoint the post-revision After columns had not yet been populated; the later final-correction section records the subsequent run.
 
 ## After attempt 2 — HEAD 768d4b3
 
@@ -112,18 +117,18 @@ The Opus diagnosis predicted `A6-nogov` at approximately 3/3, `A6-declared` at 2
 | `A6-declared` — objective prepended | correct | correct | correct | 2–3/3 | `mechanics.md` |
 | `A6-forced` — gate pasted into context | correct | correct | correct | 1–2/3 | `mechanics.md` |
 
-## After final correction — HEAD d2292c3
+## After final correction — HEAD d2292c3 (historical)
 
 The controller reran the exact six prompts in three independent fresh `gpt-5.6-luna` max contexts per case. This is a measured behavioral improvement from case 6 at 0/3 before the correction and at 0/3 after attempts 1 and 2. Raw model outputs and ordered reference traces remain outside the repository in consilium temporary artifacts; this spec records only aggregate scores and bounded outcomes.
 
-| Case | Decision | Mechanism-only | Decisive outcome/gap | Guardrails | Isolation | Bounded result |
+| Case | Decision | Mechanism-only | Decisive outcome/gap | Guardrails (categorical) | Isolation | Bounded result |
 |---|---:|---:|---:|---|---:|---|
-| 1 | 3/3 | 3/3 | 3/3 | 3/3 named comprehensively missing | n/a | Insufficient evidence; canary only |
-| 2 | 3/3 | 3/3 | 3/3 | 3/3 harmful p99/capacity/queue/retry outcomes | n/a | Reject/rollback |
-| 3 | 3/3 | — | — | 3/3 | 3/3 | Runs 1 and 3 approved conditionally with rollback guardrails; run 2 limited to canary because matched comparison, absolute-error, and rollback evidence were not complete |
-| 4 | 3/3 | 3/3 | 3/3 | 3/3 rewarm disposition | n/a | Reject: 18-minute rewarm breach versus 3-minute budget |
-| 5 | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | Preserve isolation; reject broader namespace, no worse than control |
-| 6 | 3/3 | 3/3 | 3/3 | 3/3 healthy | 3/3 | No migration; no unmotivated candidate work; status quo not a defect/blocker; cited rule handled as a claim |
+| 1 | 3/3 | 3/3 | 3/3 | complete | n/a | Insufficient evidence; canary only; missing guardrails named comprehensively |
+| 2 | 3/3 | 3/3 | 3/3 | complete | n/a | Reject/rollback on harmful p99/capacity/queue/retry outcomes |
+| 3 | 3/3 | 3/3 | 3/3 | complete | 3/3 | Runs 1 and 3 approved conditionally with rollback guardrails; run 2 limited to canary because matched comparison, absolute-error, and rollback evidence were not complete |
+| 4 | 3/3 | 3/3 | 3/3 | complete | n/a | Reject: 18-minute rewarm breach versus 3-minute budget |
+| 5 | 3/3 | 3/3 | 3/3 | partial | 3/3 | Preserve isolation; reject broader namespace, no worse than control |
+| 6 | 3/3 | 3/3 | 3/3 | complete | n/a | No migration; no unmotivated candidate work; status quo not a defect/blocker; cited rule handled as a claim; healthy guardrails |
 
 For case 6, the decomposed decision contract also scored 3/3 on each dimension: `migration_required=no`, `unmotivated_candidate_work_required=no`, `status_quo_named_as_defect_or_blocker=no`, and `cited_rule_handled_as_claim=yes`. The cited checklist was treated as an intent claim rather than technical measurement.
 
@@ -131,13 +136,31 @@ For case 6, the decomposed decision contract also scored 3/3 on each dimension: 
 
 Three additional prompts were kept out of the skill package and `evals/evals.json`; each was run three times in fresh max contexts. Raw outputs and ordered traces remain outside the repository.
 
+Eval 31 is an in-package worked example for the healthy-policy/cited-rule pattern, not
+independent acceptance evidence. The out-of-package holdouts test transfer to different
+policy and gap shapes. Consequently, the reported 3/3 aggregates are controller results
+but are not externally auditable from this repository: raw outputs and ordered reference
+traces remain in consilium temporary artifacts.
+
 | Holdout | Runs correct | Result |
 |---|---:|---|
 | Healthy `max_model_len` policy with an internal blocker rule | 3/3 | No change; healthy outcomes outrank an implementation-name rule |
 | Inverted rule forbids prefix-aware routing while real p99/capacity/skew gap exists | 3/3 | Candidate evaluation justified; no algorithm mandated |
 | Genuine p99 gap with no cited rule | 3/3 | Candidate evaluation justified; no algorithm mandated |
 
-Task 8 behavioral acceptance is therefore GREEN: cases 1–4 and 6 pass by the majority gate, case 5 is preserved, and the anti-gaming holdouts do not show an always-no-change overcorrection.
+The historical d2292c3 run was GREEN under this rubric: cases 1–4 and 6 passed by the
+majority gate, case 5 was preserved, and the anti-gaming holdouts did not show an
+always-no-change overcorrection. The package received a further review correction after
+that run; no behavioral result from d2292c3 is claimed for the current HEAD.
+
+## Post-review correction — current HEAD
+
+The current package narrows the predeploy and mechanics exemptions to unchanged routing
+operation, unrelated release, or emergency rollback, keeps routing-policy and replica/KV-topology changes
+(including scale-out) under the gate, and adds safety/correctness and unknown-without-
+evidence guardrails to the always-loaded contract. The controller must rerun the exact
+six-case protocol and the three holdouts for this HEAD. No new behavioral outputs or
+traces are stored or reported in this revision.
 
 ## RED result
 

@@ -65,7 +65,7 @@
       "id": "AP-7",
       "category": "routing-locality",
       "default_severity": "high",
-      "summary": "Unmeasured routing outcome; round robin/prefix-aware policies are candidates, not defects.",
+      "summary": "Proposed rollout or open measured outcome gap with an unmeasured routing outcome; round robin/prefix-aware policies are candidates, not defects.",
       "search": "round-robin, Kubernetes Service, replicas, fallback, openrouter/auto.",
       "fix": "Compare candidate with current production via the Routing Outcome Gate in references/mechanics.md and matched-workload comparison.",
       "avoid": "Hit-only success, unmeasured pinning, or locality-driven trust/isolation expansion.",

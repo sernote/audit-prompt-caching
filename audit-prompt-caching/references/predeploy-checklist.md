@@ -2,8 +2,6 @@
 
 Use for release, incident, deploy, or monitoring reviews.
 
-These blockers apply to a proposed configuration or routing-policy change. An unchanged configuration that meets its stated outcomes is not blocked from continued operation, release, scale-out, or emergency rollback; use the `Routing Outcome Gate` in `references/mechanics.md` for candidate evaluation.
-
 ## Blockers
 
 - Volatile values before reusable content: time, request ID, user/tenant facts, git status, cwd, trace ID.
@@ -11,7 +9,8 @@ These blockers apply to a proposed configuration or routing-policy change. An un
 - Prompt A/B flags or random few-shot examples before the stable prefix.
 - Context compaction that rewrites the stable anchor.
 - Provider wrapper or router changes without routed provider/model telemetry.
-- Any vLLM/SGLang routing-policy rollout, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger and unchanged isolation boundary.
+- Any vLLM/SGLang routing-policy or replica/KV-topology change, including scale-out, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger, an isolation decision, and no unreviewed trust-boundary broadening; use the `Routing Outcome Gate` in `references/mechanics.md`.
+- This routing-policy blocker does not by itself require migrating an unchanged routing policy during continued operation, an unrelated release, or emergency rollback; a routing-policy or replica/KV-topology change, including scale-out, remains a candidate and uses the gate. Other blockers here—prefix stability, provider correctness, hash/seed compatibility, and isolation—still apply to existing deployments and release/monitoring reviews.
 - `max_model_len` or KV settings changed without p99 input/KV pressure review.
 - Cache controls, `cachePoint`, `prompt_cache_key`, TTL, retention, or salts changed without provider-doc checks.
 - vLLM retention flag/env is used without evidence that the deployed runtime supports the feature; an env name in a manifest is not enough.

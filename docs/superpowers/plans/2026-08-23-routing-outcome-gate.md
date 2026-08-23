@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/plans/2026-08-23-routing-outcome-gate.md#design-contract`
 
-**Review:** Claude Opus 5, high effort, 2026-08-23 — `APPROVE WITH CHANGES`; blocking findings are resolved in this revision.
+**Reviews:** Claude Opus 5, high effort, 2026-08-23 — historical `APPROVE WITH CHANGES`; the latest Opus xhigh review requested scoped safety and candidate-gate corrections, which are implemented in the current revision. No new behavioral run is claimed here.
 
 ## Global Constraints
 
@@ -22,14 +22,14 @@
 - Не реализовывать P0-1: не добавлять upstream identity contract, credential-pool tracing, relay-hop audit или cross-tenant probes. Допустима одна защитная фраза в AP-7: ради hit rate нельзя расширять trust/isolation boundary без отдельной security/privacy проверки.
 - Не менять AP-9b, provider adapters, usage normalization, helper scripts или cache-plane model. Trigger surface не меняется, поэтому `evals/trigger_eval.json` не трогать, если RED не докажет отдельную trigger-регрессию.
 - Не дублировать полный outcome gate во всех references. Нормативное объяснение живёт в `references/mechanics.md`; остальные файлы дают короткую engine/workflow-specific ссылку и локальные проверки.
-- Superseded planning-base measurements were 5 850 estimated SKILL tokens / 5 852 invoked ceiling. The fetched-base ceiling was 6 010; after two failed behavioral attempts, the always-loaded no-change contract is an intentional measured increase to 6 173 tokens. Keep `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` equal to that measured ceiling and do not compress existing guidance to hide the delta.
-- The superseded planning-base deferred measurement was 41 238 tokens. The fetched-base deferred baseline at `origin/main`/`ec0d447` is 52 587 tokens; the previous review ceiling was 53 800. The sibling worked eval and final gate correction measure 216 222 chars / 54 056 tokens, so this revision records a measured 54 100-token ceiling with explicit headroom.
+- Superseded planning-base measurements were 5 850 estimated SKILL tokens / 5 852 invoked ceiling. The fetched-base ceiling was 6 010; the prior final correction measured 6 173 after two failed behavioral attempts. The latest safety/correctness and unknown-evidence clauses measure 6 297 tokens on the current HEAD; keep `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` equal to that measured ceiling and do not compress existing guidance to hide the delta.
+- The superseded planning-base deferred measurement was 41 238 tokens. The fetched-base deferred baseline at `origin/main`/`ec0d447` is 52 587 tokens; the prior review ceilings were 53 800 and then 54 100. The prior final correction measured 216 222 chars / 54 056 tokens; the current scoped gate correction measures 216 919 chars / 54 230 tokens, so this revision records a measured 54 275-token ceiling with explicit headroom.
 - Канонические anchors для cross-reference tests: `Routing Outcome Gate`, `matched-workload comparison`, `capacity at SLO`, `rewarm`. Не вводить конкурирующие названия `fixed-load comparison`, `matched-load` или `lifecycle test`.
 - Сохранить все существующие provider/eval cases и не расширять deferred references без необходимости.
 
 ### Review-round budget ruling
 
-The original deferred cap of `52,587 + 400 = 52,987` estimated tokens could not be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint added `1,573` characters, and restoring normal pretty `evals.json` formatting cost `1,032` characters (`13,142` → `14,174`). The prior reviewed result was `215,046` deferred characters / `53,762` estimated tokens with a `53,800` ceiling. After two behavioral failures, the always-loaded invariant, wider predeploy scope, neutral fixture, and sibling worked eval add `1,176` deferred characters and `657` SKILL characters: the measured result is `216,222` / `54,056` deferred tokens and `24,690` / `6,173` SKILL tokens. No pre-existing guidance was compressed or deleted; set measured ceilings of `54,100` deferred tokens and `6,173` invoked tokens.
+The original deferred cap of `52,587 + 400 = 52,987` estimated tokens could not be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint added `1,573` characters, and restoring normal pretty `evals.json` formatting cost `1,032` characters (`13,142` → `14,174`). The prior reviewed result was `215,046` deferred characters / `53,762` estimated tokens with a `53,800` ceiling. After two behavioral failures, the always-loaded invariant, wider predeploy scope, neutral fixture, and sibling worked eval measured `216,222` / `54,056` deferred tokens and `24,690` / `6,173` SKILL tokens. The current review correction adds 697 deferred characters and 496 SKILL characters for scoped routing/safety wording: the measured result is `216,919` / `54,230` deferred tokens and `25,186` / `6,297` SKILL tokens. No pre-existing guidance was compressed or deleted; set measured ceilings of `54,275` deferred tokens and `6,297` invoked tokens.
 
 ---
 
@@ -463,14 +463,32 @@ Structural TDD evidence is recorded exactly:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+  tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_ap7_treats_cache_aware_routing_as_a_measured_candidate \
   tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_routing_outcome_gate_is_consistent_across_core_references \
   tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_routing_change_contract_is_always_loaded_and_policy_neutral \
+  tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_routing_verification_does_not_accept_mechanism_only \
   tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_evals_cover_routing_harmful_hit_and_evidence_gap
 ```
 
-The command was RED before product edits and GREEN (`Ran 3 tests ... OK`) after them. It did not replace the behavioral evaluation. The controller subsequently reran the exact six cases on `d2292c3`: cases 1–4 and 6 passed 3/3 by the majority gate, case 5 preserved isolation 3/3, and case 6 improved from 0/3 before and after attempts 1–2 to 3/3. The raw outputs and ordered traces remain outside the repository.
+The command was RED before product edits (`FAILED`, 15 failures and 1 error) and GREEN after them (`Ran 5 tests ... OK`). It did not replace the behavioral evaluation. The controller subsequently reran the exact six cases on `d2292c3`: cases 1–4 and 6 passed 3/3 by the majority gate, case 5 preserved isolation 3/3, and case 6 improved from 0/3 before and after attempts 1–2 to 3/3. This is historical evidence for `d2292c3`; the package received a further review correction afterward, so it is not evidence for the current HEAD. The raw outputs and ordered traces remain outside the repository.
 
 The controller also ran three anti-gaming holdouts outside the package/evals, three fresh contexts each: healthy `max_model_len` policy with a cited blocker rule (3/3 no change), an inverted rule forbidding prefix-aware routing despite a real p99/capacity/skew gap (3/3 candidate evaluation with no algorithm mandate), and a genuine p99 gap without a cited rule (3/3 candidate evaluation with no algorithm mandate). These holdouts do not replace the six-case gate; they guard against an always-no-change overcorrection.
+
+Eval 31 is an in-package worked example rather than independent acceptance evidence; the
+holdouts test transfer to different policy and gap shapes. Reported 3/3 aggregates are
+therefore not externally auditable from this repository because raw outputs and ordered
+reference traces remain in consilium temporary artifacts.
+
+### Task 8 post-review correction status
+
+The latest Opus xhigh review required the predeploy carve-out to apply only to the
+routing-policy blocker, the mechanics gate to keep routing-policy and replica/KV-topology
+changes (including scale-out) as candidates, and the always-loaded contract to preserve
+safety/correctness review and return `Change needed: unknown until <specific evidence>`
+when outcome targets or evidence are absent. Focused structural tests were updated first
+and produced RED; after the package edits the focused suite is GREEN. No new six-case or
+holdout behavioral results are recorded for this correction. The controller must rerun
+the exact protocol on the current HEAD.
 
 ### Task 9: Full verification and implementation review
 
@@ -561,9 +579,9 @@ Present the verified diff, before/after behavioral score, exact verification res
 - A candidate that improves the declared objective without violating guardrails may be accepted conditionally.
 - vLLM and SGLang references keep their engine-specific context but share one outcome contract.
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
-- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the superseding measured ceiling of 6 173; deferred estimate remains at or below the superseding measured ceiling of 54 100 tokens (recorded baseline 52 587, final measured 54 056, +1 469). The original +400 cap and prior 6 010/53 800 rulings are superseded by the explicit post-failure measurement; no guidance is compressed to fund the correction.
+- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the superseding measured ceiling of 6 297; deferred estimate remains at or below the superseding measured ceiling of 54 275 tokens (recorded baseline 52 587, current measured 54 230, +1 643). The original +400 cap and prior 6 010/53 800/54 100 rulings are superseded by explicit post-failure and post-review measurements; no guidance is compressed to fund the correction.
 - No helper script or usage adapter changes are introduced.
-- Full verification and the six-case, three-runs-per-case fresh-context behavioral evaluation pass under the P0-2 majority gate. The final behavioral run on `d2292c3` is recorded in the behavioral spec, with cases 1–4 and 6 at 3/3 and case 5 no worse than control; Task 8 is complete.
+- Full verification passes, and the historical six-case, three-runs-per-case run on `d2292c3` is recorded separately in the behavioral spec. Because the current review correction changed package wording after that run, the controller must rerun the six cases and holdouts on the current HEAD before treating Task 8 as complete; no new behavioral result is claimed in this revision.
 
 ## Non-goals
 
