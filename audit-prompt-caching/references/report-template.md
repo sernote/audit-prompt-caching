@@ -81,12 +81,12 @@ and route telemetry:
 
 ```text
 evidence_source: provider_dashboard_aggregate | provider_usage_api_aggregate | request_level_provider_usage | gateway_or_replica_telemetry | rendered_prefix_evidence
-provider:
-time_window:
-granularity:
-filters:
-displayed_metric:
-displayed_value:
+provider: <provider>
+time_window: <UTC interval>
+granularity: <bucket or request>
+filters: <grouping and filters>
+displayed_metric: <metric>
+displayed_value: <value>
 evidence_definition_status: provider_documented | unknown
 evidence_denominator_status: provider_documented | unknown
 evidence_accounting_semantics: inclusive | additive | provider_defined | unknown
@@ -98,22 +98,33 @@ Label Dashboard aggregate and Usage API aggregate explicitly. Do not combine
 their ratios or claim a causal finding until request-level usage and
 route/replica correlation are present.
 
-For Usage API fields, `input_uncached_tokens` is uncached input excluding
-cache-write tokens; it is neither cache reads nor writes. The prompt-caching
-guide documents a request-level read/write/neither partition.
+For the OpenAI Organization Usage API, `input_uncached_tokens` is uncached input
+excluding cache-write tokens; it is neither cache reads nor writes. The OpenAI
+prompt-caching guide documents a request-level read/write/neither partition.
 
-For documented Usage API fields, set `evidence_definition_status:
+For documented OpenAI Organization Usage API fields, set `evidence_definition_status:
 provider_documented`, `evidence_denominator_status: unknown` unless the
 provider documents the denominator, and
 `evidence_accounting_semantics: provider_defined`. This is a documented mixed
 decomposition, not permission to sum fields; preserve field-level
-inclusive/decomposition semantics. Do not add breakdowns onto inclusive
-`input_tokens` or manufacture a denominator/residual from missing optional
-fields or mismatched bucket/group/filter scope. An auditor-defined ratio is not
+inclusive/decomposition semantics. For the OpenAI Organization Usage API, do not
+add breakdowns onto inclusive `input_tokens` or manufacture a denominator/residual
+from missing optional fields or mismatched bucket/group/filter scope. An
+auditor-defined ratio is not
 provider-documented or decision-grade aggregate evidence without scope proof.
 Optional/missing fields: absent/unknown, never zero. Dashboard statuses remain
 unknown unless the provider documents the relevant definition, denominator, and
 accounting.
+
+For an additive provider aggregate, such as an Anthropic or Bedrock reference,
+use the documented component sum only when the provider reference documents
+additive fields and the full total/denominator at matching bucket/group/filter
+scopes. That documented sum is the provider-defined denominator: record
+`evidence_accounting_semantics=additive` and
+`evidence_denominator_status=provider_documented`. If the provider does not
+document the full denominator or mismatched bucket/group/filter scopes occur,
+keep the denominator unknown. Do not apply this additive rule to OpenAI's
+inclusive `input_tokens`.
 
 ## Clean Checks
 

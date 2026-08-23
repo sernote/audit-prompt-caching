@@ -53,7 +53,7 @@ and `api-version`. Verify the exact API version's Responses `tool_choice` schema
 and final request wire. Do not infer support from direct OpenAI or Vercel SDK
 behavior; make no universal Azure support claim.
 
-### Azure Is Not Generic OpenAI
+## Azure Is Not Generic OpenAI
 
 Do not recommend `prompt_cache_key`, extended retention, or OpenAI-only parameters on Azure unless current Azure docs support them. If the code uses the OpenAI SDK with an Azure endpoint, load this reference rather than only `openai.md`.
 

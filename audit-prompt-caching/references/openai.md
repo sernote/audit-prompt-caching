@@ -91,7 +91,7 @@ record `evidence_definition_status=unknown`,
 UI metrics are not request-level evidence and are not causal proof of prompt
 drift, routing misses, or an SDK regression.
 
-The Organization Usage API is a separate `provider_usage_api_aggregate`. Record
+The documented OpenAI Organization Usage API is a separate `provider_usage_api_aggregate`. Record
 its time buckets, filters, grouping, and bucket boundaries. Its documented
 completion token decomposition is:
 
@@ -101,12 +101,12 @@ completion token decomposition is:
 - `input_uncached_tokens` is uncached input excluding cache-write tokens; it is
   neither cache reads nor writes.
 
-The prompt-caching guide documents a request-level read/write/neither partition.
+The OpenAI prompt-caching guide documents a request-level read/write/neither partition.
 Do not add breakdowns onto inclusive `input_tokens` or manufacture a
 denominator/residual from missing optional fields or mismatched
 bucket/group/filter scope.
 
-For documented Usage API fields, record
+For documented OpenAI Organization Usage API fields, record
 `evidence_definition_status=provider_documented`,
 `evidence_denominator_status=unknown` unless the provider documents the
 denominator, and

@@ -4180,7 +4180,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
         report = (root / "references" / "report-template.md").read_text()
         evals_text = (root / "evals" / "evals.json").read_text()
         for source_text in (openai, observability, report, evals_text):
-            self.assertNotIn("only when an additive identity is documented", source_text)
             self.assertNotIn(
                 "unless its denominator is explicitly defined and recorded",
                 source_text,
@@ -4188,7 +4187,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         openai_section = extract_markdown_section(
             openai, "Prompt Caching dashboard and aggregate evidence"
         )
-        marker = "The Organization Usage API is a separate"
+        marker = "The documented OpenAI Organization Usage API is a separate"
         self.assertIn(marker, openai_section)
         dashboard, _, usage = openai_section.partition(marker)
         self.assertIn("provider_dashboard_aggregate", dashboard)
@@ -4205,14 +4204,14 @@ class PromptCacheScriptsTest(unittest.TestCase):
             usage_normalized,
             r"input_tokens.*inclusive.*input_uncached_tokens.*uncached input.*excluding cache-write.*neither cache reads nor writes",
         )
+        self.assertIn("OpenAI Organization Usage API", usage_normalized)
+        self.assertIn("OpenAI prompt-caching guide", usage_normalized)
         self.assertIn("read/write/neither partition", usage_normalized)
         self.assertIn(
             "do not add breakdowns onto inclusive `input_tokens`",
             usage_normalized.lower(),
         )
         self.assertIn("mismatched bucket/group/filter scope", usage_normalized)
-        self.assertNotIn("only when an additive identity is documented", usage_normalized)
-        self.assertNotIn("additive identity", usage_normalized)
         self.assertRegex(
             usage_normalized.lower(),
             r"documented mixed decomposition.*not permission to sum|do not naively sum",
@@ -4226,15 +4225,24 @@ class PromptCacheScriptsTest(unittest.TestCase):
         observability_section = extract_markdown_section(
             observability, "Provider aggregate evidence boundary"
         )
-        contract = re.search(
-            r"```text\n(.*?)\n```", observability_section, re.DOTALL
-        )
-        self.assertIsNotNone(contract)
-        contract_fields = {
-            line.split(":", 1)[0]
-            for line in contract.group(1).splitlines()
-            if ":" in line
-        }
+        contract = re.search(r"```text\n(.*?)\n```", observability_section, re.DOTALL)
+
+        def parse_contract(match, label):
+            self.assertIsNotNone(match, label)
+            values = {}
+            for line in match.group(1).splitlines():
+                self.assertRegex(
+                    line,
+                    r"^[a-z][a-z0-9_]*: .+$",
+                    f"malformed {label} line: {line!r}",
+                )
+                key, value = line.split(":", 1)
+                self.assertNotIn(key, values, f"duplicate {label} field: {key}")
+                values[key] = value.strip()
+            return values
+
+        contract_values = parse_contract(contract, "observability provenance block")
+        contract_fields = set(contract_values)
         self.assertEqual(
             contract_fields,
             {
@@ -4263,19 +4271,12 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         report_section = extract_markdown_section(report, "Evidence Needed Next")
         report_normalized = " ".join(report_section.split())
-        report_contract = re.search(
-            r"```text\n(.*?)\n```", report_section, re.DOTALL
-        )
-        self.assertIsNotNone(report_contract)
-        report_fields = {
-            line.split(":", 1)[0]
-            for line in report_contract.group(1).splitlines()
-            if ":" in line
-        }
+        report_contract = re.search(r"```text\n(.*?)\n```", report_section, re.DOTALL)
+        report_values = parse_contract(report_contract, "report provenance block")
         self.assertEqual(
-            report_fields,
-            contract_fields,
-            "report-template provenance block must mirror observability schema",
+            report_values,
+            contract_values,
+            "report-template provenance block must mirror observability schema and enums",
         )
         self.assertIn("Dashboard aggregate", report_normalized)
         self.assertIn("Usage API aggregate", report_normalized)
@@ -4287,6 +4288,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertIn(key, report_normalized)
         self.assertIn("provider_documented", report_normalized)
         self.assertIn("provider_defined", report_normalized)
+        self.assertIn("OpenAI Organization Usage API", report_normalized)
+        self.assertIn("OpenAI prompt-caching guide", report_normalized)
         self.assertIn(
             "input_uncached_tokens` is uncached input excluding cache-write tokens",
             report_normalized,
@@ -4298,6 +4301,22 @@ class PromptCacheScriptsTest(unittest.TestCase):
         )
         self.assertIn("Dashboard statuses remain unknown", report_normalized)
 
+    def test_additive_provider_aggregate_rule_preserves_documented_denominators(self):
+        root = ROOT / "audit-prompt-caching"
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        for reference in (observability, report):
+            normalized = " ".join(reference.split())
+            self.assertRegex(
+                normalized,
+                r"additive provider.*full total/denominator.*"
+                r"evidence_accounting_semantics=additive.*"
+                r"evidence_denominator_status=provider_documented",
+            )
+            self.assertIn("mismatched bucket/group/filter scopes", normalized)
+            self.assertIn("keep the denominator unknown", normalized)
+            self.assertIn("Do not apply this additive rule to OpenAI", normalized)
+
     def test_usage_api_accounting_contract_is_not_reused_for_dashboard_ratios(self):
         openai = (
             ROOT / "audit-prompt-caching" / "references" / "openai.md"
@@ -4305,7 +4324,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         section = extract_markdown_section(
             openai, "Prompt Caching dashboard and aggregate evidence"
         )
-        marker = "The Organization Usage API is a separate"
+        marker = "The documented OpenAI Organization Usage API is a separate"
         self.assertIn(marker, section)
         dashboard, _, usage = section.partition(marker)
         dashboard_normalized = " ".join(dashboard.split())
@@ -4320,10 +4339,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("neither cache reads nor writes", usage_normalized)
         self.assertIn("read/write/neither partition", usage_normalized)
         self.assertIn("No same formula is assumed", usage_normalized)
+        self.assertIn("denominator is not inferred", usage_normalized)
         self.assertIn("evidence_denominator_status=unknown", usage_normalized)
         self.assertIn("unless the provider documents the denominator", usage_normalized)
         self.assertIn("auditor-defined ratio", usage_normalized)
-        self.assertNotIn("only when an additive identity is documented", usage_normalized)
         self.assertNotIn("input_tokens` is inclusive", dashboard_normalized)
 
     def test_dynamic_evals_cover_version_wire_contrast_and_aggregate_evidence(self):
@@ -4339,6 +4358,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("activeTools", vercel["prompt"])
         self.assertIn("providerOptions.openai.allowedTools", vercel["prompt"])
         self.assertNotIn("server_label", vercel["prompt"])
+        for tool_class in ("function", "custom", "MCP", "web-search"):
+            self.assertIn(tool_class, vercel["prompt"])
+        self.assertNotIn("{type:", vercel["prompt"])
         self.assertRegex(vercel["expected_output"], r"stable full tools catalog.*Responses")
         self.assertIn("mode: auto", vercel["expected_output"])
         self.assertIn("mode: required", vercel["expected_output"])
@@ -4388,7 +4410,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("not permission to sum", usage)
         self.assertIn("read/write/neither partition", usage)
         self.assertIn("auditor-defined ratio", usage)
-        self.assertNotIn("only when an additive identity is documented", usage)
+        self.assertIn("OpenAI Organization Usage API", usage)
 
         contrast = by_id[29]["expected_output"]
         self.assertRegex(
