@@ -76,6 +76,25 @@ An `ambiguous` or `invalid` usage denominator can never be reported as `usage_ac
 
 List rendered prompt pair, usage fields, route/model/provider, prefix/tool/schema hashes, TTFT/prefill, output tokens, and deployment/router/KV metrics needed to raise or lower severity. For a Deployment Audit, include image digest/version/commit, capability and resolved config evidence, concrete KV spec classes and attention geometry, effective retention plus source, scheduler block size, hash algorithm, redacted seed compatibility status, KV tier, and the `cache_salt` boundary fingerprint policy.
 
+For provider aggregates, record each source separately from request-level usage
+and route telemetry:
+
+```text
+Evidence source: provider_dashboard_aggregate | provider_usage_api_aggregate | request_level_provider_usage | gateway_or_replica_telemetry | rendered_prefix_evidence
+Scope/granularity:
+Time window:
+Filters:
+Metric definition status:
+Denominator status:
+Accounting semantics:
+Request correlation:
+Route/replica correlation:
+```
+
+Label Dashboard aggregate and Usage API aggregate explicitly. Do not combine
+their ratios or claim a causal finding until request-level usage and
+route/replica correlation are present.
+
 ## Clean Checks
 
 Record anti-patterns that were inspected and ruled out, for example volatile prefix data, tool/schema order, routing locality, TTL/cadence, output-token dominance, or privacy-driven isolation.

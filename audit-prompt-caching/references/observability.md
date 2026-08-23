@@ -78,6 +78,44 @@ fingerprint records the isolation boundary and does not replace `cache_salt`.
 
 Only a `valid` denominator supports a savings or hit-rate claim. Report `ambiguous` and `invalid` ratios as non-decision-grade evidence and fix accounting first.
 
+## Provider aggregate evidence boundary
+
+Provider aggregates are evidence objects, not request events. Record the source,
+scope, granularity, filters, and definition status before calculating a ratio:
+
+```text
+evidence_source: provider_dashboard_aggregate | provider_usage_api_aggregate | request_level_provider_usage | gateway_or_replica_telemetry | rendered_prefix_evidence
+provider:
+time_window:
+granularity:
+filters:
+displayed_metric:
+displayed_value:
+definition_status: provider_documented | unknown
+denominator_status: provider_documented | unknown
+accounting_semantics: inclusive | additive | provider_defined | unknown
+request_correlation: present | absent
+route_correlation: present | absent
+```
+
+Treat the Prompt Caching dashboard as `provider_dashboard_aggregate`. Unless
+the provider documents the formula and denominator, its definition status,
+denominator status, and accounting semantics remain `unknown`. It can confirm
+a trend but cannot establish a request-level or route-level cause.
+
+Treat the documented Organization Usage API completion fields as
+`provider_usage_api_aggregate`. Preserve its time buckets, grouping, filters,
+and bucket boundaries. Its `input_tokens` is inclusive of cached and
+cache-write tokens; `input_uncached_tokens` excludes cache-write tokens. These
+documented decomposition semantics do not make a dashboard ratio equivalent
+to a Usage API ratio.
+
+Keep dashboard aggregate, Usage API aggregate, request-level provider usage,
+and gateway/replica telemetry in separate series. Do not compute a dashboard
+denominator, convert an aggregate into request events, or make a causal claim
+without request and route correlation. Request/prefix/tool/schema hashes and
+raw provider usage remain required for causal findings.
+
 ### Source Path Handling
 
 `source_fields` values are human-readable dot paths for reviewers, not machine-resolvable JSONPath expressions. Unknown wrapper envelopes can place usage under dynamic map keys, so a path may not be reusable as a selector and can itself carry request- or tenant-derived identifiers. Treat normalized telemetry as sensitive and apply the same handling policy as the rest of your token telemetry. Paths never contain leaf values or raw envelopes.
@@ -91,6 +129,10 @@ Event, summary, and report changes are additive: no existing key is renamed or r
 Show cache read ratio, write/read ratio, cached-token share, output-token share, TTFT/prefill by route, final latency, route/provider/replica split, prompt/schema/tool hash changes, deploy correlation, and top prefix families by cost.
 
 Normalize provider accounting before charting: OpenAI/Gemini cached-token fields are commonly inclusive in prompt input, while Bedrock cache read/write fields are additive. A dashboard that sums all fields indiscriminately will fabricate an apparent usage regression.
+
+Before charting any aggregate, attach its `evidence_source`, provider, time
+window, granularity, filters, `definition_status`, `denominator_status`, and
+`accounting_semantics`; do not merge dashboard and Usage API ratios silently.
 
 ## Alerts And CI
 

@@ -28,6 +28,14 @@
     "should_trigger": true
   },
   {
+    "query": "Vercel OpenAI Responses activeTools changes every step; compare stable tools with allowedTools and prompt-cache usage",
+    "should_trigger": true
+  },
+  {
+    "query": "OpenAI Prompt Caching dashboard shows cache reads per write and a high hit rate; audit the aggregate evidence",
+    "should_trigger": true
+  },
+  {
     "query": "Use $audit-prompt-caching. Сделай ревью.",
     "should_trigger": true
   },

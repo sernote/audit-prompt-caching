@@ -143,7 +143,7 @@ Every actionable finding should expose uncertainty and a falsifiable validation 
 source | severity | provider/engine | issue | evidence | evidence_type | confidence | impact_condition | cache impact | safe_first_action | fix | validation | do_not_do_yet
 ```
 
-Use evidence types such as `confirmed from code`, `confirmed from telemetry`, `provider-doc hypothesis`, or `needs validation`. State impact conditions such as "matters if this path is hot, repeated, and has a long stable prefix" rather than implying guaranteed savings.
+Use evidence types such as `confirmed from code`, `confirmed from telemetry`, `provider-doc hypothesis`, or `needs validation`. Keep `provider-dashboard aggregate` and `provider-usage-api aggregate` separate; make no causal claim without request/route correlation.
 
 Group output as **Confirmed findings** (code/config/telemetry evidence applicable to this path), **Hypotheses** (need usage logs, rendered payloads, route metrics, or provider docs), and **Not applicable** (generic advice ruled out by project context).
 
@@ -187,7 +187,7 @@ These scripts are tokenizer and billing approximations; provider usage and billi
 
 ### Script Transparency Rule
 
-Before running any bundled script, explain what each bundled script reads, writes, and whether it uses network. State why it is needed, whether it scans the whole repository or a targeted path, and the expected runtime class: seconds, tens of seconds, or minutes. Default to targeted scans for large repos or narrow questions. If a script may read secrets, environment files, generated artifacts, large logs, or production exports, say so and ask for approval unless the user already requested that exact scan. Bundled scripts do not send files to a network service.
+Before any bundled script, explain what each bundled script reads, writes, and whether it uses network; state why it is needed, targeted versus whole-repository scope, and runtime (seconds, tens of seconds, or minutes). Default to targeted scans. If it may read secrets, environment files, generated artifacts, large logs, or production exports, say so and ask approval unless that exact scan was requested. Bundled scripts do not send files to a network service.
 
 ## Freshness Gate
 
@@ -229,7 +229,7 @@ Use these starts after provider detection and Freshness Gate:
 - **Claude/Bedrock/OpenRouter writes without reads**: distinguish write/create from read/hit fields, then inspect breakpoint placement, dynamic content before it, TTL/retention, model/region/API support, fallback routing, and the routed provider/model.
 - **Gemini Interactions or managed session cache**: distinguish an explicit cache object from an opaque continuation handle (`previous_interaction_id`, `previous_response_id`), keep it inside the intended conversation, and normalize `total_cached_tokens` as inclusive before comparing routes.
 - **KV events, HiCache, or PD disaggregation**: separate prefix mismatch from eviction, tier transfer/offload, event delivery, and decode-side KV reuse. Compare TTFT/prefill and worker/tier metrics first.
-- **Dynamic tools in long agent loops**: compare `tools_count`, sorted tool-name hash, `prefix_hash`, mode state, and cache fields per step. Prefer stable route-level tool bundles, sorted schemas, provider allowed tools/tool search/deferred loading, or self-hosted masking.
+- **Dynamic tools in long agent loops**: inspect per-step tool/prefix hashes, mode, usage, and economics; for direct OpenAI Responses or Vercel use a version/model-verified allow-list with a stable catalog; Chat Completions/unsupported wrapper/endpoint needs wire proof.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and read/write pricing assumptions.
 - **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first.
 - **Self-hosted multi-replica miss**: inspect gateway/service routing, prefix-aware hashing, tokenizer/chat-template drift, `max_model_len`, KV block pressure, eviction, and route/replica hit metrics.
