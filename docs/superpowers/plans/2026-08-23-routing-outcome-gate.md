@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/plans/2026-08-23-routing-outcome-gate.md#design-contract`
 
-**Reviews:** Claude Opus 5, high effort, 2026-08-23 — historical `APPROVE WITH CHANGES`; the latest Opus xhigh review requested scoped safety and candidate-gate corrections, which are implemented in the current revision. No new behavioral run is claimed here.
+**Reviews:** Claude Opus 5, high effort, 2026-08-23 — historical `APPROVE WITH CHANGES`; the latest Opus xhigh review requested scoped safety and candidate-gate corrections, which are implemented in the current revision. The current HEAD behavioral GREEN is recorded in Task 8 below; this documentation update claims no additional behavioral run.
 
 ## Global Constraints
 
@@ -22,14 +22,14 @@
 - Не реализовывать P0-1: не добавлять upstream identity contract, credential-pool tracing, relay-hop audit или cross-tenant probes. Допустима одна защитная фраза в AP-7: ради hit rate нельзя расширять trust/isolation boundary без отдельной security/privacy проверки.
 - Не менять AP-9b, provider adapters, usage normalization, helper scripts или cache-plane model. Trigger surface не меняется, поэтому `evals/trigger_eval.json` не трогать, если RED не докажет отдельную trigger-регрессию.
 - Не дублировать полный outcome gate во всех references. Нормативное объяснение живёт в `references/mechanics.md`; остальные файлы дают короткую engine/workflow-specific ссылку и локальные проверки.
-- Superseded planning-base measurements were 5 850 estimated SKILL tokens / 5 852 invoked ceiling. The fetched-base ceiling was 6 010; the prior final correction measured 6 173 after two failed behavioral attempts. The latest safety/correctness and unknown-evidence clauses measure 6 297 tokens on the current HEAD; keep `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` equal to that measured ceiling and do not compress existing guidance to hide the delta.
-- The superseded planning-base deferred measurement was 41 238 tokens. The fetched-base deferred baseline at `origin/main`/`ec0d447` is 52 587 tokens; the prior review ceilings were 53 800 and then 54 100. The prior final correction measured 216 222 chars / 54 056 tokens; the current scoped gate correction measures 216 919 chars / 54 230 tokens, so this revision records a measured 54 275-token ceiling with explicit headroom.
+- Superseded planning-base measurements were 5 850 estimated SKILL tokens / 5 852 invoked ceiling. The fetched-base ceiling was 6 010; the prior final correction measured 6 173 after two failed behavioral attempts, and the first post-review correction measured 6 297. The current scoped unknown/applicability and verification wording measures 6 341 tokens; keep `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` equal to that measured ceiling and do not compress existing guidance to hide the delta.
+- The superseded planning-base deferred measurement was 41 238 tokens. The fetched-base deferred baseline at `origin/main`/`ec0d447` is 52 587 tokens; the prior review ceilings were 53 800, 54 100, and 54 275. The prior post-review correction measured 216 919 chars / 54 230 tokens; the current rollback, scope-note, and plan/spec wording measures 217 226 chars / 54 307 tokens, so this revision records a measured 54 350-token ceiling with explicit headroom.
 - Канонические anchors для cross-reference tests: `Routing Outcome Gate`, `matched-workload comparison`, `capacity at SLO`, `rewarm`. Не вводить конкурирующие названия `fixed-load comparison`, `matched-load` или `lifecycle test`.
 - Сохранить все существующие provider/eval cases и не расширять deferred references без необходимости.
 
 ### Review-round budget ruling
 
-The original deferred cap of `52,587 + 400 = 52,987` estimated tokens could not be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint added `1,573` characters, and restoring normal pretty `evals.json` formatting cost `1,032` characters (`13,142` → `14,174`). The prior reviewed result was `215,046` deferred characters / `53,762` estimated tokens with a `53,800` ceiling. After two behavioral failures, the always-loaded invariant, wider predeploy scope, neutral fixture, and sibling worked eval measured `216,222` / `54,056` deferred tokens and `24,690` / `6,173` SKILL tokens. The current review correction adds 697 deferred characters and 496 SKILL characters for scoped routing/safety wording: the measured result is `216,919` / `54,230` deferred tokens and `25,186` / `6,297` SKILL tokens. No pre-existing guidance was compressed or deleted; set measured ceilings of `54,275` deferred tokens and `6,297` invoked tokens.
+The original deferred cap of `52,587 + 400 = 52,987` estimated tokens could not be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint added `1,573` characters, and restoring normal pretty `evals.json` formatting cost `1,032` characters (`13,142` → `14,174`). The prior reviewed result was `215,046` deferred characters / `53,762` estimated tokens with a `53,800` ceiling. After two behavioral failures, the always-loaded invariant, wider predeploy scope, neutral fixture, and sibling worked eval measured `216,222` / `54,056` deferred tokens and `24,690` / `6,173` SKILL tokens. The first post-review correction added 697 deferred characters and 496 SKILL characters, measuring `216,919` / `54,230` deferred tokens and `25,186` / `6,297` SKILL tokens. The current correction adds 307 deferred characters and 178 SKILL characters for scoped unknown/applicability, rollback, scope-note, verification, and documentation wording: the measured result is `217,226` / `54,307` deferred tokens and `25,364` / `6,341` SKILL tokens. No pre-existing guidance was compressed or deleted; set measured ceilings of `54,350` deferred tokens and `6,341` invoked tokens.
 
 ---
 
@@ -47,8 +47,10 @@ Baseline — действующая production routing policy, какой бы �
 
 Cache hit rate, route affinity и cached-token share остаются mechanism metrics: они помогают понять, почему candidate ведёт себя иначе. Rollout проходит gate, только если candidate улучшает объявленную цель и не нарушает заранее заданные SLO/guardrails. Если вырос hit rate, но ухудшились tail latency, capacity, balance, errors или rewarm, routing change отклоняется или откатывается.
 
-### Три допустимых вердикта скилла
+### Допустимые вердикты скилла
 
+- **Change needed: no:** the Applicability Gate or `Not worth caching` contract is decisive, or evidenced performance/capacity/cost outcomes are healthy without a proposed routing/topology change.
+- **Change needed: unknown until <specific evidence>:** a no-change answer would rest on claimed outcome health, but outcome targets or evidence are absent; this branch does not override the Applicability Gate or `Not worth caching` decisive-no contract.
 - **Reject/rollback:** candidate нарушил заранее заданный SLO/guardrail, даже если hit rate вырос.
 - **Pilot/canary only:** видна гипотеза или mechanism improvement, но нет matched-workload comparison, capacity at SLO или rewarm evidence.
 - **Accept/roll out conditionally:** объявленная цель улучшилась, guardrails выдержаны, rollback trigger и наблюдаемость готовы.
@@ -379,10 +381,10 @@ Do not edit AP-9b.
 
 - [ ] **Step 3: Fix the predeploy blocker**
 
-Replace the blanket blocker «scale-out behind round robin without prefix-aware routing» with a symmetric blocker:
+Replace the blanket blocker «scale-out behind round robin without prefix-aware routing» with a symmetric routing/topology blocker. It applies to routing-policy or replica/KV-topology changes, including scale-out, when required comparison, capacity, rewarm, observability, rollback, or approved isolation evidence is absent, or when an unreviewed trust-boundary broadening is present. It does not block unchanged-policy continued operation, an unrelated release, or emergency rollback to a previously running policy; those exceptions do not apply to a new routing/topology change.
 
 ```text
-Any vLLM/SGLang routing-policy rollout, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger and unchanged isolation boundary.
+Any vLLM/SGLang routing-policy or replica/KV-topology change, including scale-out, cache-aware or cache-blind, is a blocker when it lacks a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger, or an approved isolation decision, or when it has an unreviewed trust-boundary broadening; use the Routing Outcome Gate. The blocker does not block unchanged-policy continued operation, an unrelated release, or emergency rollback to a previously running policy.
 ```
 
 Extend Minimum Release Evidence and Routing/KV triage with the outcome fields, but link back to the central gate instead of repeating its explanation.
@@ -581,14 +583,14 @@ Present the verified diff, before/after behavioral score, exact verification res
 ## Acceptance Criteria
 
 - AP-7 no longer says «sticky routing» is the fix or validates success from reads/TTFT alone.
-- Predeploy no longer blocks round robin merely because it is not prefix-aware; it blocks unmeasured routing-policy rollouts in either direction.
+- Predeploy no longer blocks round robin merely because it is not prefix-aware; it blocks unmeasured routing-policy or replica/KV-topology changes, including scale-out, in either direction.
 - The skill distinguishes matched-workload comparison, capacity at SLO and rewarm.
 - A higher hit rate with worse p99/capacity/queue/errors produces reject/rollback.
 - Missing outcome evidence produces pilot/canary-only, not rollout approval.
 - A candidate that improves the declared objective without violating guardrails may be accepted conditionally.
 - vLLM and SGLang references keep their engine-specific context but share one outcome contract.
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
-- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the superseding measured ceiling of 6 297; deferred estimate remains at or below the superseding measured ceiling of 54 275 tokens (recorded baseline 52 587, current measured 54 230, +1 643). The original +400 cap and prior 6 010/53 800/54 100 rulings are superseded by explicit post-failure and post-review measurements; no guidance is compressed to fund the correction.
+- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the superseding measured ceiling of 6 341; deferred estimate remains at or below the superseding measured ceiling of 54 350 tokens (recorded baseline 52 587, current measured 54 307, +1 720). The original +400 cap and prior 6 010/53 800/54 100/54 275 rulings are superseded by explicit post-failure and post-review measurements; no guidance is compressed to fund the correction.
 - No helper script or usage adapter changes are introduced.
 - Full verification passes, and the current six-case, three-runs-per-case run on `1f49af5` is GREEN: cases 1–6 are 3/3 decision-correct and all four anti-gaming holdouts are 3/3. The historical `d2292c3` run remains recorded separately; raw outputs/traces are outside the repository and are not externally auditable here.
 

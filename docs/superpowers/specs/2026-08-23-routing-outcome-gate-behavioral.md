@@ -72,7 +72,7 @@ Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdic
 
 ## Aggregate results
 
-| Case | Intended decision | Before correct | Before mechanism-only | Before outcome/gap | Before guardrails | Before isolation | After correct | After mechanism-only | After outcome/gap | After guardrails | After isolation |
+| Case | Intended decision | Before correct | Before mechanism-only | Before outcome/gap | Before guardrails | Before isolation | After — d2292c3 (historical) correct | After — d2292c3 (historical) mechanism-only | After — d2292c3 (historical) outcome/gap | After — d2292c3 (historical) guardrails | After — d2292c3 (historical) isolation |
 |---|---|---:|---:|---:|---|---|---:|---:|---:|---|---|
 | 1 | Evidence insufficient; canary/pilot only | 3/3 | 3/3 | 3/3 | complete | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |
 | 2 | Reject/rollback | 3/3 | 3/3 | 3/3 | partial | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |

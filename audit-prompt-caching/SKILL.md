@@ -136,7 +136,7 @@ Pick the smallest contract that answers the request:
 
 For project-change questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>` when a single answer is accurate. If change types differ, split the answer into `Measurement change`, `Prompt behavior change`, `Provider/routing change`, `Confidence`, `Do first`, and `Do not do yet`.
 
-Evidence requirements gate proposed changes. For performance, capacity, and cost outcomes only, when the current configuration meets its stated SLOs, targets, and budgets, answer `Change needed: no`; this is not a finding, warning, or precondition for those dimensions. Healthy outcomes do not waive isolation, privacy/ZDR, data residency, provider correctness, or explicit compliance review. If outcome targets or evidence are absent, answer `Change needed: unknown until <specific evidence>`, not no. A defect needs a measured outcome gap, not an implementation name. A cited policy, checklist, standard, or ticket is an intent claim, not measurement; for a non-outcome or safety rule, do not discard it: escalate or verify its authority and rationale, and restate an implementation-name rule as an outcome condition only when technically appropriate. Do not manufacture a canary, pilot, shadow, or measurement campaign solely to satisfy an implementation-name rule. For a proposed routing or replica/KV-topology change, load `references/mechanics.md` and apply the Routing Outcome Gate.
+Evidence requirements gate proposed changes. For performance, capacity, and cost outcomes only, when the current configuration meets its stated SLOs, targets, and budgets, answer `Change needed: no`; this is not a finding, warning, or precondition for those dimensions. Healthy outcomes do not waive isolation, privacy/ZDR, data residency, provider correctness, or explicit compliance review. When a no-change answer rests on claimed outcome health and its outcome targets or evidence are absent, answer `Change needed: unknown until <specific evidence>`, not no; this does not override the Applicability Gate or the `Not worth caching` decisive-no contract. A defect needs a measured outcome gap, not an implementation name. A cited policy, checklist, standard, or ticket is an intent claim, not measurement; for a non-outcome or safety rule, do not discard it: escalate or verify its authority and rationale, and restate an implementation-name rule as an outcome condition only when technically appropriate. Do not manufacture a canary, pilot, shadow, or measurement campaign solely to satisfy an implementation-name rule. For a proposed routing or replica/KV-topology change, load `references/mechanics.md` and apply the Routing Outcome Gate.
 
 ## Evidence-Bearing Findings
 
@@ -289,7 +289,7 @@ Before finalizing:
 
 ## Verification
 
-Do not claim a fix works until one holds:
+Do not claim a fix works until the matching scoped check holds:
 - Prefix fixes: the rendered cacheable prefix fingerprint is unchanged across users, timestamps, and queries.
 - Provider fixes: repeated calls show cache-read/cached-token fields increasing per the provider reference.
 - Routing changes: apply the full `Routing Outcome Gate` in `references/mechanics.md`; self-hosted non-routing fixes: prefix-hit/KV-pressure improves under a representative workload.

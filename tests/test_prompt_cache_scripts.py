@@ -24,10 +24,10 @@ FIXTURES = ROOT / "fixtures"
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # Restoring the operational prompt-segment classification and the truthful
 # Combined vLLM geometry, dynamic-tool evidence, safety carve-outs, and
-# no-change contracts measure 6297 tokens.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6297
-# Review-round ceiling after the scoped routing gate and safety epistemics.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 54275
+# scoped no-change contracts measure 6341 tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6341
+# Review-round ceiling after the scoped routing gate and rollback safety wording.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 54350
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -3977,7 +3977,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         blockers = extract_markdown_section(predeploy, "blockers")
         routing_scope = next(
             line for line in blockers.splitlines()
-            if "does not by itself require" in line
+            if "scope note:" in line
         )
         for required in (
             "routing-policy",
@@ -3998,14 +3998,17 @@ class PromptCacheScriptsTest(unittest.TestCase):
             if "routing-policy or replica/kv-topology change" in line
         )
         self.assertIn("scale-out", routing_blocker)
+        self.assertIn("is a blocker when", routing_blocker)
         self.assertIn("unreviewed trust-boundary broadening", routing_blocker)
+        self.assertNotIn("and no unreviewed trust-boundary broadening", routing_blocker)
         self.assertIn("other blockers here", routing_scope)
         self.assertIn("still apply", routing_scope)
         self.assertIn("remains a candidate", routing_scope)
         self.assertRegex(
             routing_scope,
-            r"unchanged routing policy.*continued operation.*unrelated release.*emergency rollback",
+            r"continued operation.*unrelated release.*unchanged routing policy.*emergency rollback to a previously running policy",
         )
+        self.assertIn("does not block", routing_scope)
 
         self.assertEqual(
             rule_map["AP-9b"],
@@ -4040,12 +4043,18 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertIn(required.lower(), gate.lower())
         self.assertRegex(
             gate.lower(),
-            r"performance.*capacity.*cost.*outcomes.*met.*no separate safety or correctness review",
+            r"performance.*capacity.*cost.*outcomes.*met.*no unresolved safety or correctness concern",
         )
+        self.assertIn("no unresolved safety or correctness concern", gate.lower())
+        self.assertNotIn("no separate safety or correctness review is pending", gate.lower())
         self.assertIn("may be no-change", gate.lower())
         self.assertRegex(
             gate.lower(),
             r"for unchanged continued operation or an unrelated release.*may be no-change",
+        )
+        self.assertRegex(
+            gate.lower(),
+            r"emergency rollback to a previously running policy.*not a candidate|emergency rollback to a previously running policy.*may proceed",
         )
         self.assertRegex(
             gate.lower(),
@@ -4146,7 +4155,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
             with self.subTest(always_loaded_anchor=required):
                 self.assertIn(required, skill)
 
-        contract_lower = skill.lower()
+        section = extract_markdown_section(skill, "Agent-First Output Contracts")
+        contract_lower = section.lower()
         for required in (
             "performance",
             "capacity",
@@ -4171,19 +4181,30 @@ class PromptCacheScriptsTest(unittest.TestCase):
         )
         self.assertRegex(
             contract_lower,
-            r"if outcome targets or evidence are absent.*change needed: unknown until.*not no",
+            r"when a no-change answer rests on claimed.*outcome health.*outcome targets or evidence are absent.*change needed: unknown until.*not no",
+        )
+        self.assertRegex(
+            contract_lower,
+            r"this does not override.*applicability gate.*not worth caching",
         )
         self.assertRegex(
             contract_lower,
             r"routing or replica/kv-topology change.*references/mechanics\.md",
         )
 
-        section = extract_markdown_section(skill, "Agent-First Output Contracts")
         self.assertIn("Evidence requirements gate proposed changes", section)
         self.assertLess(
             skill.index("Evidence requirements gate proposed changes"),
             skill.index("## Evidence-Bearing Findings"),
         )
+
+        package = ROOT / "audit-prompt-caching"
+        package_text = "\n".join(
+            path.read_text()
+            for path in package.rglob("*")
+            if path.is_file() and path.suffix in {".md", ".json"}
+        ).lower()
+        self.assertNotIn("round robin without prefix-aware routing", package_text)
 
         fixture = json.loads((FIXTURES / "vllm" / "apc_deployment.json").read_text())
         self.assertIn("outcome", fixture["expected_issue"].lower())
@@ -4193,6 +4214,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         skill = self.skill_text()
         verification = extract_markdown_section(skill, "Verification").lower()
 
+        self.assertIn("until the matching scoped check holds", verification)
         self.assertRegex(
             verification,
             r"routing.*full.*routing outcome gate|routing.*routing outcome gate.*not.*prefix-hit",
@@ -4879,7 +4901,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6297,
+            6341,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(
