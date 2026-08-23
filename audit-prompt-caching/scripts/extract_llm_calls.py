@@ -140,82 +140,199 @@ VLLM_SIGNAL_LABELS = {
 }
 
 
-# Keep identifier components bounded.  The previous ``[A-Z0-9_-]*`` prefix
-# could retry every possible split of a long non-match, making extraction
-# quadratic.  A credential name can still have up to 64 bounded components on
-# either side of its sensitive component, which covers deployment identifiers
-# without permitting an unbounded regex search.
-SENSITIVE_NAME_COMPONENT = r"[A-Z0-9]{1,64}"
-SENSITIVE_NAME_PREFIX = rf"(?:{SENSITIVE_NAME_COMPONENT}[_-]){{0,64}}"
-SENSITIVE_NAME_TRAILING = rf"(?:[_-]{SENSITIVE_NAME_COMPONENT}){{0,64}}"
-SENSITIVE_NAME_CORE = (
-    r"(?:PYTHONHASHSEED|"
-    r"API[_-]?KEY|API[_-]?TOKENS?|"
-    r"ACCESS[_-]?KEY|PRIVATE[_-]?KEY|"
-    r"SALT|SEED|TOKEN(?:S)?|SECRET(?:S)?|PASSWORD(?:S)?|CREDENTIAL(?:S)?)"
+# Keep the syntax matcher generic and bounded.  Credential semantics are
+# classified in Python below, so adding a new casing or separator does not
+# require another overlapping keyword regex.  The key component bound also
+# keeps the scanner's worst-case work linear on arbitrary source lines.
+IDENTIFIER_KEY_PATTERN = re.compile(
+    r"""
+    (?<![A-Za-z0-9_])
+    (?:(?:"(?P<double_key>[A-Za-z0-9][A-Za-z0-9_-]{0,127})")
+      |(?:'(?P<single_key>[A-Za-z0-9][A-Za-z0-9_-]{0,127})')
+      |(?P<plain_key>[A-Za-z0-9][A-Za-z0-9_-]{0,127}))
+    \s*[:=]\s*
+    """,
+    re.VERBOSE,
 )
-SENSITIVE_ASSIGNMENT_NAME = (
-    rf"{SENSITIVE_NAME_PREFIX}{SENSITIVE_NAME_CORE}{SENSITIVE_NAME_TRAILING}"
+OPTION_KEY_PATTERN = re.compile(
+    r"""
+    (?<![A-Za-z0-9_])--(?P<option>[A-Za-z0-9][A-Za-z0-9_-]{0,127})
+    (?:(?:=\s*)|(?:\s+))
+    """,
+    re.VERBOSE,
 )
-SENSITIVE_OPTION_NAME = SENSITIVE_ASSIGNMENT_NAME
+CURL_USER_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_-])(?:-u|--user)(?:(?:=\s*)|(?:\s+))"
+)
 
-# These are ordinary request/usage fields, not credentials.  The matcher
-# deliberately recognizes TOKEN as a bounded component so names such as
-# API_TOKENS are covered, then leaves these well-known non-secret fields alone.
-NON_CREDENTIAL_NAMES = {
-    "INPUT_TOKENS",
-    "MAX_TOKENS",
-    "OUTPUT_TOKENS",
-    "TOKEN_COUNT",
+VALUE_STOP_CHARS = frozenset('"\'`,;)}]')
+STRUCTURAL_VALUE_STOP_CHARS = frozenset(",;)}]")
+SCHEME_NAMES = frozenset({"basic", "bearer", "token"})
+CAMEL_BOUNDARY_PATTERN = re.compile(r"([a-z0-9])([A-Z])")
+ACRONYM_BOUNDARY_PATTERN = re.compile(r"([A-Z]+)([A-Z][a-z])")
+IDENTIFIER_WORD_PATTERN = re.compile(r"[A-Za-z0-9]+")
+SCHEME_PREFIX_PATTERN = re.compile(
+    r"^(?P<scheme>Bearer|Basic|Token)\s+(?P<credential>\S+)$",
+    re.IGNORECASE,
+)
+PLURAL_STEMS = {
+    "authorizations": "authorization",
+    "credentials": "credential",
+    "keys": "key",
+    "passwords": "password",
+    "salts": "salt",
+    "secrets": "secret",
+    "seeds": "seed",
+    "tokens": "token",
 }
-
-
-SENSITIVE_ASSIGNMENT_PATTERNS = (
-    re.compile(
-        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?(?P<name>{SENSITIVE_ASSIGNMENT_NAME})["']?\]?\s*[:=]\s*)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
-    ),
-    re.compile(
-        rf"""(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?(?P<name>{SENSITIVE_ASSIGNMENT_NAME})["']?\]?\s*[:=]\s*)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
-    ),
-    re.compile(
-        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?(?P<name>{SENSITIVE_ASSIGNMENT_NAME})["']?\]?\s*[:=]\s*)(?P<value>[^\s"'`,;]+)'''
-    ),
-    re.compile(
-        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])--(?P<option>{SENSITIVE_OPTION_NAME})\s+)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
-    ),
-    re.compile(
-        rf"""(?ix)(?P<prefix>(?<![A-Za-z0-9_])--(?P<option>{SENSITIVE_OPTION_NAME})\s+)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
-    ),
-    re.compile(
-        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])--(?P<option>{SENSITIVE_OPTION_NAME})\s+)(?P<value>[^\s"'`,;]+)'''
-    ),
+SENSITIVE_QUALIFIERS = frozenset(
+    {"access", "api", "auth", "bearer", "hf", "hub", "pat", "refresh", "service", "session", "vault"}
 )
 
-AUTHORIZATION_HEADER_PATTERN = re.compile(
-    r'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?authorization["']?\s*:\s*["']?(?:bearer|basic)\s+)(?P<value>[^\s"'`,;]+)'''
-)
+
+def split_identifier_words(identifier):
+    """Split snake/kebab/mixed-case keys into lowercase semantic words."""
+    expanded = CAMEL_BOUNDARY_PATTERN.sub(r"\1_\2", identifier)
+    expanded = ACRONYM_BOUNDARY_PATTERN.sub(r"\1_\2", expanded)
+    words = []
+    for word in IDENTIFIER_WORD_PATTERN.findall(expanded):
+        words.append(PLURAL_STEMS.get(word.lower(), word.lower()))
+    return words
+
+
+def is_sensitive_key(identifier):
+    """Classify a parsed key without treating ordinary token counts as secrets."""
+    words = split_identifier_words(identifier)
+    word_set = set(words)
+    if not words:
+        return False
+    compact_identifier = re.sub(r"[^a-z0-9]", "", identifier.lower())
+    if "salt" in compact_identifier or "seed" in compact_identifier:
+        return True
+    if word_set.intersection({"salt", "seed", "secret", "password", "credential"}):
+        return True
+    if "authorization" in word_set:
+        return True
+    if "key" in word_set and word_set.intersection({"access", "api", "private"}):
+        return True
+    return "token" in word_set and bool(word_set.intersection(SENSITIVE_QUALIFIERS))
+
+
+def _key_from_match(match):
+    return (
+        match.groupdict().get("double_key")
+        or match.groupdict().get("single_key")
+        or match.groupdict().get("plain_key")
+        or match.groupdict().get("option")
+    )
+
+
+def _consume_token(text, start):
+    index = start
+    while index < len(text) and not text[index].isspace() and text[index] not in VALUE_STOP_CHARS:
+        index += 1
+    return index
+
+
+def _scheme_name(value):
+    match = SCHEME_PREFIX_PATTERN.match(value)
+    return match.group("scheme") if match else None
+
+
+def _consume_value(text, start, allow_equals=False):
+    """Return a bounded source value span, including a complete scheme value."""
+    index = start
+    while index < len(text) and text[index].isspace():
+        index += 1
+    if allow_equals and index < len(text) and text[index] == "=":
+        index += 1
+        while index < len(text) and text[index].isspace():
+            index += 1
+    if index >= len(text) or text[index] in STRUCTURAL_VALUE_STOP_CHARS:
+        return None
+
+    quote = text[index] if text[index] in {'"', "'"} else ""
+    if quote:
+        value_start = index
+        index += 1
+        while index < len(text):
+            if text[index] == "\\":
+                index += 2
+                continue
+            if text[index] == quote:
+                value_end = index + 1
+                inner = text[value_start + 1 : index]
+                return value_start, value_end, quote, _scheme_name(inner)
+            index += 1
+        inner = text[value_start + 1 :]
+        return value_start, len(text), quote, _scheme_name(inner)
+
+    value_start = index
+    first_end = _consume_token(text, index)
+    if first_end == value_start:
+        return None
+    first = text[value_start:first_end]
+    if first.lower() in SCHEME_NAMES:
+        second_start = first_end
+        while second_start < len(text) and text[second_start].isspace():
+            second_start += 1
+        second_end = _consume_token(text, second_start)
+        if second_end > second_start:
+            return value_start, second_end, "", first
+    return value_start, first_end, "", None
+
+
+def _redacted_value(text, value_info):
+    value_start, value_end, quote, scheme = value_info
+    raw_value = text[value_start:value_end]
+    closing_quote = quote if quote and raw_value.endswith(quote) else ""
+    if quote:
+        if scheme:
+            return f"{quote}{scheme} [REDACTED_SECRET]{closing_quote}"
+        return f"{quote}[REDACTED_SECRET]{closing_quote}"
+    if scheme:
+        return f"{scheme} [REDACTED_SECRET]"
+    return "[REDACTED_SECRET]"
 
 
 def redact_sensitive_text(text):
-    """Redact sensitive assignment/option values before emitting snippets."""
-    for pattern in SENSITIVE_ASSIGNMENT_PATTERNS:
-        def replace_assignment(match):
-            candidate = match.groupdict().get("name") or match.groupdict().get("option")
-            normalized = candidate.upper().replace("-", "_") if candidate else ""
-            if normalized in NON_CREDENTIAL_NAMES:
-                return match.group(0)
-            quote = match.groupdict().get("quote", "")
-            return (
-                f"{match.group('prefix')}"
-                f"{quote}[REDACTED_SECRET]{quote}"
-            )
-
-        text = pattern.sub(replace_assignment, text)
-    text = AUTHORIZATION_HEADER_PATTERN.sub(
-        lambda match: f"{match.group('prefix')}[REDACTED_SECRET]",
-        text,
+    """Redact classified assignment, option, header, and curl credential values."""
+    events = []
+    for match in IDENTIFIER_KEY_PATTERN.finditer(text):
+        events.append((match.start(), match.end(), "assignment", _key_from_match(match)))
+    for match in OPTION_KEY_PATTERN.finditer(text):
+        events.append((match.start(), match.end(), "option", _key_from_match(match)))
+    for match in CURL_USER_PATTERN.finditer(text):
+        events.append((match.start(), match.end(), "curl-user", None))
+    events.sort(
+        key=lambda event: (
+            event[0],
+            {"curl-user": 0, "option": 1, "assignment": 2}[event[2]],
+            -(event[1] - event[0]),
+        )
     )
-    return text
+
+    output = []
+    cursor = 0
+    for start, end, kind, key in events:
+        if start < cursor:
+            continue
+        sensitive = kind == "curl-user" or is_sensitive_key(key or "")
+        value_info = _consume_value(text, end, allow_equals=kind == "option")
+        if value_info is None:
+            output.append(text[cursor:end])
+            cursor = end
+            continue
+        value_start, value_end, _, _ = value_info
+        if sensitive:
+            output.append(text[cursor:value_start])
+            output.append(_redacted_value(text, value_info))
+            cursor = value_end
+        else:
+            output.append(text[cursor:end])
+            cursor = end
+    output.append(text[cursor:])
+    return "".join(output)
 
 
 def should_scan(path):
@@ -227,6 +344,9 @@ def should_scan(path):
 
 
 def iter_files(root):
+    root = Path(root)
+    if any(part.startswith(".env") or part in SKIP_DIRS for part in root.parts):
+        return
     for current, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(
             dirname

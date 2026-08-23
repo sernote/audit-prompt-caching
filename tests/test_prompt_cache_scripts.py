@@ -2509,6 +2509,157 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("Basic", result.stdout)
         self.assertIn("vllm", result.stdout)
 
+    def test_extract_llm_calls_redacts_generated_credential_cross_product(self):
+        module = load_script_module("extract_llm_calls.py")
+
+        def render_name(parts, casing):
+            if casing == "snake":
+                return "_".join(parts)
+            if casing == "upper":
+                return "_".join(parts).upper()
+            if casing == "kebab":
+                return "-".join(parts)
+            return parts[0] + "".join(part.title() for part in parts[1:])
+
+        name_shapes = (
+            ("auth", "token"),
+            ("token", "service"),
+            ("client", "secret"),
+            ("secret", "client"),
+            ("openai", "api", "key"),
+            ("api", "key", "file"),
+            ("cache", "salt"),
+            ("google", "application", "credential"),
+            ("proxy", "authorization"),
+        )
+        plural_forms = {
+            "token": "tokens",
+            "secret": "secrets",
+            "credential": "credentials",
+            "key": "keys",
+            "salt": "salts",
+            "authorization": "authorizations",
+        }
+        file_specs = (
+            ("serve.ts", "openrouter"),
+            ("manifest.json", "openrouter"),
+            ("serve.sh", "vllm"),
+        )
+        all_sentinels = set()
+        lines_by_file = {filename: [] for filename, _ in file_specs}
+        serial = 0
+        for filename, provider_signal in file_specs:
+            for shape in name_shapes:
+                for plural in (False, True):
+                    parts = list(shape)
+                    if plural and parts[-1] in plural_forms:
+                        parts[-1] = plural_forms[parts[-1]]
+                    for casing in ("snake", "upper", "kebab", "camel"):
+                        key = render_name(parts, casing)
+                        for separator in ("=", ":"):
+                            for quote in ("", "'", '"'):
+                                for scheme in (None, "Bearer", "Basic", "Token"):
+                                    sentinel = f"cross-secret-{serial:04d}"
+                                    serial += 1
+                                    all_sentinels.add(sentinel)
+                                    raw_value = sentinel
+                                    if scheme:
+                                        raw_value = f"{scheme} {raw_value}"
+                                    value = f"{quote}{raw_value}{quote}"
+                                    if filename == "manifest.json":
+                                        key_expression = f'"{key}"'
+                                        line = (
+                                            f'{{"provider": "{provider_signal}", '
+                                            f"{key_expression}{separator}{value}}}"
+                                        )
+                                    elif filename == "serve.ts":
+                                        line = (
+                                            f"const config = {{{key}{separator}{value}}}; "
+                                            f"{provider_signal}"
+                                        )
+                                    else:
+                                        line = (
+                                            f"{key}{separator}{value} "
+                                            f"{provider_signal} serve model"
+                                        )
+                                    lines_by_file[filename].append(line)
+
+        lines_by_file["serve.sh"].extend(
+            [
+                "curl -H 'Authorization: Token header-token-sentinel' vllm",
+                'curl -H "Proxy-Authorization: Basic proxy-header-sentinel" vllm',
+                'curl -H "X-Auth-Token: Bearer x-auth-header-sentinel" vllm',
+                'curl -H "X-Api-Key: api-header-sentinel" vllm',
+                'curl -u "curl-user:curl-password-sentinel" vllm',
+                "curl --user curl-user:curl-password-sentinel vllm",
+                "vllm --api-key Bearer option-scheme-sentinel",
+                "vllm --private-key Basic private-option-sentinel",
+                "vllm --auth-token Token auth-option-sentinel",
+            ]
+        )
+        all_sentinels.update(
+            {
+                "header-token-sentinel",
+                "proxy-header-sentinel",
+                "x-auth-header-sentinel",
+                "api-header-sentinel",
+                "curl-password-sentinel",
+                "curl-user:curl-password-sentinel",
+                "option-scheme-sentinel",
+                "private-option-sentinel",
+                "auth-option-sentinel",
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for filename, lines in lines_by_file.items():
+                (tmp_path / filename).write_text("\n".join(lines) + "\n")
+
+            output = module.find_matches(tmp_path)
+            rendered = json.dumps(output, ensure_ascii=False)
+
+        for sentinel in all_sentinels:
+            self.assertNotIn(sentinel, rendered)
+        self.assertIn("Authorization", rendered)
+        self.assertIn("Proxy-Authorization", rendered)
+        self.assertIn("X-Auth-Token", rendered)
+        self.assertIn("Bearer", rendered)
+        self.assertIn("Basic", rendered)
+        self.assertIn("Token", rendered)
+        self.assertIn("vllm", rendered)
+
+    def test_extract_llm_calls_round_trips_usage_evidence_byte_identically(self):
+        module = load_script_module("extract_llm_calls.py")
+        evidence_samples = (
+            '{"prompt_tokens":1024,"completion_tokens":32,"total_tokens":1056,'
+            '"cached_tokens":512,"cache_read_input_tokens":256,'
+            '"cache_creation_input_tokens":128,"prompt_cache_hit_tokens":64,'
+            '"max_output_tokens":2048,"prompt_cache_key":"stable-prefix-v1"}',
+            "usage = {'prompt_tokens': 1024, 'completion_tokens': 32, "
+            "'total_tokens': 1056, 'cached_tokens': 512, "
+            "'cache_read_input_tokens': 256, 'cache_creation_input_tokens': 128, "
+            "'prompt_cache_hit_tokens': 64, 'max_new_tokens': 256, "
+            "'prompt_cache_key': 'stable-prefix-v1'}",
+            "vllm serve model --max-num-batched-tokens 8192 "
+            "--max-output-tokens 2048 --max-completion-tokens 1024 "
+            "prompt_cache_key=stable-prefix-v1",
+        )
+        for evidence in evidence_samples:
+            with self.subTest(evidence=evidence):
+                self.assertEqual(module.redact_sensitive_text(evidence), evidence)
+
+    def test_extract_llm_calls_redaction_runtime_is_bounded_directly(self):
+        module = load_script_module("extract_llm_calls.py")
+        long_line = "vllm " + ("A-" * 20000)
+
+        started = time.monotonic()
+        redacted = module.redact_sensitive_text(long_line)
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 2.0, f"direct redaction took {elapsed:.3f}s")
+        self.assertEqual(redacted, long_line)
+
     def test_extract_llm_calls_preserves_noncredential_cache_and_token_names(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2589,6 +2740,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ):
             self.assertNotIn(env_name, scanned_paths)
         self.assertNotIn("dotenv-secret", result.stdout)
+
+    def test_extract_llm_calls_excludes_dotenv_root_target(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            env_root = Path(tmp) / ".env.d"
+            env_root.mkdir()
+            (env_root / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            output = module.find_matches(env_root)
+
+        self.assertEqual(output["files_scanned"], 0)
+        self.assertEqual(output["matches"], 0)
 
     def test_skill_frontmatter_description_is_yaml_safe_and_retains_trigger_terms(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
