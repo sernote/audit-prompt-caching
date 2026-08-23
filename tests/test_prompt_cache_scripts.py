@@ -23,8 +23,8 @@ FIXTURES = ROOT / "fixtures"
 # provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # Restoring the operational prompt-segment classification and the truthful
-# lexical-locator policy raises the baseline only to the measured 5979 tokens.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5979
+# Combined vLLM geometry and dynamic-tool evidence contracts measure 6010 tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6010
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -4581,7 +4581,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            5979,
+            6010,
             "the whole-skill baseline must equal the measured restored content",
         )
         self.assertLessEqual(
