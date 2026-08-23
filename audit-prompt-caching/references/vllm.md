@@ -189,7 +189,7 @@ vLLM Automatic Prefix Caching reuses KV blocks for identical token prefixes. Vis
 - Treat per-request `cache_salt` as intentional isolation that fragments reuse; choose the coarsest safe trust boundary.
 - Do not force APC on unique prompts without measuring prefix hit metrics.
 - Newer vLLM deployments can emit KV-cache events and use KV transfer/offload
-  connectors. Inspect `--enable-kv-cache-events`, `kv_transfer_config`, and
+  connectors. Inspect `--kv-events-config`, `kv_transfer_config`, and
   `kv_connector` before attributing a TTFT regression only to prompt drift:
   transfer, offload, or event loss can explain a cold-looking request.
 

@@ -2305,6 +2305,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 "VLLM_KV_CACHE_EVENTS=0\n"
                 "VLLM_PREFIX_CACHING_HASH_ALGO=sha256\n"
             )
+            (tmp_path / "stale-flag.sh").write_text(
+                "--enable-kv-cache-events\n"
+            )
             (tmp_path / "real-config.yaml").write_text(
                 "enable_prefix_caching: true\n"
                 "enable_kv_cache_events: true\n"
@@ -2314,7 +2317,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             )
             (tmp_path / "serve.sh").write_text(
                 "vllm serve model --enable-prefix-caching "
-                "--no-enable-prefix-caching --enable-kv-cache-events "
+                "--no-enable-prefix-caching --kv-events-config config.json "
                 "--prefix-caching-hash-algo sha256 "
                 "--prefix-cache-retention-interval 300\n"
             )
@@ -2323,7 +2326,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         unknown = [
             finding
             for finding in output["findings"]
-            if finding["path"] == "unknown-env.yaml"
+            if finding["path"] in {"unknown-env.yaml", "stale-flag.sh"}
         ]
         self.assertEqual(unknown, [])
         by_path = {
@@ -2351,20 +2354,13 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 "vllm",
                 "--enable-prefix-caching",
                 "--no-enable-prefix-caching",
-                "--enable-kv-cache-events",
+                "--kv-events-config",
                 "--prefix-caching-hash-algo",
                 "--prefix-cache-retention-interval",
             },
         )
         for pattern, label in module.SIGNAL_LABELS.items():
-            if pattern in module.PROVIDER_PATTERNS["vllm"] and label not in {
-                "vllm",
-                "kv_cache_events",
-                "kv_transfer_config",
-                "kv_connector",
-                "LMCacheConnector",
-                "AsyncLLMEngine",
-            }:
+            if pattern in module.PROVIDER_PATTERNS["vllm"]:
                 token = label[2:] if label.startswith("--") else label
                 self.assertIn(
                     token,
@@ -2374,6 +2370,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
     def test_extract_llm_calls_signal_labels_cover_patterns_without_regex_source(self):
         module = load_script_module("extract_llm_calls.py")
+        self.assertFalse(hasattr(module, "VLLM_SIGNAL_LABELS"))
         patterns = {
             pattern
             for provider_patterns in module.PROVIDER_PATTERNS.values()
@@ -2486,7 +2483,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
         for document in documents:
             document = " ".join(document.split())
             self.assertNotIn("closed signal/value allow-lists", document)
-            self.assertNotIn("bare boolean flag means", document)
+            self.assertNotIn("allow-listed vLLM values", document)
+            self.assertNotRegex(document, r"bare boolean flags? mean")
 
     def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2540,7 +2538,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             (tmp_path / "compose.yaml").write_text(
                 "\n".join(
                     [
-                        "command: vllm serve model --enable-kv-cache-events",
+                        "command: vllm serve model --kv-events-config config.json",
                         "kv_transfer_config: {kv_connector: LMCacheConnectorV1}",
                         "command: sglang.launch_server --enable-hierarchical-cache",
                         "hicache_storage_backend: disk",
@@ -2941,6 +2939,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
         observability = (root / "references" / "observability.md").read_text()
         report = (root / "references" / "report-template.md").read_text()
         rules = json.loads((root / "references" / "rules.json").read_text())
+
+        self.assertIn("--kv-events-config", vllm)
+        self.assertNotIn("--enable-kv-cache-events", vllm)
 
         for required in (
             "Version and capability gate",

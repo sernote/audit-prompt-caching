@@ -101,7 +101,7 @@ PROVIDER_PATTERNS = {
         r"\bvllm\b",
         r"(^|[^A-Za-z0-9_])--no-enable-prefix-caching($|[^A-Za-z0-9_-])",
         r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])",
-        r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])",
+        r"(^|[^A-Za-z0-9_])--kv-events-config($|[^A-Za-z0-9_-])",
         r"(^|[^A-Za-z0-9_])--prefix-cache-retention-interval($|[^A-Za-z0-9_-])",
         r"\bprefix_cache_retention_interval\b",
         r"\bVLLM_PREFIX_CACHE_RETENTION_INTERVAL\b",
@@ -173,7 +173,7 @@ SIGNAL_LABELS = {
     r"\bvllm\b": "vllm",
     r"(^|[^A-Za-z0-9_])--no-enable-prefix-caching($|[^A-Za-z0-9_-])": "--no-enable-prefix-caching",
     r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])": "--enable-prefix-caching",
-    r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])": "--enable-kv-cache-events",
+    r"(^|[^A-Za-z0-9_])--kv-events-config($|[^A-Za-z0-9_-])": "--kv-events-config",
     r"(^|[^A-Za-z0-9_])--prefix-cache-retention-interval($|[^A-Za-z0-9_-])": "--prefix-cache-retention-interval",
     r"\bprefix_cache_retention_interval\b": "prefix_cache_retention_interval",
     r"\bVLLM_PREFIX_CACHE_RETENTION_INTERVAL\b": "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
@@ -207,11 +207,6 @@ SIGNAL_LABELS = {
     r"\bbailian\b": "bailian",
 }
 
-VLLM_SIGNAL_LABELS = {
-    pattern: SIGNAL_LABELS[pattern]
-    for pattern in PROVIDER_PATTERNS["vllm"]
-}
-
 LEGACY_PATTERN_ALIASES = {
     r"\bCacheReadInputTokens\b": r"\bCache(Read|Write)InputTokens\b",
     r"\bCacheWriteInputTokens\b": r"\bCache(Read|Write)InputTokens\b",
@@ -228,6 +223,7 @@ LEGACY_PATTERN_ALIASES = {
 
 SOURCE_SNIPPET_POLICY = "elided"
 SOURCE_SNIPPET_TEXT = "[SOURCE_SNIPPET_ELIDED]"
+
 
 def should_scan(path):
     if path.name.startswith(".env"):
