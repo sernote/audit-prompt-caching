@@ -18,9 +18,9 @@ Use this skill for LLM calls where repeated prompt prefixes may affect cost,
 TTFT, prefill latency, or self-hosted KV reuse. Typical triggers:
 
 - `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, writes without reads, or unclear usage fields; GPT-5.6 `prompt_cache_options`/`prompt_cache_breakpoint`; or migration from `prompt_cache_retention`.
-- Cache hit rate, TTFT, prefill latency, or input-token cost changed; LLM cost or speed regressed around repeated long prompts, shared context, long agents, or tool loops.
+- Cache hit rate, TTFT, prefill latency, or input-token cost changed; LLM cost or speed regressed around repeated long prompts, shared context, long agents, or tool loops, or a reported hit rate is not trusted.
 - LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter: inspect prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loops, or context compaction.
-- Long system prompts, tool catalogs, schemas, static documents, few-shot/RAG context, provider cache APIs, or vLLM/SGLang multi-replica KV deployments (including `vllm bench serve`, `prefix_repetition`, and `benchmark_prefix_caching.py`).
+- Long system prompts, tool catalogs, schemas, static documents, few-shot/RAG context, provider cache APIs, or vLLM/SGLang multi-replica KV deployments with KV pressure, tokenizer/chat-template drift, cache salts, or APC benchmarks such as `vllm bench serve`, `prefix_repetition`, and `benchmark_prefix_caching.py`.
 
 ## When not to use
 
@@ -211,7 +211,7 @@ If detection is ambiguous, ask which provider/engine is in use.
 1. Detect mode, provider/engine, cache planes, and scenario; load matching references and apply the Freshness Gate.
 2. Run the Project Context and Applicability Gates, then scan code/config with `scripts/extract_llm_calls.py` when deterministic evidence helps.
 3. Inspect provider calls, prompt builders, cache controls, SDK parameters, env defaults, gateway/router, Compose/Kubernetes/Helm, engine flags, and replica topology.
-4. Map prompt structure and ask for logs, rendered pairs, traces, or billing only where they confirm a finding, compare prefixes, calculate ROI, or correlate an incident.
+4. Map prompt structure in order: tools, schemas, system/developer instructions, examples, static documents, retrieved context, history, user data, volatile values; mark each segment static, semi-static, dynamic, or volatile. Ask for usage logs, rendered payload pairs, traces, or billing only where they confirm a finding, compare prefixes, calculate ROI, or correlate an incident.
 5. Apply the Usage Evidence Contract and measure reads/writes, TTFT/prefill, decode, route/replica, deploy, and agent-step effects; for agents include `prefix_hash`, `tools_count`, hashes, output, streaming, compaction, and routed provider/model.
 6. Apply `references/rules.json`; report evidence type, confidence, impact condition, safe action, fix, validation, and `do_not_do_yet` plus the Clinic Summary.
 7. For vLLM, verify version/SHA and feature surface before retention; audit per-group geometry, `scheduler_block_size`, tier, and hash compatibility, keeping retention/geometry, cross-process hash, and `cache_salt` isolation distinct.

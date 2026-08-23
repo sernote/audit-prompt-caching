@@ -114,12 +114,17 @@ size. Record all values before accepting a positive interval.
 Hash compatibility and isolation are different decisions. Use this matrix for
 the runtime evidence actually collected:
 
-| Runtime evidence | Algorithm | Default seed without `PYTHONHASHSEED` | Cross-process reuse |
+| Runtime evidence | Algorithm | Effective default seed | Cross-process reuse |
 | --- | --- | --- | --- |
 | stable `v0.27.1` | every supported algorithm | random `os.urandom(32)` per process | incompatible by default without a common effective seed |
 | stable `v0.27.1` | any algorithm with an explicitly common `PYTHONHASHSEED` | deterministic from the supplied value | possible only with the same algorithm and all other inputs |
 | post-`ef47a897` source/main | `sha256`, `sha256_cbor` | fixed deterministic default | possible with the same algorithm and all other inputs |
 | post-`ef47a897` source/main | `xxhash`, `xxhash_cbor` | random per process | requires the same security-sensitive `PYTHONHASHSEED` and algorithm |
+| post-`ef47a897` source/main | any algorithm with an explicit `PYTHONHASHSEED` | explicit `PYTHONHASHSEED` wins before the algorithm split | possible only with the same algorithm and all other inputs |
+
+An explicit `PYTHONHASHSEED` is resolved before the post-`ef47a897` algorithm
+defaults, so the explicit-seed row also applies to `sha256` and `sha256_cbor`;
+the default rows describe only the unset-environment case.
 
 The P2P handshake advertises the effective seed and rejects a mismatch. That
 is an operational validation of one compatibility input, not proof that

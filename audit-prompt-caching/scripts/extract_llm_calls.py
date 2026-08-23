@@ -140,23 +140,24 @@ VLLM_SIGNAL_LABELS = {
 
 
 SENSITIVE_ASSIGNMENT_NAME = (
-    r"(?:PYTHONHASHSEED|(?:CACHE[_-]?)?SALT|"
-    r"(?:EFFECTIVE|HASH|XXHASH|PREFIX[_-]?CACHE)?[_-]?SEED)"
+    r"(?:[A-Z0-9]+[_-])*"
+    r"(?:PYTHONHASHSEED|SALT|SEED|API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)"
 )
 SENSITIVE_OPTION_NAME = (
-    r"(?:CACHE[-_]?)?SALT|(?:HASH|XXHASH|PREFIX[-_]CACHE)?[-_]?SEED"
+    r"(?:[A-Z0-9]+[-_])*"
+    r"(?:SALT|SEED|API[-_]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)"
 )
 
 
 SENSITIVE_ASSIGNMENT_PATTERNS = (
     re.compile(
-        rf'''(?ix)(?P<prefix>\b{SENSITIVE_ASSIGNMENT_NAME}\s*[:=]\s*)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
+        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?{SENSITIVE_ASSIGNMENT_NAME}["']?\]?\s*[:=]\s*)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
     ),
     re.compile(
-        rf"""(?ix)(?P<prefix>\b{SENSITIVE_ASSIGNMENT_NAME}\s*[:=]\s*)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
+        rf"""(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?{SENSITIVE_ASSIGNMENT_NAME}["']?\]?\s*[:=]\s*)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
     ),
     re.compile(
-        rf'''(?ix)(?P<prefix>\b{SENSITIVE_ASSIGNMENT_NAME}\s*[:=]\s*)(?P<value>[^\s"'`,;]+)'''
+        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?{SENSITIVE_ASSIGNMENT_NAME}["']?\]?\s*[:=]\s*)(?P<value>[^\s"'`,;]+)'''
     ),
     re.compile(
         rf'''(?ix)(?P<prefix>--(?:{SENSITIVE_OPTION_NAME})\s+)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
@@ -171,7 +172,7 @@ SENSITIVE_ASSIGNMENT_PATTERNS = (
 
 
 def redact_sensitive_text(text):
-    """Redact seed/salt assignment values before emitting source snippets."""
+    """Redact sensitive assignment/option values before emitting snippets."""
     for pattern in SENSITIVE_ASSIGNMENT_PATTERNS:
         text = pattern.sub(
             lambda match: (
@@ -186,6 +187,8 @@ def redact_sensitive_text(text):
 
 
 def should_scan(path):
+    if path.name.startswith(".env"):
+        return False
     return path.is_file() and (
         path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_FILENAMES
     )
