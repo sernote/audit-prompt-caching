@@ -27,6 +27,10 @@
 - Канонические anchors для cross-reference tests: `Routing Outcome Gate`, `matched-workload comparison`, `capacity at SLO`, `rewarm`. Не вводить конкурирующие названия `fixed-load comparison`, `matched-load` или `lifecycle test`.
 - Сохранить все существующие provider/eval cases и не расширять deferred references без необходимости.
 
+### Review-round budget ruling
+
+The original deferred cap of `52,587 + 400 = 52,987` estimated tokens cannot be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint adds `1,573` characters, and restoring normal pretty `evals.json` formatting adds `951` characters. Consumer wording was then deduplicated to short pointers; no pre-existing guidance was deleted and no JSON was minified. The best measured result is `214,544` deferred characters / `53,636` estimated tokens, a `+1,049`-token delta. Set a measured revised deferred ceiling of `53,650` tokens (14-token headroom for measurement rounding); the invoked SKILL ceiling remains `6,010` and is not raised.
+
 ---
 
 ## Design Contract

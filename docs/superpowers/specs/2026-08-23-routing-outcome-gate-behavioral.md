@@ -73,6 +73,8 @@ Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdic
 | 5 | Preserve isolation; require separate review | 3/3 | 3/3 | 3/3 | partial | 3/3 | — | — | — | — | — |
 | 6 | No migration without an objective and a better candidate outcome | 0/3 | 3/3 | 3/3 | complete | n/a | — | — | — | — | — |
 
+After columns are pending: Task 8 (post-change three-context run) has not been executed; the P0-2 behavioral gate is unproven.
+
 ## RED result
 
 RED is demonstrated by case 6. All three control runs declined an immediate cutover but still treated a healthy current round-robin policy as a cache-locality defect or release blocker solely because it was not prefix-aware. The written package therefore turns an implementation choice into a defect without evidence that a candidate improves the declared production outcome. Cases 1–5 already reached their intended safety decisions; the implementation must preserve them.

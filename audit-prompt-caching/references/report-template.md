@@ -72,7 +72,7 @@ Every dimension defaults to `unknown`. Leave missing evidence visible as `unknow
 
 An `ambiguous` or `invalid` usage denominator can never be reported as `usage_accounting: pass`; the renderer rejects that combination, forces `warning`/`fail`, and marks the hit ratio non-decision-grade.
 
-`routing_locality: pass` proves locality only; it cannot by itself prove routing-policy success or approve a routing-policy rollout. Routing Outcome Gate: references/mechanics.md.
+`routing_locality: pass` proves locality only; it cannot by itself approve a routing-policy rollout. Routing Outcome Gate: `references/mechanics.md`.
 
 ## Evidence Needed Next
 

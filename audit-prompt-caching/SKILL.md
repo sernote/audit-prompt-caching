@@ -82,8 +82,9 @@ Report `applicability`, `evidence_quality`, `prefix_stability`,
 `usage_accounting`, `routing_locality`, `economics`, and `isolation`, each with
 exactly one status of `pass/warning/fail/unknown/not_applicable`.
 Leave every unproven dimension `unknown` instead of dropping it, and
-never aggregate them into a score, rank, or grade. An ambiguous or invalid
-denominator is never `usage_accounting: pass`. See `references/report-template.md`.
+never aggregate them into a score, rank, or grade. `usage_accounting: pass`
+needs a valid denominator; `routing_locality: pass` is locality only, not
+rollout approval. See report-template.md.
 
 ## Evidence Boundaries
 
@@ -232,7 +233,7 @@ Use these starts after provider detection and Freshness Gate:
 - **Dynamic tools in long agent loops**: inspect `tools_count`, sorted tool-name/prefix hashes, mode, usage, economics; direct OpenAI Responses/Vercel use a version/model-verified allow-list; Chat Completions/unsupported wrappers/endpoints need wire proof; self-hosted may mask.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and read/write pricing assumptions.
 - **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first.
-- **Self-hosted multi-replica miss**: test prefix-aware/sticky/hash routing as candidates against production via `references/mechanics.md`; affinity, hit, or KV metrics alone do not prove success.
+- **Self-hosted multi-replica miss**: inspect tokenizer/chat-template drift, `max_model_len`, KV pressure/eviction, gateway/service routing, route/replica hit metrics; routing candidates: `references/mechanics.md`.
 - **vLLM retention and cross-process hash**: collect image digest/version/SHA,
   feature presence, effective retention source/value, concrete
   `SlidingWindowSpec`/`SlidingWindowMLASpec`/`MambaSpec` versus full-attention
@@ -289,7 +290,7 @@ Before finalizing:
 Do not claim a fix works until one holds:
 - Prefix fixes: the rendered cacheable prefix fingerprint is unchanged across users, timestamps, and queries.
 - Provider fixes: repeated calls show cache-read/cached-token fields increasing per the provider reference.
-- Routing fixes: apply the `Routing Outcome Gate` in `references/mechanics.md`; accept only for the declared objective with guardrails.
+- Routing/self-hosted fixes: apply `Routing Outcome Gate` in `references/mechanics.md`; accept only for the declared objective with guardrails.
 
 Recommend a CI/smoke check that renders representative prompts and fails when the cacheable prefix changes unexpectedly.
 

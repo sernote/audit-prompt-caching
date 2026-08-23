@@ -202,11 +202,11 @@ Run benchmarks only after the Applicability Gate shows a repeated, stable, long-
 
 For serving-path validation, use `vllm bench serve` with the `prefix_repetition` dataset, `--save-result`, and `--save-detailed`. Vary prefix length, suffix length, number of prefixes, output length, request rate, and concurrency to match the audited route.
 
-Pair output with `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:prompt_tokens_cached`, `vllm:kv_cache_usage_perc`, p50/p95/p99 TTFT/end-to-end latency, queue/KV skew, errors/retries, rewarm/recovery, and route/replica labels. Use an arrival-rate sweep for capacity at SLO and compare baseline/candidate via `references/mechanics.md`; synthetic benchmark speedup is not production ROI.
+Pair output with `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:prompt_tokens_cached`, and `vllm:kv_cache_usage_perc`; use `references/observability.md` for outcome fields and `references/mechanics.md` for comparison, capacity at SLO, queue/skew, retries, and rewarm. synthetic benchmark speedup is not production ROI.
 
 ## Monitoring
 
-Track prefix hit/query, KV blocks/eviction, p50/p95/p99 TTFT, capacity at SLO, queue/KV skew, errors/retries, rewarm/recovery, route/replica, prefix-family cardinality, `max_model_len`, GPU mem, router/model, `cache_salt`, and multimodal representation.
+Track prefix hit/query ratio, available KV blocks, eviction indicators, TTFT/prefill by route, request length percentiles, prefix family cardinality, `max_model_len`, GPU memory utilization, replica count, router policy, tokenizer/model version, `cache_salt` cardinality, and multimodal representation. Use `references/observability.md` for Routing Outcome Gate fields, including capacity at SLO, queue/KV skew, errors/retries, and rewarm.
 
 When KV events are enabled, also track event delivery/drop rate, connector type,
 and transfer/offload latency separately from prefix-hit ratio. Event streams are

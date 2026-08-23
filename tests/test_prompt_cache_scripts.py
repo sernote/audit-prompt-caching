@@ -25,6 +25,8 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # Restoring the operational prompt-segment classification and the truthful
 # Combined vLLM geometry and dynamic-tool evidence contracts measure 6010 tokens.
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6010
+# Review-round ceiling after restoring pre-existing guidance and pretty eval JSON.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 53650
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -3955,7 +3957,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ap7_text = " ".join(ap7[field] for field in ("summary", "fix", "avoid", "validation"))
         self.assertIn("candidate", ap7_text.lower())
         self.assertIn("matched-workload comparison", ap7["fix"])
-        self.assertIn("hit", ap7["avoid"].lower())
+        self.assertIn("hit-only", ap7["avoid"].lower())
         self.assertIn("capacity at SLO", ap7["validation"])
         self.assertIn("rewarm", ap7["validation"].lower())
         self.assertIn("references/mechanics.md", ap7["fix"])
@@ -3988,6 +3990,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         for required in ("matched-workload comparison", "capacity at SLO", "rewarm"):
             self.assertIn(required, mechanics)
             self.assertIn(required, gate)
+        for required in (
+            "Use this reference when the symptom is latency",
+            "### High Hit Rate, Low Savings",
+            "### TTFT Improved, Total Latency Did Not",
+            "### Total Prompt Tokens Look High",
+            "### Self-Hosted Hit Rate Looks Good, Throughput Still Bad",
+            "For cost audits, collect raw usage records",
+        ):
+            self.assertIn(required, mechanics)
 
         consumers = [
             root / "SKILL.md",
@@ -4002,6 +4013,24 @@ class PromptCacheScriptsTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn("Routing Outcome Gate", text)
                 self.assertIn("references/mechanics.md", text)
+                self.assertNotIn("use prefix-aware routing", text.lower())
+
+        for path in (root / "references" / "vllm.md", root / "references" / "sglang.md"):
+            with self.subTest(engine=path.name):
+                engine_text = path.read_text().lower()
+                self.assertNotIn("is cache-blind; use", engine_text)
+
+        skill = (root / "SKILL.md").read_text().lower()
+        self.assertIn("routing_locality: pass", skill)
+        self.assertIn("locality only", skill)
+        self.assertIn("rollout approval", skill)
+        for required in (
+            "tokenizer/chat-template drift",
+            "max_model_len",
+            "kv pressure/eviction",
+            "gateway/service routing",
+        ):
+            self.assertIn(required, skill)
 
         observability = (root / "references" / "observability.md").read_text()
         for required in (
@@ -4701,6 +4730,18 @@ class PromptCacheScriptsTest(unittest.TestCase):
             estimated_plugin_eval_tokens(self.skill_text()),
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
             "SKILL.md grew above the plugin-eval invoked-token baseline",
+        )
+
+    def test_deferred_references_stay_within_review_round_ceiling(self):
+        deferred_chars = sum(
+            len(path.read_text())
+            for path in (ROOT / "audit-prompt-caching").rglob("*")
+            if path.is_file() and path.name != "SKILL.md"
+        )
+        self.assertLessEqual(
+            math.ceil(deferred_chars / 4),
+            PLUGIN_EVAL_DEFERRED_TOKEN_CEILING,
+            "deferred references grew above the measured review-round ceiling",
         )
 
     def test_skill_defines_explicit_cache_plane_gate(self):

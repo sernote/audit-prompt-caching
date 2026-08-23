@@ -1,10 +1,19 @@
 # Prompt Cache Mechanics
 
+Use this reference when the symptom is latency, throughput, self-hosted compute, or "cache hits work but cost/latency did not improve enough."
+
 ## Core Model
 
-Prefill creates KV; decode generates output. Prefix caching saves stable-prefix prefill, not decode.
+LLM inference has two different phases:
+
+- **Prefill/input processing**: the model processes the prompt and creates KV tensors for the input tokens.
+- **Decode/output generation**: the model generates new tokens, usually one step at a time, using the existing KV state.
+
+Prompt/prefix caching mostly saves prefill work for a stable prefix. It does not make output tokens disappear, and it usually does not remove decode cost for long generated answers.
 
 ## Audit Implications
+
+When cache hits are visible but the user still sees high cost or latency, split the request shape:
 
 ```text
 cache_hit_latency ~= cache_lookup_or_read + dynamic_tail_prefill + decode + tools/network
@@ -12,26 +21,57 @@ cache_miss_latency ~= full_prefill + decode + tools/network
 total_cost ~= input_miss + cache_write + cache_read + output
 ```
 
-Separate input/output, TTFT/prefill, decode, tools/network, and cache read/write. A hit can lower TTFT while output/tools keep total cost high; high total input is not proof of a miss.
+Check:
+- static input tokens
+- dynamic input tokens after the cached prefix
+- output tokens
+- TTFT or prefill latency
+- time between first token and final token
+- cache read/write fields
+- whether output tokens dominate cost
 
 ## Common Misdiagnoses
 
-High hit rate with low savings: output-heavy bills may make input-cache savings small; load `references/economics.md`. TTFT without total-latency improvement: inspect output, streaming, decode, tools, and network. High total input: inspect provider cache-read fields. Good vLLM/SGLang hits with bad throughput: inspect dynamic prefill, decode, KV pressure/eviction, routing, transfer, scheduler, and per-route concurrency.
+### High Hit Rate, Low Savings
+
+If output tokens dominate the bill, input-cache savings may be working but financially small. Load `references/economics.md` and calculate cost share before changing prompt caching.
+
+### TTFT Improved, Total Latency Did Not
+
+If cache hits reduce TTFT but final response time is still high, inspect output length, streaming cadence, tool execution time, and decode bottlenecks.
+
+### Total Prompt Tokens Look High
+
+Some providers still count cached tokens in total prompt/input fields. Do not treat high total input tokens as proof of cache miss; inspect provider-specific cache-read fields.
+
+### Self-Hosted Hit Rate Looks Good, Throughput Still Bad
+
+For vLLM/SGLang, a prefix hit can still leave bottlenecks in dynamic prefill, decode, KV memory pressure, replica routing, CPU/GPU transfer, or scheduler behavior. Inspect TTFT, decode throughput, KV block pressure, and per-route concurrency together.
 
 ## Routing Outcome Gate
 
-For routing-policy changes, cache-blind and cache-aware policies are candidates; neither round robin nor prefix-aware/sticky/hash routing is a default or defect. Hit/locality/affinity/cached-token share are mechanism evidence only.
+For routing-policy or replica/KV-topology changes, baseline is current production and candidate is proposed; either may be cache-aware. Round robin, prefix-aware, sticky, and hash policies are candidates, not defaults or defects. Hit/locality/affinity/cached-token share are mechanism evidence only.
 
-Baseline=current production; candidate=proposed; either may be cache-aware. Require:
+Require:
 
-- **matched-workload comparison:** same open-loop arrivals, prefix families, lengths, model/tokenizer, replica count, and KV; compare p95/p99 TTFT/end-to-end latency, queue, replica/KV skew, errors, retries, and fallbacks. Closed-loop requires concurrency/throughput/latency together.
+- **matched-workload comparison:** same open-loop arrivals, prefix families, lengths, model/tokenizer, replicas/KV, equal warmup, measurement window, and cache state at arm start; compare p95/p99 TTFT/end-to-end, queue, replica/KV skew, errors, retries, and fallbacks. Closed-loop requires concurrency/throughput/latency together; use `references/observability.md` for fields.
 - **capacity at SLO:** separate open-loop arrival-rate sweep for maximum sustainable throughput while latency/error SLOs hold; never infer it from one point or hit rate.
 - **rewarm:** restart, scale, and failover tests measuring cache/route loss, recovery time, and SLO violations.
 
-Predeclare objective, SLO guardrails, and rollback. Conditionally accept only when objective improves, gates/guardrails pass, and isolation is unchanged. Missing evidence is pilot/canary only; guardrail failure is reject/rollback even with hit/locality gains.
+Predeclare the primary objective, SLO guardrails, and rollback trigger. Accept conditionally only when the objective improves, the comparison/capacity/rewarm gates and guardrails pass, and isolation is unchanged. Missing evidence is pilot/canary only; guardrail failure is reject/rollback even with hit/locality gains.
 
 CacheRoute ([arXiv:2608.19677](https://arxiv.org/abs/2608.19677)) supports: hit/locality and capacity are separate; residual imbalance can erase affinity gains; matched replay beats workload statistics. It supplies no algorithm, threshold, or performance number.
 
 ## Observability
 
-Collect request start, p50/p95/p99 TTFT/end-to-end latency, input/cache-read/cache-write/output tokens, route/model/replica, queue, throughput/capacity at SLO, replica/KV skew, errors/retries, and rewarm/recovery.
+For latency audits, collect:
+- `request_start`
+- provider first-token timestamp or TTFT
+- final-token timestamp
+- input tokens, cached-read tokens, cache-write tokens, output tokens
+- prefix family/route/model/provider
+- worker/replica for self-hosted inference
+- tool execution timing for agents
+- network/provider overhead when measured separately
+
+For cost audits, collect raw usage records. Averages hide the difference between routes with long static prefixes and routes with unique prompts.

@@ -23,8 +23,8 @@ Use for release, incident, deploy, or monitoring reviews.
 - Rendered before/after prompt pair for each hot prompt family.
 - Prefix/tool/schema hashes and first divergence location.
 - Cache read/write fields by route/model/provider/region/replica.
-- p95/p99 TTFT/e2e, output/tool timing, route/replica queue/load/KV, errors/retries.
-- Objective/SLO/rollback, matched workload, capacity at SLO, and rewarm.
+- TTFT/prefill, final latency, output tokens, and tool timing.
+- For routing-policy or replica/KV-topology changes: objective/SLO/rollback, matched-workload comparison, capacity at SLO, and rewarm; see `references/mechanics.md` and `references/observability.md`.
 - Prompt version, deploy SHA, SDK/provider version, router settings.
 - image digest/version/commit SHA, resolved cache config (including feature presence and retention source/value), concrete KV-group geometry, and redacted hash/seed compatibility status.
 - Privacy or isolation decision for cache key/salt boundaries.
@@ -34,7 +34,7 @@ Use for release, incident, deploy, or monitoring reviews.
 1. Applicability Gate: hot, repeated, long stable prefix, safe reuse.
 2. Prefix stability: static first, dynamic late, append-only history.
 3. Provider correctness: fields, thresholds, breakpoint syntax, TTL/retention.
-4. Routing/KV: use the Routing Outcome Gate in references/mechanics.md; check queue, replica/KV skew, errors/retries, capacity/SLO, rewarm.
+4. Routing/KV: use the `Routing Outcome Gate` in `references/mechanics.md`; use `references/observability.md` for fields.
 5. Economics: output share and write premium before claiming savings.
 
 Do not block on generic cache advice when the route is cold, unique, short, output-bound, or intentionally isolated.

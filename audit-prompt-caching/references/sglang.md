@@ -39,7 +39,7 @@ Move volatile values late in the request or into supported metadata. Verify by r
 
 ### Router And Multi-Replica Locality
 
-When multiple SGLang runtimes serve traffic, inspect routing/cache settings. SGLang docs describe approximate radix trees and balancing thresholds. Treat round-robin, cache-aware policies, and thresholds as candidates; compare production/candidate through the `Routing Outcome Gate` in `references/mechanics.md`, requiring matched-workload, capacity at SLO, and rewarm evidence with tokenizer/model, replicas, and KV fixed.
+When multiple SGLang runtimes serve traffic, inspect routing/cache settings. SGLang docs describe approximate radix trees and balancing thresholds. A generic round-robin gateway can scatter shared prefixes across workers. Treat routing policies and thresholds as candidates; use the `Routing Outcome Gate` in `references/mechanics.md`.
 
 Inspect:
 - `sglang_router`
@@ -75,10 +75,14 @@ rg -n "disable.radix|disable_radix|flush_cache|radix|hicache|cache_threshold" .
 
 Watch:
 - cache hit rate or prefix/radix cache metrics for the deployed version
-- p50/p95/p99 TTFT/end-to-end latency, throughput/capacity at SLO, queue, per-replica load/KV skew, errors/retries/fallbacks, route/worker selection, and rewarm/recovery
-- tokenizer/chat-template version, routing thresholds, flush/disable events, prefix-family cardinality
+- TTFT/prefill latency by route and worker
+- worker selected by router
+- tokenizer/chat-template version
+- cache-aware routing thresholds
+- cache flush/disable events
+- request prefix family cardinality
 
-Use `references/mechanics.md` for the normative `Routing Outcome Gate`; fields are evidence, not a locality-only verdict.
+Use `references/mechanics.md` for the normative `Routing Outcome Gate` and `references/observability.md` for its fields; locality metrics are evidence, not a verdict.
 
 ## Monitoring
 
