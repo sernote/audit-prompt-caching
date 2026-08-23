@@ -439,21 +439,21 @@ Expected: PASS.
 - Read: the completed skill package
 - No new edits unless a specific behavioral failure requires a minimal clarification
 
-- [ ] **Step 1: Run the same six cases in fresh contexts**
+- [x] **Step 1: Run the same six cases in fresh contexts**
 
 Use the same consuming model, effort, exact prompts, three-runs-per-case protocol and scoring rubric as Task 2. Do not show the agent the previous outputs or expected wording.
 
-- [ ] **Step 2: Apply the behavioral acceptance rule**
+- [x] **Step 2: Apply the behavioral acceptance rule**
 
 Required P0-2 result: cases 1–4 and 6 pass by majority, with no hit-only rollout approval and the decisive missing outcome evidence identified. Case 5 must be no worse than control; a regression is reported as a separate P0-1 concern and does not authorize expanding this implementation.
 
 If a blocking case fails, inspect the failure, make the smallest instruction change at the single source of truth, re-run the static tests and then re-run all six fresh-context cases. Do not tune for exact phrases.
 
-- [ ] **Step 3: Report before/after honestly**
+- [x] **Step 3: Report before/after honestly**
 
 - If Task 2 had failures and Task 8 passes, report a measured behavioral improvement.
 - If all five blocking cases passed before and after, report regression hardening and removal of contradictory written guidance, not model uplift.
-- Two deferred-reference revisions at `94fa9da` and `768d4b3` left case 6 at 0/3. The next correction must be a general always-loaded invariant plus the ordering/scope/predeploy/eval changes described below; do not claim behavioral GREEN from static tests.
+- Two deferred-reference revisions at `94fa9da` and `768d4b3` left case 6 at 0/3. The final correction below added the general always-loaded invariant plus the ordering/scope/predeploy/eval changes; static GREEN was not treated as behavioral proof.
 
 ### Task 8 follow-up: principled always-loaded correction
 
@@ -468,7 +468,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
   tests.test_prompt_cache_scripts.PromptCacheScriptsTest.test_evals_cover_routing_harmful_hit_and_evidence_gap
 ```
 
-The command was RED before product edits and GREEN (`Ran 3 tests ... OK`) after them. This does not replace the controller-owned six-case, three-runs-per-case behavioral evaluation, which must be rerun after the final commit and reported without claiming GREEN in this plan.
+The command was RED before product edits and GREEN (`Ran 3 tests ... OK`) after them. It did not replace the behavioral evaluation. The controller subsequently reran the exact six cases on `d2292c3`: cases 1–4 and 6 passed 3/3 by the majority gate, case 5 preserved isolation 3/3, and case 6 improved from 0/3 before and after attempts 1–2 to 3/3. The raw outputs and ordered traces remain outside the repository.
+
+The controller also ran three anti-gaming holdouts outside the package/evals, three fresh contexts each: healthy `max_model_len` policy with a cited blocker rule (3/3 no change), an inverted rule forbidding prefix-aware routing despite a real p99/capacity/skew gap (3/3 candidate evaluation with no algorithm mandate), and a genuine p99 gap without a cited rule (3/3 candidate evaluation with no algorithm mandate). These holdouts do not replace the six-case gate; they guard against an always-no-change overcorrection.
 
 ### Task 9: Full verification and implementation review
 
@@ -561,7 +563,7 @@ Present the verified diff, before/after behavioral score, exact verification res
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
 - Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the superseding measured ceiling of 6 173; deferred estimate remains at or below the superseding measured ceiling of 54 100 tokens (recorded baseline 52 587, final measured 54 056, +1 469). The original +400 cap and prior 6 010/53 800 rulings are superseded by the explicit post-failure measurement; no guidance is compressed to fund the correction.
 - No helper script or usage adapter changes are introduced.
-- Full verification and the six-case, three-runs-per-case fresh-context behavioral evaluation pass under the P0-2 majority gate.
+- Full verification and the six-case, three-runs-per-case fresh-context behavioral evaluation pass under the P0-2 majority gate. The final behavioral run on `d2292c3` is recorded in the behavioral spec, with cases 1–4 and 6 at 3/3 and case 5 no worse than control; Task 8 is complete.
 
 ## Non-goals
 

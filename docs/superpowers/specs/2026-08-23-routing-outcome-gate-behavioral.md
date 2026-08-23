@@ -67,12 +67,12 @@ Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdic
 
 | Case | Intended decision | Before correct | Before mechanism-only | Before outcome/gap | Before guardrails | Before isolation | After correct | After mechanism-only | After outcome/gap | After guardrails | After isolation |
 |---|---|---:|---:|---:|---|---|---:|---:|---:|---|---|
-| 1 | Evidence insufficient; canary/pilot only | 3/3 | 3/3 | 3/3 | complete | n/a | — | — | — | — | — |
-| 2 | Reject/rollback | 3/3 | 3/3 | 3/3 | partial | n/a | — | — | — | — | — |
-| 3 | Conditional staged rollout with rollback trigger | 3/3 | 3/3 | 3/3 | complete | 3/3 | — | — | — | — | — |
-| 4 | Reject or remain in pilot until rewarm passes | 3/3 | 3/3 | 3/3 | complete | n/a | — | — | — | — | — |
-| 5 | Preserve isolation; require separate review | 3/3 | 3/3 | 3/3 | partial | 3/3 | — | — | — | — | — |
-| 6 | No migration without an objective and a better candidate outcome | 0/3 | 3/3 | 3/3 | complete | n/a | — | — | — | — | — |
+| 1 | Evidence insufficient; canary/pilot only | 3/3 | 3/3 | 3/3 | complete | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |
+| 2 | Reject/rollback | 3/3 | 3/3 | 3/3 | partial | n/a | 3/3 | 3/3 | 3/3 | complete for stated harms | n/a |
+| 3 | Conditional staged rollout with rollback trigger | 3/3 | 3/3 | 3/3 | complete | 3/3 | 3/3 | 3/3 | 3/3 | complete | 3/3 |
+| 4 | Reject or remain in pilot until rewarm passes | 3/3 | 3/3 | 3/3 | complete | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |
+| 5 | Preserve isolation; require separate review | 3/3 | 3/3 | 3/3 | partial | 3/3 | 3/3 | 3/3 | 3/3 | partial | 3/3 |
+| 6 | No migration without an objective and a better candidate outcome | 0/3 | 3/3 | 3/3 | complete | n/a | 3/3 | 3/3 | 3/3 | complete | n/a |
 
 ## After attempt 1 — HEAD 94fa9da
 
@@ -112,7 +112,32 @@ The Opus diagnosis predicted `A6-nogov` at approximately 3/3, `A6-declared` at 2
 | `A6-declared` — objective prepended | correct | correct | correct | 2–3/3 | `mechanics.md` |
 | `A6-forced` — gate pasted into context | correct | correct | correct | 1–2/3 | `mechanics.md` |
 
-No post-final-correction six-case run has been performed in this spec yet. The final correction is therefore not claimed as behavioral GREEN; the controller owns the next fresh-context run and must update the After columns only from that evidence.
+## After final correction — HEAD d2292c3
+
+The controller reran the exact six prompts in three independent fresh `gpt-5.6-luna` max contexts per case. This is a measured behavioral improvement from case 6 at 0/3 before the correction and at 0/3 after attempts 1 and 2. Raw model outputs and ordered reference traces remain outside the repository in consilium temporary artifacts; this spec records only aggregate scores and bounded outcomes.
+
+| Case | Decision | Mechanism-only | Decisive outcome/gap | Guardrails | Isolation | Bounded result |
+|---|---:|---:|---:|---|---:|---|
+| 1 | 3/3 | 3/3 | 3/3 | 3/3 named comprehensively missing | n/a | Insufficient evidence; canary only |
+| 2 | 3/3 | 3/3 | 3/3 | 3/3 harmful p99/capacity/queue/retry outcomes | n/a | Reject/rollback |
+| 3 | 3/3 | — | — | 3/3 | 3/3 | Runs 1 and 3 approved conditionally with rollback guardrails; run 2 limited to canary because matched comparison, absolute-error, and rollback evidence were not complete |
+| 4 | 3/3 | 3/3 | 3/3 | 3/3 rewarm disposition | n/a | Reject: 18-minute rewarm breach versus 3-minute budget |
+| 5 | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | Preserve isolation; reject broader namespace, no worse than control |
+| 6 | 3/3 | 3/3 | 3/3 | 3/3 healthy | 3/3 | No migration; no unmotivated candidate work; status quo not a defect/blocker; cited rule handled as a claim |
+
+For case 6, the decomposed decision contract also scored 3/3 on each dimension: `migration_required=no`, `unmotivated_candidate_work_required=no`, `status_quo_named_as_defect_or_blocker=no`, and `cited_rule_handled_as_claim=yes`. The cited checklist was treated as an intent claim rather than technical measurement.
+
+## Anti-gaming holdouts — outside package and evals
+
+Three additional prompts were kept out of the skill package and `evals/evals.json`; each was run three times in fresh max contexts. Raw outputs and ordered traces remain outside the repository.
+
+| Holdout | Runs correct | Result |
+|---|---:|---|
+| Healthy `max_model_len` policy with an internal blocker rule | 3/3 | No change; healthy outcomes outrank an implementation-name rule |
+| Inverted rule forbids prefix-aware routing while real p99/capacity/skew gap exists | 3/3 | Candidate evaluation justified; no algorithm mandated |
+| Genuine p99 gap with no cited rule | 3/3 | Candidate evaluation justified; no algorithm mandated |
+
+Task 8 behavioral acceptance is therefore GREEN: cases 1–4 and 6 pass by the majority gate, case 5 is preserved, and the anti-gaming holdouts do not show an always-no-change overcorrection.
 
 ## RED result
 
