@@ -479,16 +479,25 @@ holdouts test transfer to different policy and gap shapes. Reported 3/3 aggregat
 therefore not externally auditable from this repository because raw outputs and ordered
 reference traces remain in consilium temporary artifacts.
 
-### Task 8 post-review correction status
+### Task 8 post-review behavioral GREEN — HEAD `1f49af5`
 
 The latest Opus xhigh review required the predeploy carve-out to apply only to the
 routing-policy blocker, the mechanics gate to keep routing-policy and replica/KV-topology
 changes (including scale-out) as candidates, and the always-loaded contract to preserve
 safety/correctness review and return `Change needed: unknown until <specific evidence>`
-when outcome targets or evidence are absent. Focused structural tests were updated first
-and produced RED; after the package edits the focused suite is GREEN. No new six-case or
-holdout behavioral results are recorded for this correction. The controller must rerun
-the exact protocol on the current HEAD.
+when outcome targets or evidence are absent. The controller then reran the exact six
+prompts in three fresh `gpt-5.6-luna` max contexts per case: cases 1–6 were all
+decision-correct 3/3. Case 1 remained canary/pilot-only on missing tail/capacity/skew/
+retry/rewarm evidence; case 2 rejected harmful p99/capacity/queue/retry outcomes; case 3
+was rollout/conditional with guardrails and isolation preserved; case 4 rejected the
+18-minute versus 3-minute rewarm breach; case 5 rejected broader cross-tenant sharing
+without a performance safety waiver; and case 6 required no migration while treating the
+cited rule as a claim. Four out-of-package anti-gaming holdouts were 3/3 each, including
+a healthy-performance cross-tenant EU residency/isolation/compliance conflict that
+required `Change needed: yes` and safety/compliance review rather than a performance
+waiver. Raw outputs and ordered traces remain outside the repository in consilium
+temporary artifacts, so these aggregates are reported but not externally auditable here.
+Task 8 is complete for current HEAD; the detailed table is in the behavioral spec.
 
 ### Task 9: Full verification and implementation review
 
@@ -581,7 +590,7 @@ Present the verified diff, before/after behavioral score, exact verification res
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
 - Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the superseding measured ceiling of 6 297; deferred estimate remains at or below the superseding measured ceiling of 54 275 tokens (recorded baseline 52 587, current measured 54 230, +1 643). The original +400 cap and prior 6 010/53 800/54 100 rulings are superseded by explicit post-failure and post-review measurements; no guidance is compressed to fund the correction.
 - No helper script or usage adapter changes are introduced.
-- Full verification passes, and the historical six-case, three-runs-per-case run on `d2292c3` is recorded separately in the behavioral spec. Because the current review correction changed package wording after that run, the controller must rerun the six cases and holdouts on the current HEAD before treating Task 8 as complete; no new behavioral result is claimed in this revision.
+- Full verification passes, and the current six-case, three-runs-per-case run on `1f49af5` is GREEN: cases 1–6 are 3/3 decision-correct and all four anti-gaming holdouts are 3/3. The historical `d2292c3` run remains recorded separately; raw outputs/traces are outside the repository and are not externally auditable here.
 
 ## Non-goals
 

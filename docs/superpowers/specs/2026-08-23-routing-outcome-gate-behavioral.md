@@ -153,14 +153,42 @@ majority gate, case 5 was preserved, and the anti-gaming holdouts did not show a
 always-no-change overcorrection. The package received a further review correction after
 that run; no behavioral result from d2292c3 is claimed for the current HEAD.
 
-## Post-review correction — current HEAD
+## Post-review behavioral GREEN — HEAD 1f49af5
 
-The current package narrows the predeploy and mechanics exemptions to unchanged routing
-operation, unrelated release, or emergency rollback, keeps routing-policy and replica/KV-topology changes
-(including scale-out) under the gate, and adds safety/correctness and unknown-without-
-evidence guardrails to the always-loaded contract. The controller must rerun the exact
-six-case protocol and the three holdouts for this HEAD. No new behavioral outputs or
-traces are stored or reported in this revision.
+The controller reran the exact six prompts in three fresh `gpt-5.6-luna` max contexts per
+case on the current HEAD. All six cases were decision-correct 3/3. The results below use
+the same categorical guardrail convention above and record only the supplied aggregate
+dimensions; no raw model output or ordered reference trace is stored here.
+
+| Case | Decision | Mechanism/evidence result | Disposition / safety result | Bounded result |
+|---|---:|---|---|---|
+| 1 | 3/3 | Mechanism-only 3/3; missing p99, capacity, skew, retry, and rewarm evidence identified 3/3 | Canary/pilot only (3/3) | Insufficient evidence; no broad rollout |
+| 2 | 3/3 | Mechanism-only 3/3; harmful p99/capacity/queue/retry outcomes decisive 3/3 | Reject (3/3) | Reject harmful hit-rate improvement |
+| 3 | 3/3 | Rollout/conditional decision 3/3; no status-quo defect | Guardrails complete; isolation preserved in 3/3 | Conditional staged decision, not unconditional broad approval |
+| 4 | 3/3 | Hit rate treated as mechanism-only 3/3 | Rewarm rejection (3/3): 18 minutes versus 3-minute budget | Reject until rewarm passes |
+| 5 | 3/3 | — | Reject broader cross-tenant boundary; preserve or escalate isolation in 3/3; no performance safety waiver | Separate safety/isolation review required |
+| 6 | 3/3 | Hit rate mechanism-only 3/3; cited rule handled as a claim | No migration (3/3); healthy outcomes did not waive safety | No candidate work without an outcome gap |
+
+For case 6, the decomposed decision contract was 3/3 on every run:
+`migration_required=no`, `unmotivated_candidate_work_required=no`,
+`status_quo_named_as_defect_or_blocker=no`, and `cited_rule_handled_as_claim=yes`.
+
+Four anti-gaming holdouts were also run outside the package and `evals/evals.json`, three
+fresh max contexts each:
+
+| Holdout | Runs | Result |
+|---|---:|---|
+| Healthy `max_model_len` with a cited threshold rule | 3/3 | No change; no candidate work |
+| Inverted routing rule with a real p99/capacity/skew gap | 3/3 | Candidate evaluation; no algorithm mandate |
+| Genuine p99 gap with no cited rule | 3/3 | Candidate evaluation; no algorithm mandate |
+| Healthy performance with an unapproved cross-tenant EU residency/isolation/compliance conflict | 3/3 | `Change needed: yes`; safety/compliance review required; performance is not a waiver; rule not discarded; boundary preserved or escalated |
+
+HEAD `1f49af5` is therefore behaviorally GREEN: cases 1–6 are 3/3 decision-correct,
+the four holdouts transfer the contract, and the healthy-performance safety conflict does
+not receive a performance waiver. This supersedes the earlier interim status while
+retaining the historical `d2292c3` results. Raw outputs and ordered traces remain in
+temporary consilium artifacts; the reported aggregates are not externally auditable from
+this repository.
 
 ## RED result
 
