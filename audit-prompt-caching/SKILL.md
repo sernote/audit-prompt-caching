@@ -233,7 +233,7 @@ Use these starts after provider detection and Freshness Gate:
 - **Dynamic tools in long agent loops**: inspect `tools_count`, sorted tool-name/prefix hashes, mode, usage, economics; direct OpenAI Responses/Vercel use a version/model-verified allow-list; Chat Completions/unsupported wrappers/endpoints need wire proof; self-hosted may mask.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and read/write pricing assumptions.
 - **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first.
-- **Self-hosted multi-replica miss**: inspect tokenizer/chat-template drift, `max_model_len`, KV pressure/eviction, gateway/service routing, route/replica hit metrics; candidate: `references/mechanics.md`.
+- **Self-hosted multi-replica miss**: inspect tokenizer/chat-template drift, `max_model_len`, KV pressure/eviction, gateway/service routing, route/replica hit metrics; routing gate: `references/mechanics.md`.
 - **vLLM retention and cross-process hash**: collect image digest/version/SHA,
   feature presence, effective retention source/value, concrete
   `SlidingWindowSpec`/`SlidingWindowMLASpec`/`MambaSpec` versus full-attention
@@ -290,7 +290,7 @@ Before finalizing:
 Do not claim a fix works until one holds:
 - Prefix fixes: the rendered cacheable prefix fingerprint is unchanged across users, timestamps, and queries.
 - Provider fixes: repeated calls show cache-read/cached-token fields increasing per the provider reference.
-- Routing: `Routing Outcome Gate` in `references/mechanics.md`; self-hosted fixes: representative workload, prefix-hit/KV-pressure evidence.
+- Routing: `Routing Outcome Gate` in `references/mechanics.md`; self-hosted fixes: prefix-hit/KV-pressure improves under a representative workload.
 
 Recommend a CI/smoke check that renders representative prompts and fails when the cacheable prefix changes unexpectedly.
 

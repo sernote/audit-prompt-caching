@@ -3871,7 +3871,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "vllm.md"
         ).read_text()
-        reference_lower = reference.lower()
 
         for required in [
             "Benchmark Validation",
@@ -3884,10 +3883,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "vllm:prefix_cache_hits",
             "vllm:prefix_cache_queries",
             "vllm:prompt_tokens_cached",
-            "synthetic benchmark speedup",
+            "benchmark speedup",
             "production ROI",
         ]:
-            self.assertIn(required.lower(), reference_lower)
+            self.assertIn(required, reference)
 
     def test_skill_detects_vllm_benchmark_workflows(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -4737,7 +4736,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
         deferred_chars = sum(
             len(path.read_text())
             for path in (ROOT / "audit-prompt-caching").rglob("*")
-            if path.is_file() and path.name != "SKILL.md"
+            if path.is_file()
+            and path.name != "SKILL.md"
+            and "__pycache__" not in path.parts
         )
         self.assertLessEqual(
             math.ceil(deferred_chars / 4),
@@ -4748,6 +4749,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_package_backticked_references_resolve(self):
         package = ROOT / "audit-prompt-caching"
         path_pattern = re.compile(r"`((?:references|scripts|evals)/[^`\s]+)`")
+        bare_json_path_pattern = re.compile(
+            r"(?<![`A-Za-z0-9_])((?:references|scripts|evals)/[\w.-]+(?:/[\w.-]+)*\.(?:md|py|json))"
+        )
 
         for source in package.rglob("*"):
             if not source.is_file() or source.suffix not in {".md", ".json"}:
@@ -4758,6 +4762,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
                         (package / target).is_file(),
                         f"{source}: missing package reference {target}",
                     )
+
+        for source in package.rglob("*.json"):
+            for target in bare_json_path_pattern.findall(source.read_text()):
+                with self.subTest(source=source, target=target):
+                    self.assertTrue(
+                        (package / target).is_file(),
+                        f"{source}: missing bare JSON package reference {target}",
+                    )
+
+    def test_evals_json_stays_pretty_printed(self):
+        path = ROOT / "audit-prompt-caching" / "evals" / "evals.json"
+        text = path.read_text()
+        expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n"
+        self.assertEqual(text, expected)
 
     def test_skill_defines_explicit_cache_plane_gate(self):
         skill = self.skill_text()

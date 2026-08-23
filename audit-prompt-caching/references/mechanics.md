@@ -60,7 +60,7 @@ Require:
 
 Predeclare the primary objective, SLO guardrails, and rollback trigger. Accept conditionally only when the objective improves, the comparison/capacity/rewarm gates and guardrails pass, and isolation is unchanged. Missing evidence is pilot/canary only; guardrail failure is reject/rollback even with hit/locality gains.
 
-CacheRoute ([arXiv:2608.19677](https://arxiv.org/abs/2608.19677)) supports: hit/locality and capacity are separate; residual imbalance can erase affinity gains; matched replay beats workload statistics. No algorithm, threshold, or performance number.
+CacheRoute ([arXiv:2608.19677](https://arxiv.org/abs/2608.19677)) supports: hit/locality and capacity are separate; residual imbalance can erase affinity gains; matched replay beats workload statistics. Transplant no algorithm, threshold, or number.
 
 ## Observability
 
