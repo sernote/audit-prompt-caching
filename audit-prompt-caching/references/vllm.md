@@ -202,7 +202,7 @@ Run benchmarks only after the Applicability Gate shows a repeated, stable, long-
 
 For serving-path validation, use `vllm bench serve` with the `prefix_repetition` dataset, `--save-result`, and `--save-detailed`. Vary prefix length, suffix length, number of prefixes, output length, request rate, and concurrency to match the audited route.
 
-Pair output with `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:prompt_tokens_cached`, and `vllm:kv_cache_usage_perc`; use `references/observability.md` for outcome fields and `references/mechanics.md` for comparison, capacity at SLO, queue/skew, retries, and rewarm. synthetic benchmark speedup is not production ROI.
+Pair output with `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:prompt_tokens_cached`, and `vllm:kv_cache_usage_perc`; use `references/observability.md` for outcome fields and `references/mechanics.md` for comparison, capacity at SLO, queue/skew, retries, and rewarm. Synthetic benchmark speedup alone is not production ROI.
 
 ## Monitoring
 

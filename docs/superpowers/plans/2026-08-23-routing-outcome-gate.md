@@ -22,14 +22,14 @@
 - Не реализовывать P0-1: не добавлять upstream identity contract, credential-pool tracing, relay-hop audit или cross-tenant probes. Допустима одна защитная фраза в AP-7: ради hit rate нельзя расширять trust/isolation boundary без отдельной security/privacy проверки.
 - Не менять AP-9b, provider adapters, usage normalization, helper scripts или cache-plane model. Trigger surface не меняется, поэтому `evals/trigger_eval.json` не трогать, если RED не докажет отдельную trigger-регрессию.
 - Не дублировать полный outcome gate во всех references. Нормативное объяснение живёт в `references/mechanics.md`; остальные файлы дают короткую engine/workflow-specific ссылку и локальные проверки.
-- `SKILL.md` править char-neutral или net-negative: на проверенном `origin/main` он занимал 5 850 токенов при жёстком ceiling 5 852 и запасе около 10 символов. `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` не поднимать.
-- Deferred budget уже был в статусе FAIL до этой работы: 41 238 токенов. Исторический cap `+400` объясняет исходную цель, но superseded measured ceiling этой ревизии — `53,650` токенов против baseline `52,587`; измерить до/после и записать оба значения в handoff.
+- Superseded planning-base measurements were 5 850 estimated SKILL tokens / 5 852 invoked ceiling. On fetched `origin/main` at `ec0d447`, the authoritative invoked ceiling is 6 010 tokens; keep `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` there and make `SKILL.md` char-neutral or net-negative.
+- The superseded planning-base deferred measurement was 41 238 tokens. The authoritative fetched-base deferred baseline at `origin/main`/`ec0d447` is 52 587 tokens; historical `+400` explains the original target only. This revision records and enforces the measured deferred ceiling of `53,650` tokens.
 - Канонические anchors для cross-reference tests: `Routing Outcome Gate`, `matched-workload comparison`, `capacity at SLO`, `rewarm`. Не вводить конкурирующие названия `fixed-load comparison`, `matched-load` или `lifecycle test`.
 - Сохранить все существующие provider/eval cases и не расширять deferred references без необходимости.
 
 ### Review-round budget ruling
 
-The original deferred cap of `52,587 + 400 = 52,987` estimated tokens cannot be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint adds `1,573` characters, and restoring normal pretty `evals.json` formatting adds `951` characters. Consumer wording was then deduplicated to short pointers; no pre-existing guidance was deleted and no JSON was minified. The best measured result is `214,544` deferred characters / `53,636` estimated tokens, a `+1,049`-token delta. Set a measured revised deferred ceiling of `53,650` tokens (14-token headroom for measurement rounding); the invoked SKILL ceiling remains `6,010` and is not raised.
+The original deferred cap of `52,587 + 400 = 52,987` estimated tokens cannot be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint adds `1,573` characters, and restoring normal pretty `evals.json` formatting costs `1,032` characters (`13,142` → `14,174`); `951` was the base-to-head content delta, not the formatting cost. New consumer wording was deduplicated to short pointers while pre-existing cues were preserved or restored; no pre-existing mechanics guidance was deleted, and JSON was not minified. The final measured result is `214,588` deferred characters / `53,647` estimated tokens, a `+1,060`-token delta. Set a measured revised deferred ceiling of `53,650` tokens (3-token headroom for measurement rounding); the invoked SKILL ceiling remains `6,010` and is not raised.
 
 ---
 
@@ -368,7 +368,7 @@ Do not edit AP-9b.
 Replace the blanket blocker «scale-out behind round robin without prefix-aware routing» with a symmetric blocker:
 
 ```text
-Any vLLM/SGLang routing-policy change, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger and unchanged isolation boundary.
+Any vLLM/SGLang routing-policy rollout, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger and unchanged isolation boundary.
 ```
 
 Extend Minimum Release Evidence and Routing/KV triage with the outcome fields, but link back to the central gate instead of repeating its explanation.
@@ -517,14 +517,14 @@ Present the verified diff, before/after behavioral score, exact verification res
 ## Acceptance Criteria
 
 - AP-7 no longer says «sticky routing» is the fix or validates success from reads/TTFT alone.
-- Predeploy no longer blocks round robin merely because it is not prefix-aware; it blocks unmeasured routing-policy changes in either direction.
+- Predeploy no longer blocks round robin merely because it is not prefix-aware; it blocks unmeasured routing-policy rollouts in either direction.
 - The skill distinguishes matched-workload comparison, capacity at SLO and rewarm.
 - A higher hit rate with worse p99/capacity/queue/errors produces reject/rollback.
 - Missing outcome evidence produces pilot/canary-only, not rollout approval.
 - A candidate that improves the declared objective without violating guardrails may be accepted conditionally.
 - vLLM and SGLang references keep their engine-specific context but share one outcome contract.
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
-- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate remains at or below the superseding measured ceiling of 53 650 tokens (recorded baseline 52 587, final measured 53 636, +1 049). The original +400 cap is historical rationale only, not the active acceptance criterion.
+- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate remains at or below the superseding measured ceiling of 53 650 tokens (recorded baseline 52 587, final measured 53 647, +1 060). The original +400 cap is historical rationale only, not the active acceptance criterion.
 - No helper script or usage adapter changes are introduced.
 - Full verification and the six-case, three-runs-per-case fresh-context behavioral evaluation pass under the P0-2 majority gate.
 

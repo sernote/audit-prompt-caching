@@ -39,7 +39,7 @@ Move volatile values late in the request or into supported metadata. Verify by r
 
 ### Router And Multi-Replica Locality
 
-When multiple SGLang runtimes serve traffic, inspect routing/cache settings. SGLang docs describe approximate radix trees and balancing thresholds. A generic round-robin gateway can scatter shared prefixes across workers. Treat routing policies and thresholds as candidates; use the `Routing Outcome Gate` in `references/mechanics.md`.
+When multiple SGLang runtimes serve traffic, inspect routing/cache settings. SGLang router docs describe approximate radix trees and balancing thresholds. A generic round-robin gateway can scatter shared prefixes across workers. Treat routing policies and thresholds as candidates; use the `Routing Outcome Gate` in `references/mechanics.md`.
 
 Inspect:
 - `sglang_router`

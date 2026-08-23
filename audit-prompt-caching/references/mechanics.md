@@ -54,13 +54,13 @@ For routing-policy or replica/KV-topology changes, baseline is current productio
 
 Require:
 
-- **matched-workload comparison:** same open-loop arrivals, prefix families, lengths, model/tokenizer, replicas/KV, equal warmup, measurement window, and cache state at arm start; compare p95/p99 TTFT/end-to-end, queue, replica/KV skew, errors, retries, and fallbacks. Closed-loop requires concurrency/throughput/latency together; use `references/observability.md` for fields.
+- **matched-workload comparison:** same open-loop arrivals, prefix families, lengths, model/tokenizer, replicas/KV, equal warmup/window/cache state at arm start; compare p95/p99 TTFT/e2e, queue, replica/KV skew, errors/retries/fallbacks; repeated arms with enough p99 samples/arm. Closed-loop requires concurrency/throughput/latency together; use `references/observability.md`.
 - **capacity at SLO:** separate open-loop arrival-rate sweep for maximum sustainable throughput while latency/error SLOs hold; never infer it from one point or hit rate.
 - **rewarm:** restart, scale, and failover tests measuring cache/route loss, recovery time, and SLO violations.
 
 Predeclare the primary objective, SLO guardrails, and rollback trigger. Accept conditionally only when the objective improves, the comparison/capacity/rewarm gates and guardrails pass, and isolation is unchanged. Missing evidence is pilot/canary only; guardrail failure is reject/rollback even with hit/locality gains.
 
-CacheRoute ([arXiv:2608.19677](https://arxiv.org/abs/2608.19677)) supports: hit/locality and capacity are separate; residual imbalance can erase affinity gains; matched replay beats workload statistics. It supplies no algorithm, threshold, or performance number.
+CacheRoute ([arXiv:2608.19677](https://arxiv.org/abs/2608.19677)) supports: hit/locality and capacity are separate; residual imbalance can erase affinity gains; matched replay beats workload statistics. No algorithm, threshold, or performance number.
 
 ## Observability
 

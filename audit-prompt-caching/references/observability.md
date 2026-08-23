@@ -6,10 +6,10 @@ Use for dashboards, alerts, traces, release guardrails, and CI smoke tests.
 
 - Provider fields: `cached_tokens`, `cache_read_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `cache_write_tokens`, or provider equivalents.
 - Token totals: input, output, cache read, cache write/create, total effective denominator.
-- Latency: p50/p95/p99 TTFT and end-to-end latency, output/decode time, tool time.
+- Latency: p50/p95/p99 TTFT or prefill, end-to-end latency, output/decode time, tool time.
 - Dimensions: route, prompt family, prompt version, model, provider, region, replica, SDK version, deploy SHA.
 - Hashes: `prefix_hash`, `first_256_token_hash`, tool-name hash, schema hash, stable document hash.
-- Router/KV/workload: actual route/model/replica, hit/query, KV pressure/eviction, arrival/concurrency, throughput/capacity at SLO, queue, per-replica request/token and KV skew; use the `Routing Outcome Gate` in `references/mechanics.md`.
+- Router/KV/workload: actual routed provider/model/replica, hit/query, KV pressure/eviction, arrival/concurrency, throughput/capacity at SLO, queue, per-replica request/token and KV skew; use the `Routing Outcome Gate` in `references/mechanics.md`.
 - Reliability/lifecycle: declared SLO, error/retry/fallback rates, restart/scale/failover, rewarm loss/recovery time.
 - Continuity: keyed hash and kind of cache/session/conversation handle (for example `prompt_cache_key`, `session_id`, `previous_interaction_id`, or `previous_response_id`), never the raw value.
 

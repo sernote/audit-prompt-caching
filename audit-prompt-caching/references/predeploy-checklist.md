@@ -9,7 +9,7 @@ Use for release, incident, deploy, or monitoring reviews.
 - Prompt A/B flags or random few-shot examples before the stable prefix.
 - Context compaction that rewrites the stable anchor.
 - Provider wrapper or router changes without routed provider/model telemetry.
-- Any vLLM/SGLang routing-policy change, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger and unchanged isolation boundary.
+- Any vLLM/SGLang routing-policy rollout, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger and unchanged isolation boundary.
 - `max_model_len` or KV settings changed without p99 input/KV pressure review.
 - Cache controls, `cachePoint`, `prompt_cache_key`, TTL, retention, or salts changed without provider-doc checks.
 - vLLM retention flag/env is used without evidence that the deployed runtime supports the feature; an env name in a manifest is not enough.
@@ -34,7 +34,7 @@ Use for release, incident, deploy, or monitoring reviews.
 1. Applicability Gate: hot, repeated, long stable prefix, safe reuse.
 2. Prefix stability: static first, dynamic late, append-only history.
 3. Provider correctness: fields, thresholds, breakpoint syntax, TTL/retention.
-4. Routing/KV: use the `Routing Outcome Gate` in `references/mechanics.md`; use `references/observability.md` for fields.
+4. Routing/KV: KV capacity, eviction; use the `Routing Outcome Gate` in `references/mechanics.md`; use `references/observability.md` for fields.
 5. Economics: output share and write premium before claiming savings.
 
 Do not block on generic cache advice when the route is cold, unique, short, output-bound, or intentionally isolated.

@@ -3871,6 +3871,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "vllm.md"
         ).read_text()
+        reference_lower = reference.lower()
 
         for required in [
             "Benchmark Validation",
@@ -3886,7 +3887,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "synthetic benchmark speedup",
             "production ROI",
         ]:
-            self.assertIn(required, reference)
+            self.assertIn(required.lower(), reference_lower)
 
     def test_skill_detects_vllm_benchmark_workflows(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -4743,6 +4744,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
             PLUGIN_EVAL_DEFERRED_TOKEN_CEILING,
             "deferred references grew above the measured review-round ceiling",
         )
+
+    def test_package_backticked_references_resolve(self):
+        package = ROOT / "audit-prompt-caching"
+        path_pattern = re.compile(r"`((?:references|scripts|evals)/[^`\s]+)`")
+
+        for source in package.rglob("*"):
+            if not source.is_file() or source.suffix not in {".md", ".json"}:
+                continue
+            for target in path_pattern.findall(source.read_text()):
+                with self.subTest(source=source, target=target):
+                    self.assertTrue(
+                        (package / target).is_file(),
+                        f"{source}: missing package reference {target}",
+                    )
 
     def test_skill_defines_explicit_cache_plane_gate(self):
         skill = self.skill_text()
