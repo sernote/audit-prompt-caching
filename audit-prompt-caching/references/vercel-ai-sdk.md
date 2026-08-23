@@ -59,7 +59,7 @@ Track package versions, selected factory, wire `cache_control` / `prompt_cache_k
 (Responses-only). It is
 not a general OpenAI-compatible feature. Keep a stable full `tools` catalog in
 every request and change only the provider allow-list when the
-endpoint, release line, model, and tool class pass the applicability and
+endpoint, release line, model, and tool class pass the allowedTools capability and
 economics gates. Changing `activeTools` removes entries from the request and
 can rewrite the cacheable prefix; changing `activeTools` can be cheaper when a smaller catalog is better for a
 cold or low-reuse route, so this is not a blanket ban on `activeTools`.

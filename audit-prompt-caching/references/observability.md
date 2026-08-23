@@ -106,16 +106,22 @@ but cannot establish a request-level or route-level cause.
 Treat the documented Organization Usage API completion fields as
 `provider_usage_api_aggregate`. Preserve its time buckets, grouping, filters,
 and bucket boundaries. Its `input_tokens` is inclusive of cached and
-cache-write tokens. Treat `input_uncached_tokens` as excluding cached and
-cache-write components only when the provider documents that additive identity;
-otherwise keep the provider field and infer no residual. The documented mixed
-decomposition uses provider-defined accounting, not permission to sum fields.
+cache-write tokens. `input_uncached_tokens` is uncached input excluding
+cache-write tokens; it is neither cache reads nor writes. The
+prompt-caching guide documents a request-level read/write/neither partition.
+Do not add breakdowns onto inclusive `input_tokens` or manufacture a
+denominator/residual from missing optional fields or mismatched
+bucket/group/filter scope. The documented mixed decomposition uses
+provider-defined accounting, not permission to sum fields.
 For documented Usage API fields set `evidence_definition_status=provider_documented`,
-`evidence_denominator_status=unknown` for any derived ratio unless its
-denominator is explicitly defined and recorded, and
+`evidence_denominator_status=unknown` unless the provider documents the
+denominator, and
 `evidence_accounting_semantics=provider_defined`. Optional or missing fields
 remain absent/unknown; never zero. These semantics do not make a dashboard
 ratio equivalent to a Usage API ratio.
+
+An auditor-defined ratio is not provider-documented or decision-grade aggregate
+evidence without scope proof.
 
 Keep dashboard aggregate, Usage API aggregate, request-level provider usage,
 and gateway/replica telemetry in separate series. Do not compute a dashboard

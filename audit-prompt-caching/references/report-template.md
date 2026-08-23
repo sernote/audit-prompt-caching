@@ -81,28 +81,39 @@ and route telemetry:
 
 ```text
 evidence_source: provider_dashboard_aggregate | provider_usage_api_aggregate | request_level_provider_usage | gateway_or_replica_telemetry | rendered_prefix_evidence
-evidence_scope/granularity:
-evidence_time_window:
-evidence_filters:
-evidence_definition_status:
-evidence_denominator_status:
-evidence_accounting_semantics:
-Request correlation:
-Route/replica correlation:
+provider:
+time_window:
+granularity:
+filters:
+displayed_metric:
+displayed_value:
+evidence_definition_status: provider_documented | unknown
+evidence_denominator_status: provider_documented | unknown
+evidence_accounting_semantics: inclusive | additive | provider_defined | unknown
+request_correlation: present | absent
+route_correlation: present | absent
 ```
 
 Label Dashboard aggregate and Usage API aggregate explicitly. Do not combine
 their ratios or claim a causal finding until request-level usage and
 route/replica correlation are present.
 
+For Usage API fields, `input_uncached_tokens` is uncached input excluding
+cache-write tokens; it is neither cache reads nor writes. The prompt-caching
+guide documents a request-level read/write/neither partition.
+
 For documented Usage API fields, set `evidence_definition_status:
-provider_documented`, `evidence_denominator_status: unknown` for any derived
-ratio unless its denominator is explicitly defined and recorded, and
+provider_documented`, `evidence_denominator_status: unknown` unless the
+provider documents the denominator, and
 `evidence_accounting_semantics: provider_defined`. This is a documented mixed
 decomposition, not permission to sum fields; preserve field-level
-inclusive/decomposition semantics. Optional/missing fields: absent/unknown,
-never zero. Dashboard statuses remain unknown unless the provider documents the
-relevant definition, denominator, and accounting.
+inclusive/decomposition semantics. Do not add breakdowns onto inclusive
+`input_tokens` or manufacture a denominator/residual from missing optional
+fields or mismatched bucket/group/filter scope. An auditor-defined ratio is not
+provider-documented or decision-grade aggregate evidence without scope proof.
+Optional/missing fields: absent/unknown, never zero. Dashboard statuses remain
+unknown unless the provider documents the relevant definition, denominator, and
+accounting.
 
 ## Clean Checks
 

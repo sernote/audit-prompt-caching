@@ -4041,6 +4041,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("package.json", normalized)
         self.assertIn("lockfile", normalized)
         self.assertIn("allowedTools capability gate", normalized)
+        self.assertIn("allowedTools capability and economics gates", normalized)
+        self.assertNotIn("applicability and economics gates", normalized)
         self.assertIn("corrected-mapping gate", normalized)
 
         chronology = re.search(
@@ -4176,6 +4178,13 @@ class PromptCacheScriptsTest(unittest.TestCase):
         openai = (root / "references" / "openai.md").read_text()
         observability = (root / "references" / "observability.md").read_text()
         report = (root / "references" / "report-template.md").read_text()
+        evals_text = (root / "evals" / "evals.json").read_text()
+        for source_text in (openai, observability, report, evals_text):
+            self.assertNotIn("only when an additive identity is documented", source_text)
+            self.assertNotIn(
+                "unless its denominator is explicitly defined and recorded",
+                source_text,
+            )
         openai_section = extract_markdown_section(
             openai, "Prompt Caching dashboard and aggregate evidence"
         )
@@ -4194,15 +4203,19 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("evidence_accounting_semantics=provider_defined", usage_normalized)
         self.assertRegex(
             usage_normalized,
-            r"input_tokens.*inclusive.*input_uncached_tokens.*excludes cached and cache-write",
+            r"input_tokens.*inclusive.*input_uncached_tokens.*uncached input.*excluding cache-write.*neither cache reads nor writes",
         )
+        self.assertIn("read/write/neither partition", usage_normalized)
+        self.assertIn(
+            "do not add breakdowns onto inclusive `input_tokens`",
+            usage_normalized.lower(),
+        )
+        self.assertIn("mismatched bucket/group/filter scope", usage_normalized)
+        self.assertNotIn("only when an additive identity is documented", usage_normalized)
+        self.assertNotIn("additive identity", usage_normalized)
         self.assertRegex(
             usage_normalized.lower(),
             r"documented mixed decomposition.*not permission to sum|do not naively sum",
-        )
-        self.assertRegex(
-            usage_normalized.lower(),
-            r"additive identity.*documented.*otherwise.*residual|otherwise.*no inferred residual",
         )
         self.assertRegex(
             usage_normalized.lower(),
@@ -4250,6 +4263,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         report_section = extract_markdown_section(report, "Evidence Needed Next")
         report_normalized = " ".join(report_section.split())
+        report_contract = re.search(
+            r"```text\n(.*?)\n```", report_section, re.DOTALL
+        )
+        self.assertIsNotNone(report_contract)
+        report_fields = {
+            line.split(":", 1)[0]
+            for line in report_contract.group(1).splitlines()
+            if ":" in line
+        }
+        self.assertEqual(
+            report_fields,
+            contract_fields,
+            "report-template provenance block must mirror observability schema",
+        )
         self.assertIn("Dashboard aggregate", report_normalized)
         self.assertIn("Usage API aggregate", report_normalized)
         for key in (
@@ -4260,6 +4287,11 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertIn(key, report_normalized)
         self.assertIn("provider_documented", report_normalized)
         self.assertIn("provider_defined", report_normalized)
+        self.assertIn(
+            "input_uncached_tokens` is uncached input excluding cache-write tokens",
+            report_normalized,
+        )
+        self.assertIn("read/write/neither partition", report_normalized)
         self.assertIn(
             "optional/missing fields: absent/unknown, never zero",
             report_normalized.lower(),
@@ -4281,9 +4313,17 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("Dashboard UI", dashboard_normalized)
         self.assertIn("not causal proof", dashboard_normalized)
         self.assertIn("input_tokens` is inclusive", usage_normalized)
-        self.assertIn("input_uncached_tokens` excludes cached and cache-write", usage_normalized)
+        self.assertIn(
+            "input_uncached_tokens` is uncached input excluding cache-write tokens",
+            usage_normalized,
+        )
+        self.assertIn("neither cache reads nor writes", usage_normalized)
+        self.assertIn("read/write/neither partition", usage_normalized)
         self.assertIn("No same formula is assumed", usage_normalized)
-        self.assertIn("denominator is not inferred", usage_normalized)
+        self.assertIn("evidence_denominator_status=unknown", usage_normalized)
+        self.assertIn("unless the provider documents the denominator", usage_normalized)
+        self.assertIn("auditor-defined ratio", usage_normalized)
+        self.assertNotIn("only when an additive identity is documented", usage_normalized)
         self.assertNotIn("input_tokens` is inclusive", dashboard_normalized)
 
     def test_dynamic_evals_cover_version_wire_contrast_and_aggregate_evidence(self):
@@ -4298,10 +4338,13 @@ class PromptCacheScriptsTest(unittest.TestCase):
         vercel = by_id[25]
         self.assertIn("activeTools", vercel["prompt"])
         self.assertIn("providerOptions.openai.allowedTools", vercel["prompt"])
+        self.assertNotIn("server_label", vercel["prompt"])
         self.assertRegex(vercel["expected_output"], r"stable full tools catalog.*Responses")
         self.assertIn("mode: auto", vercel["expected_output"])
         self.assertIn("mode: required", vercel["expected_output"])
         self.assertIn("tool_choice wire mapping", vercel["expected_output"])
+        self.assertIn("allowedTools capability", vercel["expected_output"])
+        self.assertNotIn("tool applicability", vercel["expected_output"])
         for wire_anchor in (
             '{type: "function", name}',
             '{type: "custom", name}',
@@ -4318,6 +4361,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("@ai-sdk/openai ^3.0.70", version["prompt"])
         self.assertIn("openai.responses()", version["prompt"])
         self.assertIn("openai.tools.webSearch()", version["prompt"])
+        self.assertIn("Which version evidence and version floors decide", version["prompt"])
         for leaked_floor in ("2.x unavailable", "3.0.62", "3.0.98", "4.0.43"):
             self.assertNotIn(leaked_floor, version["prompt"])
         self.assertRegex(
@@ -4337,11 +4381,14 @@ class PromptCacheScriptsTest(unittest.TestCase):
         usage = by_id[28]["expected_output"]
         self.assertRegex(
             usage,
-            r"provider_usage_api_aggregate.*Usage API aggregate.*evidence_definition_status.*provider_documented.*evidence_denominator_status.*unknown.*input_tokens.*inclusive.*input_uncached_tokens.*excludes cached and cache-write",
+            r"provider_usage_api_aggregate.*Usage API aggregate.*evidence_definition_status.*provider_documented.*evidence_denominator_status.*unknown.*input_tokens.*inclusive.*input_uncached_tokens.*uncached input.*excluding cache-write.*neither cache reads nor writes",
         )
         self.assertIn("Dashboard UI", usage)
         self.assertIn("filters", usage)
         self.assertIn("not permission to sum", usage)
+        self.assertIn("read/write/neither partition", usage)
+        self.assertIn("auditor-defined ratio", usage)
+        self.assertNotIn("only when an additive identity is documented", usage)
 
         contrast = by_id[29]["expected_output"]
         self.assertRegex(
@@ -4382,8 +4429,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
         azure = (
             ROOT / "audit-prompt-caching" / "references" / "azure-openai.md"
         ).read_text()
+        self.assertIn("Last reviewed: 2026-08-11.", azure)
         section = extract_markdown_section(azure, "Responses endpoint capability gate")
         normalized = " ".join(section.split())
+        self.assertIn("Section reviewed: 2026-08-23.", normalized)
         for required in (
             "Responses endpoint",
             "endpoint",

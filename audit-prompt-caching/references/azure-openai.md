@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-08-23.
+Last reviewed: 2026-08-11.
 
 Verify before exact claims:
 - supported Azure OpenAI models and deployment types
@@ -44,6 +44,8 @@ Azure does **not** document `prompt_cache_options` or `prompt_cache_breakpoint` 
 Treat tool definitions, structured outputs, and image representation as part of the cacheable input unless current docs say otherwise. Keep ordering, JSON serialization, `detail`, URL/base64 representation, and signed URL query strings stable.
 
 ## Responses endpoint capability gate
+
+Section reviewed: 2026-08-23.
 
 The Responses endpoint is a separate Azure deployment surface. Before considering
 `allowed_tools`, load current Azure docs and record the endpoint, deployment/model,

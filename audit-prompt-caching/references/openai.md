@@ -98,22 +98,26 @@ completion token decomposition is:
 - `input_tokens` is inclusive of cached and cache-write tokens;
 - `input_cached_tokens` aggregates cache reads;
 - `input_cache_write_tokens` aggregates cache writes;
-- `input_uncached_tokens` is the uncached component; do not treat it as an
-  additive residual unless the provider documents that identity.
+- `input_uncached_tokens` is uncached input excluding cache-write tokens; it is
+  neither cache reads nor writes.
 
-In the API field wording, `input_tokens` includes cached and cache-write tokens,
-while `input_uncached_tokens` excludes cached and cache-write components only
-when an additive identity is documented; otherwise no residual is inferred.
+The prompt-caching guide documents a request-level read/write/neither partition.
+Do not add breakdowns onto inclusive `input_tokens` or manufacture a
+denominator/residual from missing optional fields or mismatched
+bucket/group/filter scope.
 
 For documented Usage API fields, record
 `evidence_definition_status=provider_documented`,
-`evidence_denominator_status=unknown` for any ratio derived from these fields
-unless its denominator is explicitly defined and recorded, and
+`evidence_denominator_status=unknown` unless the provider documents the
+denominator, and
 `evidence_accounting_semantics=provider_defined`. The latter means a documented
 mixed decomposition: field-level `input_tokens` is inclusive, and the fields
 must not be naively summed; this is not permission to sum fields. Optional or
 missing fields remain absent/unknown;
 never replace them with zero or fabricate a bucket denominator.
+
+An auditor-defined ratio is not provider-documented or decision-grade aggregate
+evidence without scope proof.
 
 These are Usage API accounting semantics, not a formula to apply to Dashboard
 UI ratios. Do not compare a dashboard hit rate with a per-request ratio as one
