@@ -22,9 +22,10 @@ FIXTURES = ROOT / "fixtures"
 # The former 0.85 character heuristic was retired: the required complete
 # provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
-# Restoring the operational prompt-segment classification and wrapper wording
-# raises the whole-skill baseline only to the measured 5903-token value.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5903
+# Restoring the operational prompt-segment classification and locator-only
+# scanner policy and allow-listed value note raise the baseline only to the
+# measured 5943 tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 5943
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -2271,6 +2272,185 @@ class PromptCacheScriptsTest(unittest.TestCase):
         for sentinel in sentinels:
             self.assertNotIn(sentinel, rendered)
 
+    def test_extract_llm_calls_reports_only_allowlisted_vllm_values_and_comments(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "command: vllm serve model --enable-prefix-caching=false "
+                "--enable-kv-cache-events 1 --prefix-caching-hash-algo xxhash "
+                "--prefix-cache-retention-interval 300\n"
+                "# command: vllm serve model --enable-prefix-caching "
+                "--enable-kv-cache-events=false --prefix-caching-hash-algo unknown "
+                "--prefix-cache-retention-interval 1234567890\n"
+                "# command: vllm serve model --enable-prefix-caching=0 "
+                "--enable-kv-cache-events 0 --prefix-caching-hash-algo sha256 "
+                "--prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / "config.yaml").write_text(
+                "enable_prefix_caching: true vllm\n"
+                "VLLM_ENABLE_KV_CACHE_EVENTS=0 vllm serve model\n"
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=300 vllm serve model\n"
+                "VLLM_PREFIX_CACHING_HASH_ALGO=sha256_cbor vllm serve model\n"
+            )
+
+            output = module.find_matches(tmp_path)
+
+        compose = {
+            finding["line"]: finding
+            for finding in output["findings"]
+            if finding["path"] == "compose.yaml"
+        }
+        self.assertEqual(compose[1]["commented"], False)
+        self.assertEqual(compose[1]["signal_values"]["--enable-prefix-caching"], "false")
+        self.assertEqual(compose[1]["signal_values"]["--enable-kv-cache-events"], "1")
+        self.assertEqual(compose[1]["signal_values"]["--prefix-caching-hash-algo"], "xxhash")
+        self.assertEqual(compose[1]["signal_values"]["--prefix-cache-retention-interval"], "300")
+        self.assertEqual(compose[2]["commented"], True)
+        self.assertEqual(compose[2]["signal_values"]["--enable-prefix-caching"], "true")
+        self.assertEqual(compose[2]["signal_values"]["--enable-kv-cache-events"], "false")
+        self.assertEqual(compose[2]["signal_values"]["--prefix-caching-hash-algo"], "unspecified")
+        self.assertEqual(compose[2]["signal_values"]["--prefix-cache-retention-interval"], "unspecified")
+        self.assertEqual(compose[3]["commented"], True)
+        self.assertEqual(compose[3]["signal_values"]["--prefix-caching-hash-algo"], "sha256")
+        self.assertEqual(compose[3]["signal_values"]["--prefix-cache-retention-interval"], "0")
+        config = {
+            finding["line"]: finding
+            for finding in output["findings"]
+            if finding["path"] == "config.yaml"
+        }
+        self.assertEqual(config[1]["signal_values"]["--enable-prefix-caching"], "true")
+        self.assertEqual(config[2]["signal_values"]["--enable-kv-cache-events"], "0")
+        self.assertEqual(
+            config[3]["signal_values"]["VLLM_PREFIX_CACHE_RETENTION_INTERVAL"], "300"
+        )
+        self.assertEqual(
+            config[4]["signal_values"]["prefix_caching_hash_algo"], "sha256_cbor"
+        )
+        for finding in output["findings"]:
+            for value in finding["signal_values"].values():
+                if value.isdigit():
+                    self.assertLessEqual(len(value), 9)
+                else:
+                    self.assertIn(
+                        value,
+                        {
+                            "true",
+                            "false",
+                            "0",
+                            "1",
+                            "builtin",
+                            "sha256",
+                            "sha256_cbor",
+                            "xxhash",
+                            "xxhash_cbor",
+                            "unspecified",
+                        },
+                    )
+
+    def test_extract_llm_calls_signal_labels_cover_patterns_without_regex_source(self):
+        module = load_script_module("extract_llm_calls.py")
+        patterns = {
+            pattern
+            for provider_patterns in module.PROVIDER_PATTERNS.values()
+            for pattern in provider_patterns
+        }
+        self.assertEqual(patterns, set(module.SIGNAL_LABELS))
+        for label in module.SIGNAL_LABELS.values():
+            self.assertNotRegex(label, r"[\\()]")
+
+    def test_extract_llm_calls_preserves_legacy_pattern_for_split_signals(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "bedrock.py").write_text("CacheWriteInputTokens = 128\n")
+            (tmp_path / "vllm.yaml").write_text("connector: LMCacheConnector\n")
+            (tmp_path / "sglang.py").write_text("pd_disaggregation = true\n")
+            output = module.find_matches(tmp_path)
+
+        by_provider = {
+            finding["provider"]: finding for finding in output["findings"]
+        }
+        self.assertEqual(
+            by_provider["bedrock"]["pattern"],
+            r"\bCache(Read|Write)InputTokens\b",
+        )
+        self.assertEqual(
+            by_provider["vllm"]["pattern"],
+            r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
+        )
+        self.assertEqual(
+            by_provider["sglang"]["pattern"],
+            r"\b(disaggregation_mode|pd_disaggregation)\b",
+        )
+        self.assertIn("CacheWriteInputTokens", by_provider["bedrock"]["signals"])
+        self.assertIn("LMCacheConnector", by_provider["vllm"]["signals"])
+        self.assertIn("pd_disaggregation", by_provider["sglang"]["signals"])
+
+    def test_extract_llm_calls_output_has_recursive_structural_allowlist(self):
+        module = load_script_module("extract_llm_calls.py")
+        sentinel = "recursive-source-secret-7f4a"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "serve.sh").write_text(
+                f"vllm serve model --api-key {sentinel} --enable-prefix-caching\n"
+            )
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn(sentinel, result.stdout)
+        allowed_keys = {
+            "root",
+            "files_scanned",
+            "matches",
+            "providers",
+            "findings",
+            "source_snippet_policy",
+            "path",
+            "line",
+            "provider",
+            "pattern",
+            "text",
+            "signals",
+            "commented",
+            "signal_values",
+        }
+        allowed_values = set(module.SIGNAL_LABELS.values())
+
+        def assert_structure(value, key=None):
+            if isinstance(value, dict):
+                for child_key, child_value in value.items():
+                    if key == "providers":
+                        self.assertIn(child_key, module.PROVIDER_PATTERNS)
+                        assert_structure(child_value, "provider_count")
+                        continue
+                    if key == "signal_values":
+                        self.assertIn(child_key, allowed_values)
+                        assert_structure(child_value, "signal_values")
+                        continue
+                    self.assertIn(child_key, allowed_keys)
+                    assert_structure(child_value, child_key)
+            elif isinstance(value, list):
+                for child_value in value:
+                    assert_structure(child_value, key)
+            elif isinstance(value, str):
+                if key in {"root", "path", "pattern"}:
+                    return
+                if key == "text":
+                    self.assertEqual(value, "[SOURCE_SNIPPET_ELIDED]")
+                elif key == "signals":
+                    self.assertIn(value, allowed_values)
+                elif key == "signal_values":
+                    if value.isdigit():
+                        self.assertLessEqual(len(value), 9)
+                    else:
+                        self.assertIn(value, allowed_values | {"true", "false", "0", "1", "unspecified"})
+                else:
+                    self.assertIn(value, allowed_values | {"elided"})
+
+        assert_structure(output)
+
     def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -4234,7 +4414,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            5903,
+            5943,
             "the whole-skill baseline must equal the measured restored content",
         )
         self.assertLessEqual(

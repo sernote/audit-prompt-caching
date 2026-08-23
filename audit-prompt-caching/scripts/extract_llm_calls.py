@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Find provider/cache signals while eliding source snippets by default.
+"""Find provider/cache signals while always eliding source snippets.
 
 Findings retain a stable path, line, provider, pattern, and signal contract;
-the compatibility ``text`` field is always ``[SOURCE_SNIPPET_ELIDED]``. Use
-the reported path and line for authorized local inspection instead of relying
-on copied source text.
+the compatibility ``text`` field is always ``[SOURCE_SNIPPET_ELIDED]`` and the
+sole supported source-snippet policy is ``elided``. Paths are emitted verbatim
+as locators; use the reported path and line for authorized local inspection
+instead of relying on copied source text. Only closed-vocabulary vLLM values
+are emitted; bare boolean flags resolve to ``true`` and unknown values to
+``unspecified``.
 """
 
 import argparse
@@ -84,7 +87,8 @@ PROVIDER_PATTERNS = {
         r"\bclient\.converse\b",
         r"\binvoke_model\b",
         r"\bcachePoint\b",
-        r"\bCache(Read|Write)InputTokens\b",
+        r"\bCacheReadInputTokens\b",
+        r"\bCacheWriteInputTokens\b",
     ],
     "openrouter": [
         r"\bopenrouter\b",
@@ -101,8 +105,16 @@ PROVIDER_PATTERNS = {
         r"\bVLLM_PREFIX_CACHE_RETENTION_INTERVAL\b",
         r"(^|[^A-Za-z0-9_])--prefix-caching-hash-algo($|[^A-Za-z0-9_-])",
         r"\bprefix_caching_hash_algo\b",
-        r"\b(enable_kv_cache_events|kv_cache_events)\b",
-        r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
+        r"\benable_prefix_caching\b",
+        r"\bVLLM_ENABLE_PREFIX_CACHING\b",
+        r"\benable_kv_cache_events\b",
+        r"\bkv_cache_events\b",
+        r"\bVLLM_ENABLE_KV_CACHE_EVENTS\b",
+        r"\bVLLM_KV_CACHE_EVENTS\b",
+        r"\bVLLM_PREFIX_CACHING_HASH_ALGO\b",
+        r"\bkv_transfer_config\b",
+        r"\bkv_connector\b",
+        r"\bLMCacheConnector\b",
         r"\bAsyncLLMEngine\b",
     ],
     "sglang": [
@@ -110,8 +122,10 @@ PROVIDER_PATTERNS = {
         r"\bRadixAttention\b",
         r"(^|[^A-Za-z0-9_])--disable-radix-cache($|[^A-Za-z0-9_-])",
         r"\bHiCache\b",
-        r"\b(enable_hierarchical_cache|hicache_storage_backend)\b",
-        r"\b(disaggregation_mode|pd_disaggregation)\b",
+        r"\benable_hierarchical_cache\b",
+        r"\bhicache_storage_backend\b",
+        r"\bdisaggregation_mode\b",
+        r"\bpd_disaggregation\b",
     ],
     "gemini": [
         r"\bgoogle\.genai\b",
@@ -131,7 +145,33 @@ PROVIDER_PATTERNS = {
 }
 
 
-VLLM_SIGNAL_LABELS = {
+SIGNAL_LABELS = {
+    # OpenAI
+    r"\bfrom\s+openai\s+import\b": "from_openai_import",
+    r"\bimport\s+openai\b": "import_openai",
+    r"\bresponses\.create\s*\(": "responses_create",
+    r"\bchat\.completions\.create\s*\(": "chat_completions_create",
+    r"\bprompt_cache_key\b": "prompt_cache_key",
+    r"\bprompt_cache_retention\b": "prompt_cache_retention",
+    # Anthropic
+    r"\banthropic\b": "anthropic",
+    r"\bAnthropic\s*\(": "Anthropic",
+    r"\bmessages\.create\s*\(": "messages_create",
+    r"\bcache_control\b": "cache_control",
+    # Bedrock
+    r"\bbedrock-runtime\b": "bedrock-runtime",
+    r"\bBedrockRuntime\b": "BedrockRuntime",
+    r"\bclient\.converse\b": "client_converse",
+    r"\binvoke_model\b": "invoke_model",
+    r"\bcachePoint\b": "cachePoint",
+    r"\bCacheReadInputTokens\b": "CacheReadInputTokens",
+    r"\bCacheWriteInputTokens\b": "CacheWriteInputTokens",
+    # OpenRouter
+    r"\bopenrouter\b": "openrouter",
+    r"\bopenrouter\.ai/api/v1\b": "openrouter_api",
+    r"\bOPENROUTER_API_KEY\b": "OPENROUTER_API_KEY",
+    r"\bopenrouter/auto\b": "openrouter_auto",
+    # vLLM
     r"\bvllm\b": "vllm",
     r"(^|[^A-Za-z0-9_])--enable-prefix-caching($|[^A-Za-z0-9_-])": "--enable-prefix-caching",
     r"(^|[^A-Za-z0-9_])--enable-kv-cache-events($|[^A-Za-z0-9_-])": "--enable-kv-cache-events",
@@ -140,13 +180,170 @@ VLLM_SIGNAL_LABELS = {
     r"\bVLLM_PREFIX_CACHE_RETENTION_INTERVAL\b": "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
     r"(^|[^A-Za-z0-9_])--prefix-caching-hash-algo($|[^A-Za-z0-9_-])": "--prefix-caching-hash-algo",
     r"\bprefix_caching_hash_algo\b": "prefix_caching_hash_algo",
-    r"\b(enable_kv_cache_events|kv_cache_events)\b": "kv_cache_events",
-    r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b": "kv_transfer_config",
+    r"\benable_prefix_caching\b": "--enable-prefix-caching",
+    r"\bVLLM_ENABLE_PREFIX_CACHING\b": "--enable-prefix-caching",
+    r"\benable_kv_cache_events\b": "--enable-kv-cache-events",
+    r"\bkv_cache_events\b": "kv_cache_events",
+    r"\bVLLM_ENABLE_KV_CACHE_EVENTS\b": "--enable-kv-cache-events",
+    r"\bVLLM_KV_CACHE_EVENTS\b": "kv_cache_events",
+    r"\bVLLM_PREFIX_CACHING_HASH_ALGO\b": "prefix_caching_hash_algo",
+    r"\bkv_transfer_config\b": "kv_transfer_config",
+    r"\bkv_connector\b": "kv_connector",
+    r"\bLMCacheConnector\b": "LMCacheConnector",
     r"\bAsyncLLMEngine\b": "AsyncLLMEngine",
+    # SGLang
+    r"\bsglang\b": "sglang",
+    r"\bRadixAttention\b": "RadixAttention",
+    r"(^|[^A-Za-z0-9_])--disable-radix-cache($|[^A-Za-z0-9_-])": "--disable-radix-cache",
+    r"\bHiCache\b": "HiCache",
+    r"\benable_hierarchical_cache\b": "enable_hierarchical_cache",
+    r"\bhicache_storage_backend\b": "hicache_storage_backend",
+    r"\bdisaggregation_mode\b": "disaggregation_mode",
+    r"\bpd_disaggregation\b": "pd_disaggregation",
+    # Gemini, DeepSeek, and Qwen
+    r"\bgoogle\.genai\b": "google_genai",
+    r"\bgoogle\.generativeai\b": "google_generativeai",
+    r"\bCachedContent\b": "CachedContent",
+    r"\bdeepseek\b": "deepseek",
+    r"\bapi\.deepseek\.com\b": "deepseek_api",
+    r"\bprompt_cache_hit_tokens\b": "prompt_cache_hit_tokens",
+    r"\bdashscope\b": "dashscope",
+    r"\bqwen\b": "qwen",
+    r"\bbailian\b": "bailian",
+}
+
+VLLM_SIGNAL_LABELS = {
+    pattern: SIGNAL_LABELS[pattern]
+    for pattern in PROVIDER_PATTERNS["vllm"]
+}
+
+LEGACY_PATTERN_ALIASES = {
+    r"\bCacheReadInputTokens\b": r"\bCache(Read|Write)InputTokens\b",
+    r"\bCacheWriteInputTokens\b": r"\bCache(Read|Write)InputTokens\b",
+    r"\benable_kv_cache_events\b": r"\b(enable_kv_cache_events|kv_cache_events)\b",
+    r"\bkv_cache_events\b": r"\b(enable_kv_cache_events|kv_cache_events)\b",
+    r"\bkv_transfer_config\b": r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
+    r"\bkv_connector\b": r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
+    r"\bLMCacheConnector\b": r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
+    r"\benable_hierarchical_cache\b": r"\b(enable_hierarchical_cache|hicache_storage_backend)\b",
+    r"\bhicache_storage_backend\b": r"\b(enable_hierarchical_cache|hicache_storage_backend)\b",
+    r"\bdisaggregation_mode\b": r"\b(disaggregation_mode|pd_disaggregation)\b",
+    r"\bpd_disaggregation\b": r"\b(disaggregation_mode|pd_disaggregation)\b",
 }
 
 SOURCE_SNIPPET_POLICY = "elided"
 SOURCE_SNIPPET_TEXT = "[SOURCE_SNIPPET_ELIDED]"
+SIGNAL_VALUE_UNSPECIFIED = "unspecified"
+VLLM_BOOLEAN_VALUES = frozenset({"true", "false", "1", "0"})
+VLLM_HASH_VALUES = frozenset(
+    {"builtin", "sha256", "sha256_cbor", "xxhash", "xxhash_cbor"}
+)
+VLLM_RETENTION_VALUE_PATTERN = re.compile(r"\A\d{1,9}\Z")
+COMMENTED_LINE_PATTERN = re.compile(r"\A\s*(?:#|//|;|--\s)")
+VLLM_SIGNAL_VALUE_ALIASES = {
+    "--enable-prefix-caching": (
+        "--enable-prefix-caching",
+        "enable_prefix_caching",
+        "VLLM_ENABLE_PREFIX_CACHING",
+    ),
+    "--enable-kv-cache-events": (
+        "--enable-kv-cache-events",
+        "enable_kv_cache_events",
+        "kv_cache_events",
+        "VLLM_ENABLE_KV_CACHE_EVENTS",
+        "VLLM_KV_CACHE_EVENTS",
+    ),
+    "kv_cache_events": (
+        "--enable-kv-cache-events",
+        "enable_kv_cache_events",
+        "kv_cache_events",
+        "VLLM_ENABLE_KV_CACHE_EVENTS",
+        "VLLM_KV_CACHE_EVENTS",
+    ),
+    "--prefix-caching-hash-algo": (
+        "--prefix-caching-hash-algo",
+        "prefix_caching_hash_algo",
+        "VLLM_PREFIX_CACHING_HASH_ALGO",
+    ),
+    "prefix_caching_hash_algo": (
+        "--prefix-caching-hash-algo",
+        "prefix_caching_hash_algo",
+        "VLLM_PREFIX_CACHING_HASH_ALGO",
+    ),
+    "--prefix-cache-retention-interval": (
+        "--prefix-cache-retention-interval",
+        "prefix_cache_retention_interval",
+        "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+    ),
+    "prefix_cache_retention_interval": (
+        "--prefix-cache-retention-interval",
+        "prefix_cache_retention_interval",
+        "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+    ),
+    "VLLM_PREFIX_CACHE_RETENTION_INTERVAL": (
+        "--prefix-cache-retention-interval",
+        "prefix_cache_retention_interval",
+        "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+    ),
+}
+
+
+def _consume_allowlisted_flag_value(line, aliases, vocabulary, numeric=False):
+    """Resolve a narrowly allow-listed setting without returning source text."""
+    for alias in aliases:
+        pattern = re.compile(
+            rf"(?<![A-Za-z0-9_-]){re.escape(alias)}(?![A-Za-z0-9_-])"
+        )
+        match = pattern.search(line)
+        if match is None:
+            continue
+        index = match.end()
+        while index < len(line) and line[index].isspace():
+            index += 1
+        has_separator = index < len(line) and line[index] in ":="
+        if has_separator:
+            index += 1
+            while index < len(line) and line[index].isspace():
+                index += 1
+        elif index >= len(line) or line[index] in "#;,)}]" or line[index] == "-":
+            return "true" if not numeric else SIGNAL_VALUE_UNSPECIFIED
+        if index >= len(line) or line[index] in "#;,)}]":
+            return "true" if not numeric else SIGNAL_VALUE_UNSPECIFIED
+
+        quote = line[index] if line[index] in {'"', "'"} else ""
+        if quote:
+            index += 1
+            value_start = index
+            while index < len(line) and line[index] != quote:
+                index += 1
+            candidate = line[value_start:index]
+        else:
+            value_start = index
+            while index < len(line) and not line[index].isspace() and line[index] not in ",;)}]":
+                index += 1
+            candidate = line[value_start:index]
+        candidate = candidate.lower()
+        if candidate in vocabulary:
+            return candidate
+        if numeric and VLLM_RETENTION_VALUE_PATTERN.fullmatch(candidate):
+            return candidate
+        return SIGNAL_VALUE_UNSPECIFIED
+    return SIGNAL_VALUE_UNSPECIFIED
+
+
+def _signal_value(signal, line):
+    aliases = VLLM_SIGNAL_VALUE_ALIASES.get(signal)
+    if aliases is None:
+        return SIGNAL_VALUE_UNSPECIFIED
+    if signal in {
+        "--enable-prefix-caching",
+        "--enable-kv-cache-events",
+        "kv_cache_events",
+    }:
+        return _consume_allowlisted_flag_value(line, aliases, VLLM_BOOLEAN_VALUES)
+    if signal in {"--prefix-caching-hash-algo", "prefix_caching_hash_algo"}:
+        return _consume_allowlisted_flag_value(line, aliases, VLLM_HASH_VALUES)
+    return _consume_allowlisted_flag_value(line, aliases, frozenset(), numeric=True)
 
 
 def should_scan(path):
@@ -194,23 +391,23 @@ def find_matches(root):
                 if not matched_patterns:
                     continue
                 providers[provider] += 1
+                signals = list(
+                    dict.fromkeys(SIGNAL_LABELS[pattern] for pattern in matched_patterns)
+                )
                 finding = {
                     "path": str(path.relative_to(root)),
                     "line": lineno,
                     "provider": provider,
-                    "pattern": matched_patterns[0],
+                    "pattern": LEGACY_PATTERN_ALIASES.get(
+                        matched_patterns[0], matched_patterns[0]
+                    ),
                     "text": SOURCE_SNIPPET_TEXT,
+                    "signals": signals,
+                    "commented": bool(COMMENTED_LINE_PATTERN.match(line)),
+                    "signal_values": {
+                        signal: _signal_value(signal, line) for signal in signals
+                    },
                 }
-                finding["signals"] = list(
-                    dict.fromkeys(
-                        (
-                            VLLM_SIGNAL_LABELS.get(pattern, pattern)
-                            if provider == "vllm"
-                            else pattern
-                        )
-                        for pattern in matched_patterns
-                    )
-                )
                 findings.append(finding)
     providers = {name: count for name, count in providers.items() if count}
     return {

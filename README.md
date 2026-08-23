@@ -206,6 +206,10 @@ python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-cach
 python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 ```
 
+`extract_llm_calls.py` is locator-only: source snippets are always elided, and
+only closed signal/value allow-lists are emitted (a bare boolean flag means
+`true`). Open each reported `path:line` for other facts.
+
 `layout_linter.py` accepts rendered Chat-style `messages` payloads and
 Responses-style `input` payloads.
 
