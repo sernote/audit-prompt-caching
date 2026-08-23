@@ -76,6 +76,18 @@ def parse_markdown_table(text, header):
     raise AssertionError(f"missing Markdown table header: {header}")
 
 
+def extract_markdown_section(text, heading):
+    """Return one level-two Markdown section without unrelated sections."""
+    pattern = rf"^## {re.escape(heading)}\s*$"
+    match = re.search(pattern, text, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"missing Markdown section: {heading}")
+    body_start = match.end()
+    next_heading = re.search(r"^## (?!#)", text[body_start:], re.MULTILINE)
+    body_end = body_start + next_heading.start() if next_heading else len(text)
+    return text[body_start:body_end]
+
+
 class PromptCacheScriptsTest(unittest.TestCase):
     def test_fixture_pack_is_valid(self):
         expected_paths = [
@@ -3645,55 +3657,105 @@ class PromptCacheScriptsTest(unittest.TestCase):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "vercel-ai-sdk.md"
         ).read_text()
+        section = extract_markdown_section(reference, "OpenAI Responses allowedTools")
+        normalized = " ".join(section.split())
 
-        for required in [
-            "OpenAI Responses allowedTools",
-            "stable full `tools`",
-            "changing `activeTools`",
-            "providerOptions.openai.allowedTools",
-            "Responses-only",
-            "toolChoice",
-            "mode: `auto`",
-            "mode: `required`",
-            "model capability",
-            "tool class",
-            "package.json",
-            "lockfile",
-            "2.x",
-            "3.0.62",
-            "3.0.98",
-            "4.0.43",
-            "availability gate",
-            "corrected-mapping gate",
-        ]:
-            self.assertIn(required, reference, required)
+        self.assertIn("stable full `tools` catalog", normalized)
+        self.assertIn("providerOptions.openai.allowedTools", normalized)
+        self.assertIn("Responses-only", normalized)
+        self.assertIn("mode: `auto`", normalized)
+        self.assertIn("mode: `required`", normalized)
+        self.assertIn("toolChoice", normalized)
+        self.assertIn("model capability", normalized)
+        self.assertIn("tool class", normalized)
+        self.assertIn("package.json", normalized)
+        self.assertIn("lockfile", normalized)
+        self.assertIn("availability gate", normalized)
+        self.assertIn("corrected-mapping gate", normalized)
+
+        history = extract_markdown_section(
+            reference, "OpenAI Responses allowedTools"
+        )
+        chronology = re.search(
+            r"May 5, 2026.*?29e6ac6.*?base Responses option.*?"
+            r"Aug 18, 2026.*?a062795.*?corrected.*?3\.0\.98.*?4\.0\.43",
+            " ".join(history.split()),
+        )
+        self.assertIsNotNone(
+            chronology,
+            "base introduction and Aug 18 correction must be distinct chronological evidence",
+        )
+
+        rows = parse_markdown_table(
+            reference,
+            "| `@ai-sdk/openai` line | Availability | Corrected provider-tool mapping |",
+        )
+        self.assertEqual(len(rows), 4)
+        by_line = {row["`@ai-sdk/openai` line"]: row for row in rows}
+        self.assertIn("`allowedTools` is absent", by_line["`2.x` / AI SDK v5"]["Availability"])
+        self.assertIn("not applicable", by_line["`2.x` / AI SDK v5"]["Corrected provider-tool mapping"])
+        self.assertEqual(
+            by_line["`3.x` / AI SDK v6"]["Availability"],
+            "available from `3.0.62`",
+        )
+        self.assertEqual(
+            by_line["`3.x` / AI SDK v6"]["Corrected provider-tool mapping"],
+            "corrected at `>=3.0.98`",
+        )
+        self.assertEqual(
+            by_line["`4.x`"]["Corrected provider-tool mapping"],
+            "corrected at `>=4.0.43`",
+        )
+        self.assertIn("unknown line", by_line)
+        self.assertIn("do not transfer floors", by_line["unknown line"]["Corrected provider-tool mapping"])
+        self.assertRegex(
+            normalized,
+            r"For Azure.*references/azure-openai\.md.*endpoint.*deployment/model.*api-version.*Responses tool_choice schema.*final wire",
+        )
 
     def test_vercel_allowed_tools_contract_covers_wire_mapping_and_failure_modes(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "vercel-ai-sdk.md"
         ).read_text()
+        section = extract_markdown_section(reference, "OpenAI Responses allowedTools")
+        rows = parse_markdown_table(
+            section,
+            "| Tool class | Entry in `allowed_tools.tools` |",
+        )
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "Tool class": "function",
+                    "Entry in `allowed_tools.tools`": "`{type: \"function\", name}`",
+                },
+                {
+                    "Tool class": "custom",
+                    "Entry in `allowed_tools.tools`": "`{type: \"custom\", name}`",
+                },
+                {
+                    "Tool class": "MCP",
+                    "Entry in `allowed_tools.tools`": "`{type: \"mcp\", server_label}`",
+                },
+                {
+                    "Tool class": "supported built-in/provider-defined tool",
+                    "Entry in `allowed_tools.tools`": "`{type}`",
+                },
+            ],
+        )
 
+        normalized = " ".join(section.split())
         for required in [
-            "| Tool class |",
-            "{type: \"function\", name}",
-            "{type: \"custom\", name}",
-            "{type: \"mcp\", server_label}",
             "`tool_search`",
             "`deferLoading`",
             "namespaced tools",
-            "warning",
-            "empty",
-            "error",
-            "unknown",
             "ambiguous",
             "declared tool name has priority",
-            "MCP",
             "server-level",
-            "toolNames",
-            "final request body",
-            "raw provider usage",
+            "empty allow-list",
+            "fails with an error",
         ]:
-            self.assertIn(required, reference, required)
+            self.assertIn(required, normalized, required)
 
     def test_dynamic_tool_references_use_wrapper_aware_economics_gate(self):
         agent_tools = (
@@ -3704,149 +3766,191 @@ class PromptCacheScriptsTest(unittest.TestCase):
             (ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text()
         )
 
-        for required in [
-            "stable catalog",
-            "allowed-list",
-            "Applicability Gate",
-            "economics",
-            "direct OpenAI Responses",
-            "Vercel",
-            "Chat Completions",
-            "arbitrary OpenAI-compatible wrapper",
-            "prefix hashes",
-            "provider usage",
-            "activeTools",
-        ]:
-            self.assertIn(required, agent_tools, required)
-        for required in [
-            "direct OpenAI Responses",
-            "Vercel",
-            "unsupported wrapper/endpoint",
-            "provider-dashboard aggregate",
-            "provider-usage-api aggregate",
-            "request/route correlation",
-        ]:
-            self.assertIn(required, skill, required)
+        agent_section = extract_markdown_section(agent_tools, "Dynamic-tool decision rule")
+        agent_normalized = " ".join(agent_section.split())
+        self.assertRegex(
+            agent_normalized,
+            r"stable catalog.*allowed-list.*prefix hashes.*provider usage",
+        )
+        self.assertRegex(
+            agent_normalized,
+            r"A direct OpenAI Responses.*Vercel.*different API surfaces",
+        )
+        self.assertRegex(
+            agent_normalized,
+            r"Chat Completions.*arbitrary OpenAI-compatible wrapper.*do not inherit",
+        )
+        self.assertIn("activeTools", agent_normalized)
+        self.assertIn("cold or low-reuse route", agent_normalized)
+        self.assertNotIn("blanket ban on `activeTools`", agent_normalized)
+
+        playbooks = extract_markdown_section(skill, "Audit Playbooks")
+        dynamic_line = next(
+            line for line in playbooks.splitlines() if "Dynamic tools in long agent loops" in line
+        )
+        self.assertIn("economics", dynamic_line)
+        self.assertIn("version/model-verified allow-list", dynamic_line)
+        self.assertIn("wire proof", dynamic_line)
 
         ap4 = next(rule for rule in rules["rules"] if rule["id"] == "AP-4")
-        for required in [
-            "Applicability/economics Gate",
-            "stable full catalog",
-            "activeTools",
-            "prefix/economics",
-            "warnings",
-        ]:
-            self.assertIn(required, ap4["fix"] + " " + ap4["avoid"] + " " + ap4["validation"], required)
+        self.assertRegex(
+            ap4["fix"],
+            r"After Applicability/economics Gate, use a stable full catalog plus an endpoint/version-verified allow-list",
+        )
+        self.assertIn("Mutating activeTools without prefix/economics measurement", ap4["avoid"])
+        self.assertIn("provider cache usage", ap4["validation"])
+        self.assertNotIn("ban activeTools", ap4["fix"].lower())
 
     def test_provider_aggregate_evidence_contract_keeps_dashboard_usage_and_request_scopes_separate(self):
         root = ROOT / "audit-prompt-caching"
         openai = (root / "references" / "openai.md").read_text()
         observability = (root / "references" / "observability.md").read_text()
         report = (root / "references" / "report-template.md").read_text()
+        openai_section = extract_markdown_section(
+            openai, "Prompt Caching dashboard and aggregate evidence"
+        )
+        dashboard, usage = openai_section.split(
+            "The Organization Usage API is a separate", 1
+        )
+        self.assertIn("provider_dashboard_aggregate", dashboard)
+        self.assertRegex(
+            " ".join(dashboard.split()),
+            r"definition_status.*unknown.*denominator_status.*unknown.*accounting_semantics.*unknown",
+        )
+        self.assertIn("provider_usage_api_aggregate", usage)
+        usage_normalized = " ".join(usage.split())
+        self.assertIn("definition_status=provider_documented", usage_normalized)
+        self.assertIn("accounting_semantics=provider_defined", usage_normalized)
+        self.assertRegex(
+            usage_normalized,
+            r"input_tokens.*inclusive.*input_uncached_tokens.*excluding cache-write",
+        )
+        self.assertRegex(
+            usage_normalized.lower(),
+            r"optional or missing.*absent/unknown.*never.*zero",
+        )
+        self.assertNotIn("provider_documented", dashboard)
 
-        for required in [
-            "provider_dashboard_aggregate",
-            "provider_usage_api_aggregate",
-            "cache hit rate over time",
-            "cache reads per write",
-            "cache-read/cache-write/uncached tokens",
-            "service tier",
-            "unknown",
-            "denominator",
-            "request-level",
-            "causal",
-            "input_tokens",
-            "input_cached_tokens",
-            "input_cache_write_tokens",
-            "input_uncached_tokens",
-            "inclusive",
-            "excluding cache-write",
-            "time buckets",
-            "filters",
-        ]:
-            self.assertIn(required, openai, required)
+        observability_section = extract_markdown_section(
+            observability, "Provider aggregate evidence boundary"
+        )
+        contract = re.search(
+            r"```text\n(.*?)\n```", observability_section, re.DOTALL
+        )
+        self.assertIsNotNone(contract)
+        contract_fields = {
+            line.split(":", 1)[0]
+            for line in contract.group(1).splitlines()
+            if ":" in line
+        }
+        self.assertEqual(
+            contract_fields,
+            {
+                "evidence_source",
+                "provider",
+                "time_window",
+                "granularity",
+                "filters",
+                "displayed_metric",
+                "displayed_value",
+                "definition_status",
+                "denominator_status",
+                "accounting_semantics",
+                "request_correlation",
+                "route_correlation",
+            },
+        )
+        observability_normalized = " ".join(observability_section.split())
+        self.assertIn("provider_dashboard_aggregate", observability_normalized)
+        self.assertIn("provider_usage_api_aggregate", observability_normalized)
+        self.assertIn("definition_status=provider_documented", observability_normalized)
+        self.assertIn("accounting_semantics=provider_defined", observability_normalized)
+        self.assertIn("optional or missing fields remain absent/unknown", observability_normalized)
+        self.assertIn("never zero", observability_normalized)
 
-        for required in [
-            "Provider aggregate evidence boundary",
-            "evidence_source",
-            "provider_dashboard_aggregate",
-            "provider_usage_api_aggregate",
-            "request_level_provider_usage",
-            "gateway_or_replica_telemetry",
-            "rendered_prefix_evidence",
-            "time_window",
-            "granularity",
-            "filters",
-            "displayed_metric",
-            "displayed_value",
-            "definition_status",
-            "denominator_status",
-            "accounting_semantics",
-            "request_correlation",
-            "route_correlation",
-        ]:
-            self.assertIn(required, observability, required)
-
-        for required in [
-            "Evidence source:",
-            "Scope/granularity:",
-            "Time window:",
-            "Filters:",
-            "Metric definition status:",
-            "Denominator status:",
-            "Accounting semantics:",
-            "Request correlation:",
-            "Route/replica correlation:",
-            "Dashboard aggregate",
-            "Usage API aggregate",
-        ]:
-            self.assertIn(required, report, required)
+        report_section = extract_markdown_section(report, "Evidence Needed Next")
+        report_normalized = " ".join(report_section.split())
+        self.assertIn("Dashboard aggregate", report_normalized)
+        self.assertIn("Usage API aggregate", report_normalized)
+        self.assertIn("provider_documented", report_normalized)
+        self.assertIn("provider_defined", report_normalized)
+        self.assertIn(
+            "optional/missing fields: absent/unknown, never zero",
+            report_normalized.lower(),
+        )
+        self.assertIn("Dashboard statuses remain unknown", report_normalized)
 
     def test_usage_api_accounting_contract_is_not_reused_for_dashboard_ratios(self):
         openai = (
             ROOT / "audit-prompt-caching" / "references" / "openai.md"
         ).read_text()
-        self.assertIn("input_tokens` includes cached and cache-write tokens", openai)
-        self.assertIn(
-            "input_uncached_tokens` excludes cache-write tokens",
-            openai,
+        section = extract_markdown_section(
+            openai, "Prompt Caching dashboard and aggregate evidence"
         )
-        self.assertIn("Dashboard UI", openai)
-        self.assertIn("not inferred", openai)
-        self.assertIn("same formula", openai)
+        dashboard, usage = section.split(
+            "The Organization Usage API is a separate", 1
+        )
+        dashboard_normalized = " ".join(dashboard.split())
+        usage_normalized = " ".join(usage.split())
+        self.assertIn("Dashboard UI", dashboard_normalized)
+        self.assertIn("not causal proof", dashboard_normalized)
+        self.assertIn("input_tokens` is inclusive", usage_normalized)
+        self.assertIn("input_uncached_tokens` is excluding cache-write", usage_normalized)
+        self.assertIn("No same formula is assumed", usage_normalized)
+        self.assertIn("denominator is not inferred", usage_normalized)
+        self.assertNotIn("input_tokens` is inclusive", dashboard_normalized)
 
     def test_dynamic_evals_cover_version_wire_contrast_and_aggregate_evidence(self):
         evals = json.loads(
             (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
         )
-        combined = "\n".join(
-            item["prompt"] + "\n" + item["expected_output"] for item in evals["evals"]
+        by_id = {item["id"]: item for item in evals["evals"]}
+
+        vercel = by_id[25]
+        self.assertIn("activeTools", vercel["prompt"])
+        self.assertIn("providerOptions.openai.allowedTools", vercel["prompt"])
+        self.assertRegex(vercel["expected_output"], r"stable full tools catalog.*Responses")
+        self.assertIn("mode: auto", vercel["expected_output"])
+        self.assertIn("mode: required", vercel["expected_output"])
+        self.assertIn("tool_choice wire mapping", vercel["expected_output"])
+        for tool_anchor in ("function", "custom", "MCP", "tool_search", "deferLoading"):
+            self.assertIn(tool_anchor, vercel["prompt"])
+
+        version = by_id[26]
+        self.assertEqual(
+            version["prompt"].count("2.x unavailable"),
+            1,
         )
-        for required in [
-            "allowedTools",
-            "stable full tools",
-            "mode: auto",
-            "mode: required",
-            "2.x",
-            "3.0.62",
-            "3.0.98",
-            "4.0.43",
-            "function",
-            "custom",
-            "MCP",
-            "tool_search",
-            "deferLoading",
-            "Dashboard aggregate",
-            "Usage API aggregate",
-            "input_tokens",
-            "input_uncached_tokens",
-            "direct OpenAI Responses",
-            "Vercel Responses",
-            "Azure Responses",
-            "Chat Completions",
-            "arbitrary OpenAI-compatible wrapper",
-        ]:
-            self.assertIn(required, combined, required)
+        self.assertRegex(
+            version["expected_output"],
+            r"2\.x unavailable.*3\.x.*3\.0\.62.*3\.0\.98.*4\.0\.43",
+        )
+
+        dashboard = by_id[27]["expected_output"]
+        self.assertRegex(
+            dashboard,
+            r"provider_dashboard_aggregate.*Dashboard aggregate.*unknown",
+        )
+        self.assertNotIn("provider_documented", dashboard)
+        self.assertIn("request-level usage", dashboard)
+        self.assertIn("route correlation", dashboard)
+
+        usage = by_id[28]["expected_output"]
+        self.assertRegex(
+            usage,
+            r"provider_usage_api_aggregate.*Usage API aggregate.*input_tokens.*inclusive.*input_uncached_tokens.*excludes cache-write",
+        )
+        self.assertIn("Dashboard UI", usage)
+        self.assertIn("filters", usage)
+
+        contrast = by_id[29]["expected_output"]
+        self.assertRegex(
+            contrast,
+            r"Azure.*references/azure-openai\.md.*endpoint.*deployment/model.*api-version",
+        )
+        self.assertIn("Responses tool_choice schema", contrast)
+        self.assertIn("final wire", contrast)
+        self.assertIn("without claiming universal support", contrast)
 
     def test_dynamic_trigger_eval_adds_positive_tool_and_dashboard_pressure(self):
         trigger_eval = json.loads(
@@ -3859,7 +3963,14 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_wire_mapping_is_not_duplicated_outside_vercel_reference(self):
         root = ROOT / "audit-prompt-caching"
         vercel = (root / "references" / "vercel-ai-sdk.md").read_text()
-        self.assertIn("toolNames", vercel)
+        section = extract_markdown_section(vercel, "OpenAI Responses allowedTools")
+        table_header = "| Tool class | Entry in `allowed_tools.tools` |"
+        self.assertEqual(section.count(table_header), 1)
+        self.assertEqual(vercel.count(table_header), 1)
+        self.assertEqual(
+            parse_markdown_table(section, table_header)[0]["Tool class"],
+            "function",
+        )
         for relative in [
             "SKILL.md",
             "references/agent-tools.md",
@@ -3867,6 +3978,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "references/observability.md",
         ]:
             text = (root / relative).read_text()
+            self.assertNotIn(table_header, text, relative)
             self.assertNotIn("toolNames", text, relative)
 
 

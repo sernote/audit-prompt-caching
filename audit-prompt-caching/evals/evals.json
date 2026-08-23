@@ -144,7 +144,7 @@
     {
       "id": 29,
       "prompt": "Contrast direct OpenAI Responses, Vercel Responses, Azure Responses with an api-version gate, Chat Completions, and an arbitrary OpenAI-compatible wrapper for allowedTools and prompt-cache preservation.",
-      "expected_output": "Treat each API surface and wrapper separately. Verify schema, SDK/package version, selected factory, model/tool capability, final wire body, and usage fields; do not transfer direct Responses or Vercel allowedTools behavior to Azure, Chat Completions, or an arbitrary wrapper without wire evidence."
+      "expected_output": "Treat each API surface and wrapper separately. For Azure, load references/azure-openai.md and record the endpoint, deployment/model, and api-version; verify that exact API version's Responses tool_choice schema and final wire before using allowedTools, without claiming universal support. Do not transfer direct Responses or Vercel allowedTools behavior to Azure, Chat Completions, or an arbitrary wrapper without wire evidence."
     }
   ]
 }

@@ -10,6 +10,7 @@ Official sources:
 - Google provider: https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai
 - Issue #14170: https://github.com/vercel/ai/issues/14170
 - Issue #15185: https://github.com/vercel/ai/issues/15185
+- Base `allowedTools` introduction (May 5, 2026): https://github.com/vercel/ai/commit/29e6ac6f1ffe0eaed2aa937c8a1657e90d3d8411
 - `allowedTools` mapping fix: https://github.com/vercel/ai/commit/a062795bbe22ecc96a38d114bf8b8ea4af070914
 - v6 backport: https://github.com/vercel/ai/pull/19051
 
@@ -88,6 +89,11 @@ allowed tool. The applicability gate requires all of these facts:
 3. the target model capability and concrete tool class support the requested semantics;
 4. the final wire body and usage response confirm the mapping and route.
 
+The chronology separates availability from corrected behavior: on May 5, 2026,
+commit `29e6ac6` introduced the base Responses option; on Aug 18, 2026,
+commit `a062795` corrected built-in/provider-defined/custom/MCP mapping, with
+the v6 backport in `3.0.98` and the 4.x correction in `4.0.43`.
+
 The availability gate and corrected-mapping gate are separate. The checked matrix is:
 
 | `@ai-sdk/openai` line | Availability | Corrected provider-tool mapping |
@@ -121,6 +127,11 @@ allow-list and emits a warning. If removal leaves an empty allow-list, the
 request fails with an error rather than becoming unrestricted. An MCP entry
 allows the server as a whole using its `server_label` (server-level); per-tool MCP restriction
 requires the MCP tool's own `allowedTools` mechanism.
+
+For Azure, load `references/azure-openai.md` and record the endpoint,
+deployment/model, and `api-version`. Verify that exact API version's Responses
+tool_choice schema and final wire before using `allowed_tools`; do not claim
+universal support.
 
 Do not transfer this behavior to direct OpenAI Responses, Azure Responses,
 Chat Completions, or an arbitrary OpenAI-compatible wrapper without the

@@ -95,6 +95,12 @@ Label Dashboard aggregate and Usage API aggregate explicitly. Do not combine
 their ratios or claim a causal finding until request-level usage and
 route/replica correlation are present.
 
+For documented Usage API fields, set `Metric definition status:
+provider_documented` and `Accounting semantics: provider_defined`, preserving
+the field-level inclusive/decomposition semantics. Optional/missing fields:
+absent/unknown, never zero. Dashboard statuses remain unknown unless the
+provider documents the relevant definition, denominator, and accounting.
+
 ## Clean Checks
 
 Record anti-patterns that were inspected and ruled out, for example volatile prefix data, tool/schema order, routing locality, TTL/cadence, output-token dominance, or privacy-driven isolation.

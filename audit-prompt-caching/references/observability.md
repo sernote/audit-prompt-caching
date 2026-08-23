@@ -107,8 +107,11 @@ Treat the documented Organization Usage API completion fields as
 `provider_usage_api_aggregate`. Preserve its time buckets, grouping, filters,
 and bucket boundaries. Its `input_tokens` is inclusive of cached and
 cache-write tokens; `input_uncached_tokens` excludes cache-write tokens. These
-documented decomposition semantics do not make a dashboard ratio equivalent
-to a Usage API ratio.
+documented decomposition semantics use provider-defined accounting. For
+documented Usage API fields set `definition_status=provider_documented` and
+`accounting_semantics=provider_defined`; optional or missing fields remain
+absent/unknown; never zero. These semantics do not make a dashboard ratio
+equivalent to a Usage API ratio.
 
 Keep dashboard aggregate, Usage API aggregate, request-level provider usage,
 and gateway/replica telemetry in separate series. Do not compute a dashboard

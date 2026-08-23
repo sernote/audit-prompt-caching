@@ -82,8 +82,10 @@ cache-read/cache-write/uncached tokens, and filters by model and service tier.
 The Dashboard UI is a `provider_dashboard_aggregate`: its ratios are useful
 trend corroboration, but the public description does not define the formula,
 denominator, weighting, request scope, or route attribution. Keep those fields
-`unknown` unless a current provider document says otherwise. Dashboard UI
-metrics are not request-level evidence and are not causal proof of prompt
+`unknown` unless a current provider document says otherwise. For Dashboard UI,
+record `definition_status=unknown`, `denominator_status=unknown`, and
+`accounting_semantics=unknown` unless the provider documents each one. Dashboard
+UI metrics are not request-level evidence and are not causal proof of prompt
 drift, routing misses, or an SDK regression.
 
 The Organization Usage API is a separate `provider_usage_api_aggregate`. Record
@@ -97,6 +99,12 @@ completion token decomposition is:
 
 In the API field wording, `input_tokens` includes cached and cache-write tokens,
 while `input_uncached_tokens` excludes cache-write tokens.
+
+For documented Usage API fields, record
+`definition_status=provider_documented` and
+`accounting_semantics=provider_defined`, preserving the inclusive and
+decomposition semantics above. Optional or missing fields remain absent/unknown;
+never replace them with zero or fabricate a bucket denominator.
 
 These are Usage API accounting semantics, not a formula to apply to Dashboard
 UI ratios. Do not compare a dashboard hit rate with a per-request ratio as one
