@@ -2629,6 +2629,170 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("Token", rendered)
         self.assertIn("vllm", rendered)
 
+    def test_sensitive_key_classifier_has_frozen_credential_floor(self):
+        module = load_script_module("extract_llm_calls.py")
+        credential_floor = (
+            "token",
+            "TOKEN",
+            "Token",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "GITLAB_TOKEN",
+            "CI_JOB_TOKEN",
+            "NPM_TOKEN",
+            "SLACK_BOT_TOKEN",
+            "DISCORD_TOKEN",
+            "TELEGRAM_BOT_TOKEN",
+            "DATABRICKS_TOKEN",
+            "DIGITALOCEAN_TOKEN",
+            "CLOUDFLARE_TOKEN",
+            "RUNPOD_TOKEN",
+            "VLLM_TOKEN",
+            "HUGGINGFACE_TOKEN",
+            "APIKEY",
+            "apikey",
+            "APITOKEN",
+            "apitoken",
+            "ACCESSKEY",
+            "PRIVATEKEY",
+            "SECRETKEY",
+            "AUTHTOKEN",
+            "ACCESSTOKEN",
+            "BEARERTOKEN",
+            "REFRESHTOKEN",
+            "SESSIONTOKEN",
+            "CLIENTSECRET",
+            "CLIENT_SECRET",
+            "AWS_SECRET_ACCESS_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY_FILE",
+            "X_AUTH_TOKEN",
+            "PROXY_AUTHORIZATION",
+            "HF_TOKEN",
+            "HUB_TOKEN",
+            "PAT_TOKEN",
+            "CACHE_SALT",
+            "PYTHONHASHSEED",
+        )
+        evidence_names = (
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "cached_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "prompt_cache_hit_tokens",
+            "max_tokens",
+            "max_output_tokens",
+            "max_new_tokens",
+            "max_tokens_to_sample",
+            "num_tokens",
+            "token_count",
+            "reasoning_tokens",
+            "thinking_tokens",
+            "input_tokens",
+            "output_tokens",
+            "read_tokens",
+            "write_tokens",
+            "cache_write_tokens",
+            "max_num_batched_tokens",
+            "prompt_cache_key",
+        )
+        for identifier in credential_floor:
+            with self.subTest(identifier=identifier):
+                self.assertTrue(module.is_sensitive_key(identifier))
+        for identifier in evidence_names:
+            with self.subTest(identifier=identifier):
+                self.assertFalse(module.is_sensitive_key(identifier))
+
+    def test_extract_llm_calls_redacts_decorated_compact_and_vendor_keys(self):
+        module = load_script_module("extract_llm_calls.py")
+        key_shapes = (
+            ("github", "token"),
+            ("slack", "bot", "token"),
+            ("npm", "token"),
+            ("vllm", "token"),
+            ("openai", "api", "key"),
+            ("auth", "token"),
+            ("client", "secret"),
+        )
+        compact_and_camel = []
+        for parts in key_shapes:
+            compact_and_camel.extend(
+                (
+                    "".join(parts),
+                    parts[0] + "".join(part.title() for part in parts[1:]),
+                    "_".join(parts),
+                )
+            )
+        decorated_keys = (
+            'os.environ["ANTHROPIC_API_KEY"]',
+            "process.env['HF_TOKEN']",
+            'config["api_key"]',
+            'settings["llm.apiKey"]',
+            '"anthropic.api_key"',
+            "openai.api_key",
+        )
+        decorations = (
+            ("f", '"'),
+            ("b", '"'),
+            ("r", "'"),
+            ("rb", "'"),
+            ("u", "'"),
+            ("$", "'"),
+            ("backtick", "`"),
+        )
+        all_sentinels = set()
+        lines_by_file = {"decorated.py": [], "decorated.ts": [], "decorated.sh": []}
+        serial = 0
+        for key in (*compact_and_camel, *decorated_keys):
+            for decoration, quote in decorations:
+                sentinel = f"decorated-secret-{serial:03d}"
+                serial += 1
+                all_sentinels.add(sentinel)
+                scheme = ("", "Bearer ", "Basic ", "Token ")[serial % 4]
+                content = f"{scheme}{sentinel}"
+                if decoration == "backtick":
+                    value = f"`{content}`"
+                elif decoration == "$":
+                    value = f"${quote}{content}{quote}"
+                else:
+                    value = f"{decoration}{quote}{content}{quote}"
+                filename = ("decorated.py", "decorated.ts", "decorated.sh")[serial % 3]
+                if filename == "decorated.sh":
+                    line = f"{key}={value} vllm serve model"
+                elif filename == "decorated.ts":
+                    line = f"const config = {{{key}: {value}}}; openrouter"
+                else:
+                    line = f"headers = {{{key}: {value}}}; anthropic"
+                lines_by_file[filename].append(line)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for filename, lines in lines_by_file.items():
+                (tmp_path / filename).write_text("\n".join(lines) + "\n")
+            output = module.find_matches(tmp_path)
+            rendered = json.dumps(output, ensure_ascii=False)
+
+        for sentinel in all_sentinels:
+            self.assertNotIn(sentinel, rendered)
+        self.assertIn("ANTHROPIC_API_KEY", rendered)
+        self.assertIn("llm.apiKey", rendered)
+        self.assertIn("Bearer", rendered)
+        self.assertIn("Basic", rendered)
+        self.assertIn("Token", rendered)
+
+    def test_extract_llm_calls_preserves_non_curl_user_options(self):
+        module = load_script_module("extract_llm_calls.py")
+        samples = (
+            "python -u -m vllm.entrypoints.openai.api_server --model model",
+            "docker run -u 1000:1000 vllm/vllm-openai",
+            "ssh -u deploy host vllm --model model",
+        )
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertEqual(module.redact_sensitive_text(sample), sample)
+
     def test_extract_llm_calls_round_trips_usage_evidence_byte_identically(self):
         module = load_script_module("extract_llm_calls.py")
         evidence_samples = (
@@ -2651,14 +2815,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
     def test_extract_llm_calls_redaction_runtime_is_bounded_directly(self):
         module = load_script_module("extract_llm_calls.py")
-        long_line = "vllm " + ("A-" * 20000)
+        for shape in ("A-" * 20000, "x:" * 20000):
+            long_line = "vllm " + shape
+            started = time.monotonic()
+            redacted = module.redact_sensitive_text(long_line)
+            elapsed = time.monotonic() - started
 
-        started = time.monotonic()
-        redacted = module.redact_sensitive_text(long_line)
-        elapsed = time.monotonic() - started
-
-        self.assertLess(elapsed, 2.0, f"direct redaction took {elapsed:.3f}s")
-        self.assertEqual(redacted, long_line)
+            with self.subTest(shape=shape[:2]):
+                self.assertLess(elapsed, 2.0, f"direct redaction took {elapsed:.3f}s")
+                self.assertEqual(redacted, long_line)
 
     def test_extract_llm_calls_preserves_noncredential_cache_and_token_names(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2754,6 +2919,20 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         self.assertEqual(output["files_scanned"], 0)
         self.assertEqual(output["matches"], 0)
+
+    def test_extract_llm_calls_scans_root_under_skipped_named_ancestor(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            service_root = Path(tmp) / "build" / "pkg"
+            service_root.mkdir(parents=True)
+            (service_root / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            output = module.find_matches(service_root)
+
+        self.assertEqual(output["files_scanned"], 1)
+        self.assertEqual(output["matches"], 1)
 
     def test_skill_frontmatter_description_is_yaml_safe_and_retains_trigger_terms(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()

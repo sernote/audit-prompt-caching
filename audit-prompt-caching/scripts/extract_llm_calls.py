@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Find likely LLM provider calls and cache-related signals in a repository."""
+"""Find likely LLM provider calls and cache-related signals in a repository.
+
+Security boundary: when a key looks credential-like and its value is opaque,
+the scanner prefers redaction over a possible leak.  Explicit numeric,
+boolean, and null evidence values remain byte-identical so usage telemetry is
+not destroyed by that fail-closed default.
+"""
 
 import argparse
 import json
@@ -147,16 +153,16 @@ VLLM_SIGNAL_LABELS = {
 IDENTIFIER_KEY_PATTERN = re.compile(
     r"""
     (?<![A-Za-z0-9_])
-    (?:(?:"(?P<double_key>[A-Za-z0-9][A-Za-z0-9_-]{0,127})")
-      |(?:'(?P<single_key>[A-Za-z0-9][A-Za-z0-9_-]{0,127})')
-      |(?P<plain_key>[A-Za-z0-9][A-Za-z0-9_-]{0,127}))
-    \s*[:=]\s*
+    (?:(?:"(?P<double_key>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})")
+      |(?:'(?P<single_key>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})')
+      |(?P<plain_key>[A-Za-z0-9][A-Za-z0-9_.-]{0,127}))
+    \]?\s*[:=]\s*
     """,
     re.VERBOSE,
 )
 OPTION_KEY_PATTERN = re.compile(
     r"""
-    (?<![A-Za-z0-9_])--(?P<option>[A-Za-z0-9][A-Za-z0-9_-]{0,127})
+    (?<![A-Za-z0-9_])--(?P<option>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})
     (?:(?:=\s*)|(?:\s+))
     """,
     re.VERBOSE,
@@ -165,8 +171,8 @@ CURL_USER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_-])(?:-u|--user)(?:(?:=\s*)|(?:\s+))"
 )
 
-VALUE_STOP_CHARS = frozenset('"\'`,;)}]')
-STRUCTURAL_VALUE_STOP_CHARS = frozenset(",;)}]")
+VALUE_STOP_CHARS = frozenset('"\'`,;)}]{[')
+STRUCTURAL_VALUE_STOP_CHARS = frozenset(",;)}]{[")
 SCHEME_NAMES = frozenset({"basic", "bearer", "token"})
 CAMEL_BOUNDARY_PATTERN = re.compile(r"([a-z0-9])([A-Z])")
 ACRONYM_BOUNDARY_PATTERN = re.compile(r"([A-Z]+)([A-Z][a-z])")
@@ -185,9 +191,48 @@ PLURAL_STEMS = {
     "seeds": "seed",
     "tokens": "token",
 }
-SENSITIVE_QUALIFIERS = frozenset(
-    {"access", "api", "auth", "bearer", "hf", "hub", "pat", "refresh", "service", "session", "vault"}
+COUNT_WORDS = frozenset(
+    {
+        "batched",
+        "budget",
+        "cache",
+        "cached",
+        "completion",
+        "count",
+        "hit",
+        "input",
+        "limit",
+        "max",
+        "min",
+        "num",
+        "output",
+        "prompt",
+        "read",
+        "remaining",
+        "sample",
+        "reasoning",
+        "thinking",
+        "total",
+        "used",
+        "write",
+    }
 )
+COMPACT_TOKEN_QUALIFIERS = frozenset(
+    {"access", "api", "auth", "bearer", "private", "refresh", "session", "service", "vault", "hf", "hub", "pat"}
+)
+COMPACT_COMPOUNDS = frozenset(
+    qualifier + core
+    for qualifier in COMPACT_TOKEN_QUALIFIERS
+    for core in ("key", "token")
+)
+COMPACT_COMPOUNDS |= frozenset(
+    qualifier + "key" for qualifier in ("api", "access", "private")
+)
+SAFE_LITERAL_PATTERN = re.compile(
+    r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"
+)
+SAFE_LITERAL_WORDS = frozenset({"false", "null", "none", "true"})
+CURL_ON_LINE = re.compile(r"(?<![A-Za-z0-9_-])curl(?![A-Za-z0-9_-])")
 
 
 def split_identifier_words(identifier):
@@ -201,7 +246,7 @@ def split_identifier_words(identifier):
 
 
 def is_sensitive_key(identifier):
-    """Classify a parsed key without treating ordinary token counts as secrets."""
+    """Classify a parsed key while denying only explicit count/evidence words."""
     words = split_identifier_words(identifier)
     word_set = set(words)
     if not words:
@@ -213,9 +258,24 @@ def is_sensitive_key(identifier):
         return True
     if "authorization" in word_set:
         return True
+    if any(compound in compact_identifier for compound in COMPACT_COMPOUNDS):
+        return True
+    if "secret" in compact_identifier or "password" in compact_identifier or "credential" in compact_identifier:
+        return True
     if "key" in word_set and word_set.intersection({"access", "api", "private"}):
         return True
-    return "token" in word_set and bool(word_set.intersection(SENSITIVE_QUALIFIERS))
+    if "token" in word_set:
+        return not word_set.intersection(COUNT_WORDS)
+    if compact_identifier.endswith("tokens"):
+        token_prefix = compact_identifier[:-6]
+    elif compact_identifier.endswith("token"):
+        token_prefix = compact_identifier[:-5]
+    else:
+        token_prefix = ""
+    if token_prefix:
+        prefix_words = set(split_identifier_words(token_prefix))
+        return not prefix_words.intersection(COUNT_WORDS)
+    return False
 
 
 def _key_from_match(match):
@@ -251,9 +311,25 @@ def _consume_value(text, start, allow_equals=False):
     if index >= len(text) or text[index] in STRUCTURAL_VALUE_STOP_CHARS:
         return None
 
-    quote = text[index] if text[index] in {'"', "'"} else ""
+    literal_start = index
+    prefix = ""
+    if text[index] == "$" and index + 1 < len(text) and text[index + 1] in {'"', "'"}:
+        prefix = "$"
+        index += 1
+    elif (
+        index + 2 < len(text)
+        and text[index : index + 2].lower() in {"rb", "br", "fr", "rf", "ur", "ru"}
+        and text[index + 2] in {'"', "'", "`"}
+    ):
+        prefix = text[index : index + 2]
+        index += 2
+    elif index + 1 < len(text) and text[index] in "fFrRbBuU" and text[index + 1] in {'"', "'", "`"}:
+        prefix = text[index]
+        index += 1
+
+    quote = text[index] if text[index] in {'"', "'", "`"} else ""
     if quote:
-        value_start = index
+        value_start = literal_start
         index += 1
         while index < len(text):
             if text[index] == "\\":
@@ -261,11 +337,11 @@ def _consume_value(text, start, allow_equals=False):
                 continue
             if text[index] == quote:
                 value_end = index + 1
-                inner = text[value_start + 1 : index]
-                return value_start, value_end, quote, _scheme_name(inner)
+                inner = text[literal_start + len(prefix) + 1 : index]
+                return value_start, value_end, quote, _scheme_name(inner), prefix
             index += 1
-        inner = text[value_start + 1 :]
-        return value_start, len(text), quote, _scheme_name(inner)
+        inner = text[literal_start + len(prefix) + 1 :]
+        return value_start, len(text), quote, _scheme_name(inner), prefix
 
     value_start = index
     first_end = _consume_token(text, index)
@@ -278,18 +354,31 @@ def _consume_value(text, start, allow_equals=False):
             second_start += 1
         second_end = _consume_token(text, second_start)
         if second_end > second_start:
-            return value_start, second_end, "", first
-    return value_start, first_end, "", None
+            return value_start, second_end, "", first, prefix
+    return value_start, first_end, "", None, prefix
+
+
+def _is_safe_literal_value(text, value_info):
+    """Keep explicit numeric, boolean, and null evidence byte-identical."""
+    value_start, value_end, quote, _scheme, prefix = value_info
+    raw_value = text[value_start:value_end]
+    content_start = len(prefix) + (1 if quote else 0)
+    content_end = len(raw_value) - (1 if quote and raw_value.endswith(quote) else 0)
+    candidate = raw_value[content_start:content_end].strip()
+    return bool(
+        SAFE_LITERAL_PATTERN.fullmatch(candidate)
+        or candidate.lower() in SAFE_LITERAL_WORDS
+    )
 
 
 def _redacted_value(text, value_info):
-    value_start, value_end, quote, scheme = value_info
+    value_start, value_end, quote, scheme, prefix = value_info
     raw_value = text[value_start:value_end]
     closing_quote = quote if quote and raw_value.endswith(quote) else ""
     if quote:
         if scheme:
-            return f"{quote}{scheme} [REDACTED_SECRET]{closing_quote}"
-        return f"{quote}[REDACTED_SECRET]{closing_quote}"
+            return f"{prefix}{quote}{scheme} [REDACTED_SECRET]{closing_quote}"
+        return f"{prefix}{quote}[REDACTED_SECRET]{closing_quote}"
     if scheme:
         return f"{scheme} [REDACTED_SECRET]"
     return "[REDACTED_SECRET]"
@@ -302,8 +391,9 @@ def redact_sensitive_text(text):
         events.append((match.start(), match.end(), "assignment", _key_from_match(match)))
     for match in OPTION_KEY_PATTERN.finditer(text):
         events.append((match.start(), match.end(), "option", _key_from_match(match)))
-    for match in CURL_USER_PATTERN.finditer(text):
-        events.append((match.start(), match.end(), "curl-user", None))
+    if CURL_ON_LINE.search(text):
+        for match in CURL_USER_PATTERN.finditer(text):
+            events.append((match.start(), match.end(), "curl-user", None))
     events.sort(
         key=lambda event: (
             event[0],
@@ -318,19 +408,23 @@ def redact_sensitive_text(text):
         if start < cursor:
             continue
         sensitive = kind == "curl-user" or is_sensitive_key(key or "")
+        if not sensitive:
+            output.append(text[cursor:end])
+            cursor = end
+            continue
         value_info = _consume_value(text, end, allow_equals=kind == "option")
         if value_info is None:
             output.append(text[cursor:end])
             cursor = end
             continue
-        value_start, value_end, _, _ = value_info
-        if sensitive:
-            output.append(text[cursor:value_start])
-            output.append(_redacted_value(text, value_info))
+        value_start, value_end, _, _, _ = value_info
+        if kind != "curl-user" and _is_safe_literal_value(text, value_info):
+            output.append(text[cursor:value_end])
             cursor = value_end
-        else:
-            output.append(text[cursor:end])
-            cursor = end
+            continue
+        output.append(text[cursor:value_start])
+        output.append(_redacted_value(text, value_info))
+        cursor = value_end
     output.append(text[cursor:])
     return "".join(output)
 
@@ -345,7 +439,7 @@ def should_scan(path):
 
 def iter_files(root):
     root = Path(root)
-    if any(part.startswith(".env") or part in SKIP_DIRS for part in root.parts):
+    if root.name.startswith(".env") or root.name in SKIP_DIRS:
         return
     for current, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(
