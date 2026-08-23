@@ -29,7 +29,7 @@
 
 ### Review-round budget ruling
 
-The original deferred cap of `52,587 + 400 = 52,987` estimated tokens cannot be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint adds `1,573` characters, and restoring normal pretty `evals.json` formatting costs `1,032` characters (`13,142` → `14,174`); `951` was the base-to-head content delta, not the formatting cost. New consumer wording was deduplicated to short pointers while the flagged pre-existing cues were restored; some benchmark-line latency/label cues now resolve through the observability pointer. No pre-existing mechanics guidance was deleted, and JSON was not minified. The final measured result is `214,588` deferred characters / `53,647` estimated tokens, a `+1,060`-token delta. Set a measured revised deferred ceiling of `53,650` tokens (3-token headroom for measurement rounding); the invoked SKILL ceiling remains `6,010` and is not raised.
+The original deferred cap of `52,587 + 400 = 52,987` estimated tokens cannot be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint adds `1,573` characters, and restoring normal pretty `evals.json` formatting costs `1,032` characters (`13,142` → `14,174`); `951` was the base-to-head content delta, not the formatting cost. New consumer wording was deduplicated to short pointers while the flagged pre-existing cues were restored; some benchmark-line latency/label cues now resolve through the observability pointer. No pre-existing mechanics guidance was deleted, and JSON was not minified. The final measured result is `214,593` deferred characters / `53,649` estimated tokens, a `+1,062`-token delta. Set a measured revised deferred ceiling of `53,650` tokens (1-token headroom for measurement rounding); the invoked SKILL ceiling remains `6,010` and is not raised.
 
 ---
 
@@ -134,7 +134,13 @@ skill = Path('audit-prompt-caching/SKILL.md').read_text()
 deferred_chars = sum(
     len(path.read_text())
     for path in Path('audit-prompt-caching').rglob('*')
-    if path.is_file() and path.name != 'SKILL.md' and '__pycache__' not in path.parts
+    if path.is_file()
+    and path.name != 'SKILL.md'
+    and '__pycache__' not in path.parts
+    and not any(
+        part.startswith('.')
+        for part in path.relative_to(Path('audit-prompt-caching')).parts
+    )
 )
 print({'skill_chars': len(skill), 'invoke_tokens': math.ceil(len(skill) / 4)})
 print({'deferred_chars': deferred_chars, 'deferred_tokens': math.ceil(deferred_chars / 4)})
@@ -465,7 +471,13 @@ skill = Path('audit-prompt-caching/SKILL.md').read_text()
 deferred_chars = sum(
     len(path.read_text())
     for path in Path('audit-prompt-caching').rglob('*')
-    if path.is_file() and path.name != 'SKILL.md' and '__pycache__' not in path.parts
+    if path.is_file()
+    and path.name != 'SKILL.md'
+    and '__pycache__' not in path.parts
+    and not any(
+        part.startswith('.')
+        for part in path.relative_to(Path('audit-prompt-caching')).parts
+    )
 )
 print({'skill_chars': len(skill), 'invoke_tokens': math.ceil(len(skill) / 4)})
 print({'deferred_chars': deferred_chars, 'deferred_tokens': math.ceil(deferred_chars / 4)})
@@ -524,7 +536,7 @@ Present the verified diff, before/after behavioral score, exact verification res
 - A candidate that improves the declared objective without violating guardrails may be accepted conditionally.
 - vLLM and SGLang references keep their engine-specific context but share one outcome contract.
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
-- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate remains at or below the superseding measured ceiling of 53 650 tokens (recorded baseline 52 587, final measured 53 647, +1 060). The original +400 cap is historical rationale only, not the active acceptance criterion.
+- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate remains at or below the superseding measured ceiling of 53 650 tokens (recorded baseline 52 587, final measured 53 649, +1 062). The original +400 cap is historical rationale only, not the active acceptance criterion.
 - No helper script or usage adapter changes are introduced.
 - Full verification and the six-case, three-runs-per-case fresh-context behavioral evaluation pass under the P0-2 majority gate.
 

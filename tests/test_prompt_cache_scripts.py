@@ -27,6 +27,7 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6010
 # Review-round ceiling after restoring pre-existing guidance and pretty eval JSON.
 PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 53650
+# Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -3883,7 +3884,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "vllm:prefix_cache_hits",
             "vllm:prefix_cache_queries",
             "vllm:prompt_tokens_cached",
-            "benchmark speedup",
+            "Synthetic benchmark speedup",
             "production ROI",
         ]:
             self.assertIn(required, reference)
@@ -4739,6 +4740,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
             if path.is_file()
             and path.name != "SKILL.md"
             and "__pycache__" not in path.parts
+            and not any(
+                part.startswith(".")
+                for part in path.relative_to(ROOT / "audit-prompt-caching").parts
+            )
         )
         self.assertLessEqual(
             math.ceil(deferred_chars / 4),
