@@ -73,6 +73,19 @@ Blocking P0-2 acceptance requires cases 1–4 and 6 to reach the intended verdic
 | 5 | Preserve isolation; require separate review | 3/3 | 3/3 | 3/3 | partial | 3/3 | — | — | — | — | — |
 | 6 | No migration without an objective and a better candidate outcome | 0/3 | 3/3 | 3/3 | complete | n/a | — | — | — | — | — |
 
+## After attempt 1 — HEAD 94fa9da
+
+| Case | Decision-correct |
+|---|---:|
+| 1 | 3/3 |
+| 2 | 3/3 |
+| 3 | 3/3 |
+| 4 | 3/3 |
+| 5 | 3/3 |
+| 6 | 0/3 |
+
+All three case-6 runs still required a waiver/canary or treated healthy round robin as a blocker, despite no measured outcome gap. The main After columns above remain pending for the post-revision rerun.
+
 After columns are pending: Task 8 (post-change three-context run) has not been executed; the P0-2 behavioral gate is unproven.
 
 ## RED result

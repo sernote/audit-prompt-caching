@@ -23,13 +23,13 @@
 - Не менять AP-9b, provider adapters, usage normalization, helper scripts или cache-plane model. Trigger surface не меняется, поэтому `evals/trigger_eval.json` не трогать, если RED не докажет отдельную trigger-регрессию.
 - Не дублировать полный outcome gate во всех references. Нормативное объяснение живёт в `references/mechanics.md`; остальные файлы дают короткую engine/workflow-specific ссылку и локальные проверки.
 - Superseded planning-base measurements were 5 850 estimated SKILL tokens / 5 852 invoked ceiling. On fetched `origin/main` at `ec0d447`, the authoritative invoked ceiling is 6 010 tokens; keep `PLUGIN_EVAL_SKILL_TOKEN_BASELINE` there and make `SKILL.md` char-neutral or net-negative.
-- The superseded planning-base deferred measurement was 41 238 tokens. The authoritative fetched-base deferred baseline at `origin/main`/`ec0d447` is 52 587 tokens; historical `+400` explains the original target only. This revision records and enforces the measured deferred ceiling of `53,650` tokens.
+- The superseded planning-base deferred measurement was 41 238 tokens. The authoritative fetched-base deferred baseline at `origin/main`/`ec0d447` is 52 587 tokens; historical `+400` explains the original target only. This revision records and enforces the measured deferred ceiling of `53,800` tokens.
 - Канонические anchors для cross-reference tests: `Routing Outcome Gate`, `matched-workload comparison`, `capacity at SLO`, `rewarm`. Не вводить конкурирующие названия `fixed-load comparison`, `matched-load` или `lifecycle test`.
 - Сохранить все существующие provider/eval cases и не расширять deferred references без необходимости.
 
 ### Review-round budget ruling
 
-The original deferred cap of `52,587 + 400 = 52,987` estimated tokens cannot be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint adds `1,573` characters, and restoring normal pretty `evals.json` formatting costs `1,032` characters (`13,142` → `14,174`); `951` was the base-to-head content delta, not the formatting cost. New consumer wording was deduplicated to short pointers while the flagged pre-existing cues were restored; some benchmark-line latency/label cues now resolve through the observability pointer. No pre-existing mechanics guidance was deleted, and JSON was not minified. The final measured result is `214,593` deferred characters / `53,649` estimated tokens, a `+1,062`-token delta. Set a measured revised deferred ceiling of `53,650` tokens (1-token headroom for measurement rounding); the invoked SKILL ceiling remains `6,010` and is not raised.
+The original deferred cap of `52,587 + 400 = 52,987` estimated tokens cannot be met honestly after the Opus corrections: restoring the origin/main mechanics guidance and loading hint adds `1,573` characters, and restoring normal pretty `evals.json` formatting costs `1,032` characters (`13,142` → `14,174`); `951` was the base-to-head content delta, not the formatting cost. New consumer wording was deduplicated to short pointers while the flagged pre-existing cues were restored; some benchmark-line latency/label cues now resolve through the observability pointer. No pre-existing mechanics guidance was deleted, and JSON was not minified. The final measured result is `215,046` deferred characters / `53,762` estimated tokens, a `+1,175`-token delta. Set a measured revised deferred ceiling of `53,800` tokens (38-token headroom for measurement rounding); the invoked SKILL ceiling remains `6,010` and is not raised.
 
 ---
 
@@ -536,7 +536,7 @@ Present the verified diff, before/after behavioral score, exact verification res
 - A candidate that improves the declared objective without violating guardrails may be accepted conditionally.
 - vLLM and SGLang references keep their engine-specific context but share one outcome contract.
 - Isolation is never broadened for hit rate; AP-9b and P0-1 scope remain untouched.
-- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate remains at or below the superseding measured ceiling of 53 650 tokens (recorded baseline 52 587, final measured 53 649, +1 062). The original +400 cap is historical rationale only, not the active acceptance criterion.
+- Existing evals, trigger coverage, package validation and tests stay green. Invoke estimate remains at or below the fetched-base ceiling of 6 010; deferred estimate remains at or below the superseding measured ceiling of 53 800 tokens (recorded baseline 52 587, final measured 53 762, +1 175). The original +400 cap is historical rationale only, not the active acceptance criterion.
 - No helper script or usage adapter changes are introduced.
 - Full verification and the six-case, three-runs-per-case fresh-context behavioral evaluation pass under the P0-2 majority gate.
 

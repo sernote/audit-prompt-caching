@@ -26,7 +26,7 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # Combined vLLM geometry and dynamic-tool evidence contracts measure 6010 tokens.
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6010
 # Review-round ceiling after restoring pre-existing guidance and pretty eval JSON.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 53650
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 53800
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -3967,6 +3967,13 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertNotIn("round robin without prefix-aware routing", predeploy)
         self.assertIn("cache-aware or cache-blind", predeploy)
         self.assertIn("references/mechanics.md", predeploy)
+        for required in (
+            "continued operation",
+            "emergency rollback",
+            "unchanged/known policy",
+        ):
+            with self.subTest(predeploy_anchor=required):
+                self.assertIn(required, predeploy)
 
         self.assertEqual(
             rule_map["AP-9b"],
@@ -3991,6 +3998,17 @@ class PromptCacheScriptsTest(unittest.TestCase):
         for required in ("matched-workload comparison", "capacity at SLO", "rewarm"):
             self.assertIn(required, mechanics)
             self.assertIn(required, gate)
+        for required in (
+            "An unchanged current production policy",
+            "not a defect or blocker by algorithm name",
+            "do not require migration",
+            "a waiver",
+            "a candidate canary",
+            "new objective or measured outcome gap",
+            "a proposed policy change still uses this gate",
+        ):
+            with self.subTest(gate_anchor=required):
+                self.assertIn(required.lower(), gate.lower())
         for required in (
             "Use this reference when the symptom is latency",
             "### High Hit Rate, Low Savings",

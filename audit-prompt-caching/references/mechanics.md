@@ -52,6 +52,8 @@ For vLLM/SGLang, a prefix hit can still leave bottlenecks in dynamic prefill, de
 
 For routing-policy or replica/KV-topology changes, baseline is current production and candidate is proposed; either may be cache-aware. Round robin, prefix-aware, sticky, and hash policies are candidates, not defaults or defects. Hit/locality/affinity/cached-token share are mechanism evidence only.
 
+An unchanged current production policy that meets its declared objective and guardrails is not a defect or blocker by algorithm name. Without a new objective or measured outcome gap, do not require migration, a waiver, or a candidate canary; a proposed policy change still uses this gate.
+
 Require:
 
 - **matched-workload comparison:** same open-loop arrivals, prefix families, lengths, model/tokenizer, replicas/KV, equal warmup/window/cache state at arm start; compare p95/p99 TTFT/e2e, queue, replica/KV skew, errors/retries/fallbacks; repeated arms with enough p99 samples/arm. Closed-loop requires concurrency/throughput/latency together; use `references/observability.md`.

@@ -10,6 +10,7 @@ Use for release, incident, deploy, or monitoring reviews.
 - Context compaction that rewrites the stable anchor.
 - Provider wrapper or router changes without routed provider/model telemetry.
 - Any vLLM/SGLang routing-policy rollout, cache-aware or cache-blind, without a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger and unchanged isolation boundary.
+- The routing-policy rollout blocker does not block continued operation or emergency rollback of an unchanged/known policy by name; see `references/mechanics.md`.
 - `max_model_len` or KV settings changed without p99 input/KV pressure review.
 - Cache controls, `cachePoint`, `prompt_cache_key`, TTL, retention, or salts changed without provider-doc checks.
 - vLLM retention flag/env is used without evidence that the deployed runtime supports the feature; an env name in a manifest is not enough.
