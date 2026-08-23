@@ -3945,6 +3945,119 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, combined)
 
+    def test_ap7_treats_cache_aware_routing_as_a_measured_candidate(self):
+        root = ROOT / "audit-prompt-caching"
+        rules = json.loads((root / "references" / "rules.json").read_text())
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+        ap7 = rule_map["AP-7"]
+
+        self.assertNotIn("Lost locality", ap7["summary"])
+        ap7_text = " ".join(ap7[field] for field in ("summary", "fix", "avoid", "validation"))
+        self.assertIn("candidate", ap7_text.lower())
+        self.assertIn("matched-workload comparison", ap7["fix"])
+        self.assertIn("hit", ap7["avoid"].lower())
+        self.assertIn("capacity at SLO", ap7["validation"])
+        self.assertIn("rewarm", ap7["validation"].lower())
+        self.assertIn("references/mechanics.md", ap7["fix"])
+
+        predeploy = (root / "references" / "predeploy-checklist.md").read_text().lower()
+        self.assertNotIn("round robin without prefix-aware routing", predeploy)
+        self.assertIn("cache-aware or cache-blind", predeploy)
+        self.assertIn("references/mechanics.md", predeploy)
+
+        self.assertEqual(
+            rule_map["AP-9b"],
+            {
+                "id": "AP-9b",
+                "category": "cache-isolation",
+                "default_severity": "medium",
+                "summary": "Isolation fragmentation.",
+                "search": "cache_salt, per-user keys, tenant routing.",
+                "fix": "Use coarsest safe trust boundary.",
+                "avoid": "Weakening privacy or ZDR.",
+                "validation": "Boundary/loss documented.",
+            },
+        )
+
+    def test_routing_outcome_gate_is_consistent_across_core_references(self):
+        root = ROOT / "audit-prompt-caching"
+        mechanics = (root / "references" / "mechanics.md").read_text()
+        gate = extract_markdown_section(mechanics, "Routing Outcome Gate")
+
+        self.assertIn("Routing Outcome Gate", mechanics)
+        for required in ("matched-workload comparison", "capacity at SLO", "rewarm"):
+            self.assertIn(required, mechanics)
+            self.assertIn(required, gate)
+
+        consumers = [
+            root / "SKILL.md",
+            root / "references" / "predeploy-checklist.md",
+            root / "references" / "observability.md",
+            root / "references" / "report-template.md",
+            root / "references" / "vllm.md",
+            root / "references" / "sglang.md",
+        ]
+        for path in consumers:
+            text = path.read_text()
+            with self.subTest(path=path):
+                self.assertIn("Routing Outcome Gate", text)
+                self.assertIn("references/mechanics.md", text)
+
+        observability = (root / "references" / "observability.md").read_text()
+        for required in (
+            "p50",
+            "p95",
+            "p99",
+            "TTFT",
+            "end-to-end latency",
+            "throughput",
+            "capacity at SLO",
+            "queue",
+            "per-replica",
+            "KV",
+            "error",
+            "retry",
+            "rewarm",
+            "recovery time",
+        ):
+            self.assertIn(required.lower(), observability.lower(), required)
+
+        report = (root / "references" / "report-template.md").read_text().lower()
+        self.assertIn("routing_locality: pass", report)
+        self.assertIn("locality only", report)
+        self.assertIn("cannot by itself", report)
+        self.assertIn("approve a routing-policy rollout", report)
+
+    def test_evals_cover_routing_harmful_hit_and_evidence_gap(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        by_id = {item["id"]: item for item in evals["evals"]}
+
+        evidence_gap = by_id[10]
+        evidence_gap_text = (
+            evidence_gap["prompt"] + "\n" + evidence_gap["expected_output"]
+        )
+        for required in ("four replicas", "30k-token", "--max-model-len 131072"):
+            self.assertIn(required, evidence_gap_text)
+        self.assertIn("matched-workload comparison", evidence_gap["expected_output"])
+        self.assertIn("capacity at SLO", evidence_gap["expected_output"])
+        self.assertIn("rewarm", evidence_gap["expected_output"].lower())
+        self.assertNotIn("use prefix-aware routing", evidence_gap["expected_output"].lower())
+
+        harmful_hit = by_id[30]
+        harmful_hit_text = harmful_hit["prompt"] + "\n" + harmful_hit["expected_output"]
+        for required in (
+            "prefix hit rate from 4% to 22%",
+            "p99 TTFT rises from 4s to 9s",
+            "capacity at SLO",
+            "Do not approve rollout",
+            "mechanism",
+            "reject",
+            "rewarm",
+        ):
+            self.assertIn(required.lower(), harmful_hit_text.lower(), required)
+
     def test_trigger_eval_preserves_negative_non_cache_cases(self):
         trigger_eval = json.loads(
             (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()

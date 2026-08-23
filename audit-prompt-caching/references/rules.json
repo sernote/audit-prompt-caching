@@ -65,11 +65,11 @@
       "id": "AP-7",
       "category": "routing-locality",
       "default_severity": "high",
-      "summary": "Lost locality.",
+      "summary": "Unmeasured routing outcome; round robin/prefix-aware policies are candidates, not defects.",
       "search": "round-robin, Kubernetes Service, replicas, fallback, openrouter/auto.",
-      "fix": "Sticky routing plus route metrics.",
-      "avoid": "Pinning before telemetry.",
-      "validation": "Reads/TTFT by route."
+      "fix": "Compare candidate with current production via the Routing Outcome Gate in references/mechanics.md and matched-workload comparison.",
+      "avoid": "Hit-only success, unmeasured pinning, or locality-driven trust/isolation expansion.",
+      "validation": "Objective/SLO; p95/p99 latency, capacity at SLO, queue/replica/KV skew, errors/retries, rewarm."
     },
     {
       "id": "AP-8",

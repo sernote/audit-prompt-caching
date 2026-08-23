@@ -183,7 +183,7 @@ vLLM Automatic Prefix Caching reuses KV blocks for identical token prefixes. Vis
 
 - `max_model_len` far above p99 input can reserve KV memory for rare long contexts and reduce cache capacity for common routes.
 - Low available KV blocks, high eviction signals, and rising TTFT on stable long prefixes indicate KV block pressure, not necessarily prompt drift.
-- Standard Kubernetes or gateway round robin is cache-blind; use prefix-aware routing, stable-prefix hashing, or a verified serving router.
+- Cache-blind routing may scatter prefixes; prefix-aware/hash may improve locality or concentrate load. Treat both as candidates; compare via the `Routing Outcome Gate` in `references/mechanics.md` with model, replicas, and KV fixed; paper numbers are not defaults.
 - Pin model/tokenizer/chat template versions and smoke-test token IDs.
 - Keep media representation stable for multimodal prefixes.
 - Treat per-request `cache_salt` as intentional isolation that fragments reuse; choose the coarsest safe trust boundary.
@@ -202,11 +202,11 @@ Run benchmarks only after the Applicability Gate shows a repeated, stable, long-
 
 For serving-path validation, use `vllm bench serve` with the `prefix_repetition` dataset, `--save-result`, and `--save-detailed`. Vary prefix length, suffix length, number of prefixes, output length, request rate, and concurrency to match the audited route.
 
-Pair benchmark output with metrics: `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:prompt_tokens_cached`, `vllm:kv_cache_usage_perc`, TTFT/prefill latency, final latency, and route/replica labels. Do not claim production ROI from synthetic benchmark speedup alone.
+Pair output with `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:prompt_tokens_cached`, `vllm:kv_cache_usage_perc`, p50/p95/p99 TTFT/end-to-end latency, queue/KV skew, errors/retries, rewarm/recovery, and route/replica labels. Use an arrival-rate sweep for capacity at SLO and compare baseline/candidate via `references/mechanics.md`; synthetic benchmark speedup is not production ROI.
 
 ## Monitoring
 
-Track prefix hit/query ratio, available KV blocks, eviction indicators, TTFT/prefill by route, request length percentiles, prefix family cardinality, `max_model_len`, GPU memory utilization, replica count, router policy, tokenizer/model version, `cache_salt` cardinality, and multimodal representation.
+Track prefix hit/query, KV blocks/eviction, p50/p95/p99 TTFT, capacity at SLO, queue/KV skew, errors/retries, rewarm/recovery, route/replica, prefix-family cardinality, `max_model_len`, GPU mem, router/model, `cache_salt`, and multimodal representation.
 
 When KV events are enabled, also track event delivery/drop rate, connector type,
 and transfer/offload latency separately from prefix-hit ratio. Event streams are
