@@ -2212,6 +2212,65 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 2)
             self.assertEqual(output["findings"][0]["path"], "src/llm.py")
 
+    def test_extract_llm_calls_elides_arbitrary_source_shapes_from_json(self):
+        cases = {
+            "serve.sh": (
+                "VLLM_API_KEY=48915732 vllm serve model --enable-prefix-caching",
+                "vllm serve model --api-key 1234567890 --enable-prefix-caching",
+                'AUTH_TOKEN=00000000 vllm serve model --prefix-caching-hash-algo sha256',
+                'api_key: str = "sk-type-SECRET-01" vllm serve model',
+                'if os.environ["OPENAI_API_KEY"] == "sk-eq-SECRET-02": vllm serve model',
+                'export ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} vllm serve model',
+                'vllm serve model --api-key `sk-backtick-SECRET-03` --enable-prefix-caching',
+                'http -u admin:http-SECRET-04 https://api.anthropic.com/v1 # vllm',
+            ),
+            "app.py": (
+                'password: 987654321  # anthropic',
+                'cfg = {"openrouter": {"api_keys": ["sk-array-SECRET-05", "sk-array-SECRET-06"]}}',
+                'client = Anthropic(api_key=f"sk-f-SECRET-07")',
+            ),
+            "Makefile": (
+                'serve:\n\t$(CURL) --user svc:make-SECRET-08 https://openrouter.ai/api/v1/models # openrouter',
+            ),
+        }
+        sentinels = {
+            "48915732",
+            "1234567890",
+            "00000000",
+            "sk-type-SECRET-01",
+            "sk-eq-SECRET-02",
+            "sk-backtick-SECRET-03",
+            "http-SECRET-04",
+            "987654321",
+            "sk-array-SECRET-05",
+            "sk-array-SECRET-06",
+            "sk-f-SECRET-07",
+            "make-SECRET-08",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for filename, lines in cases.items():
+                (tmp_path / filename).write_text("\n".join(lines) + "\n")
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        rendered = result.stdout
+
+        self.assertEqual(output.get("source_snippet_policy"), "elided")
+        self.assertGreater(output["matches"], 0)
+        for finding in output["findings"]:
+            self.assertEqual(finding["text"], "[SOURCE_SNIPPET_ELIDED]")
+            self.assertIn("path", finding)
+            self.assertIn("line", finding)
+            self.assertIn("provider", finding)
+            self.assertIn("pattern", finding)
+        self.assertIn("signals", output["findings"][0])
+        for sentinel in sentinels:
+            self.assertNotIn(sentinel, rendered)
+
     def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2310,7 +2369,11 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertEqual(output["files_scanned"], 5)
         self.assertIn("vllm", output["providers"])
-        texts = "\n".join(finding["text"] for finding in output["findings"])
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
         for signal in (
             "--prefix-cache-retention-interval",
             "prefix_cache_retention_interval",
@@ -2318,7 +2381,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "--prefix-caching-hash-algo",
             "prefix_caching_hash_algo",
         ):
-            self.assertIn(signal, texts)
+            self.assertIn(signal, signals)
 
     def test_extract_llm_calls_keeps_generic_and_specific_vllm_signals_additive(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2353,495 +2416,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertNotIn("vllm", output["providers"])
 
-    def test_extract_llm_calls_redacts_secret_assignments_in_vllm_lines(self):
-        seed = "super-secret-seed-123"
-        salt = "tenant-salt-456"
-        raw_salt = "raw-salt-789"
-        quoted_seed = "quoted seed sentinel 8f2a"
-        quoted_salt = "quoted salt sentinel 4c7b"
-        prefixed_values = {
-            "VLLM_CACHE_SALT": "tenant-secret-1",
-            "TENANT_CACHE_SALT": "tenant-secret-2",
-            "VLLM_HASH_SEED": "seed-secret-3",
-            "MY_PYTHONHASHSEED": "seed-secret-4",
-        }
-        json_salt = "json-secret-6"
-        json_seed = "json-secret-7"
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            (tmp_path / "vllm.service").write_text(
-                "ExecStart=env PYTHONHASHSEED="
-                f"{seed} CACHE_SALT={salt} SALT={raw_salt} vllm "
-                f"--cache-salt {salt} --salt {raw_salt} "
-                "--prefix-caching-hash-algo xxhash\n"
-                "ExecStart=env vllm --prefix-caching-hash-algo xxhash "
-                f"PYTHONHASHSEED=\"{quoted_seed}\" "
-                f"CACHE_SALT='{quoted_salt}' "
-                f"--cache-salt '{quoted_salt}' --cache-salt \"{quoted_salt}\" "
-                f"--hash-seed \"{quoted_seed}\" --seed '{quoted_seed}'\n"
-                "ExecStart=env vllm --prefix-caching-hash-algo xxhash "
-                + " ".join(f"{name}={value}" for name, value in prefixed_values.items())
-                + "\n"
-                "ExecStart=env vllm --prefix-caching-hash-algo xxhash "
-                f'{{"cache_salt": "{json_salt}", "PYTHONHASHSEED": "{json_seed}"}}\n'
-            )
-
-            result = run_script("extract_llm_calls.py", tmp_path)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        output = json.loads(result.stdout)
-        self.assertNotIn(seed, result.stdout)
-        self.assertNotIn(salt, result.stdout)
-        self.assertNotIn(raw_salt, result.stdout)
-        self.assertNotIn(quoted_seed, result.stdout)
-        self.assertNotIn(quoted_salt, result.stdout)
-        for value in (*prefixed_values.values(), json_salt, json_seed):
-            self.assertNotIn(value, result.stdout)
-        finding = output["findings"][0]
-        self.assertIn("vllm", finding["signals"])
-        self.assertIn("--prefix-caching-hash-algo", finding["signals"])
-        self.assertIn("[REDACTED_SECRET]", finding["text"])
-
-    def test_extract_llm_calls_redacts_secret_like_assignment_names(self):
-        sentinels = {
-            "OPENROUTER_API_KEY": "api-key-sentinel-17",
-            "SERVICE_TOKEN": "token-sentinel-23",
-            "CACHE_SECRET": "secret-sentinel-31",
-            "DB_PASSWORD": "password-sentinel-47",
-            "VAULT_CREDENTIAL": "credential-sentinel-59",
-        }
-        assignment_lines = [
-            f"export {name}={value} vllm serve model"
-            for name, value in sentinels.items()
-        ]
-        systemd_lines = [
-            f"Environment={name}={value} vllm serve model"
-            for name, value in sentinels.items()
-        ]
-        option_lines = [
-            f'vllm serve model --{name.lower().replace("_", "-")} "{value}"'
-            for name, value in sentinels.items()
-        ]
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            (tmp_path / "serve.sh").write_text("\n".join(assignment_lines) + "\n")
-            (tmp_path / "vllm.service").write_text("\n".join(systemd_lines) + "\n")
-            (tmp_path / "Makefile").write_text("serve:\n\t" + "\n\t".join(option_lines) + "\n")
-
-            result = run_script("extract_llm_calls.py", tmp_path)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        output = json.loads(result.stdout)
-        self.assertEqual(output["files_scanned"], 3)
-        self.assertIn("openrouter", output["providers"])
-        self.assertIn("vllm", output["providers"])
-        for value in sentinels.values():
-            self.assertNotIn(value, result.stdout)
-        self.assertIn("OPENROUTER_API_KEY", result.stdout)
-        self.assertIn("vllm", result.stdout)
-
-    def test_extract_llm_calls_redacts_embedded_plural_and_header_credentials(self):
-        cases = {
-            "AWS_SECRET_ACCESS_KEY": "aws-secret-sentinel-01",
-            "GOOGLE_APPLICATION_CREDENTIALS": "google-credentials-sentinel-02",
-            "SECRET_KEY": "secret-key-sentinel-03",
-            "CLIENT_SECRETS": "client-secrets-sentinel-04",
-            "CACHE_SALT_VALUE": "cache-salt-sentinel-05",
-            "API_TOKENS": "api-tokens-sentinel-06",
-            "OPENAI_API_KEY_FILE": "openai-key-file-sentinel-07",
-            "PRIVATE_KEY": "private-key-sentinel-08",
-            "ACCESS_KEY": "access-key-sentinel-09",
-        }
-        all_sentinels = set(cases.values())
-        shell_lines = []
-        for name, value in cases.items():
-            shell_lines.extend(
-                [
-                    f"export {name}={value} vllm serve model --enable-prefix-caching",
-                    f"vllm serve model {name}='{value}-single' --enable-prefix-caching",
-                    f'vllm serve model {name}="{value}-double" --enable-prefix-caching',
-                ]
-            )
-            all_sentinels.update({f"{value}-single", f"{value}-double"})
-        shell_lines.extend(
-            [
-                'curl https://openrouter.ai/api/v1 -H "Authorization: Bearer bearer-sentinel-10" vllm',
-                'curl https://openrouter.ai/api/v1 -H "Authorization: Basic basic-sentinel-11" vllm',
-            ]
-        )
-        all_sentinels.update({"bearer-sentinel-10", "basic-sentinel-11"})
-
-        service_lines = [
-            f'Environment="{name}={value}-service" ExecStart=/usr/bin/vllm serve model'
-            for name, value in cases.items()
-        ]
-        all_sentinels.update(f"{value}-service" for value in cases.values())
-
-        json_lines = [
-            f'{{"command": "vllm serve model", "{name}": "{value}-json"}}'
-            for name, value in cases.items()
-        ]
-        all_sentinels.update(f"{value}-json" for value in cases.values())
-
-        option_lines = [
-            "vllm serve model --aws-secret-access-key aws-option-sentinel-12",
-            "vllm serve model --private-key private-option-sentinel-13",
-        ]
-        all_sentinels.update({"aws-option-sentinel-12", "private-option-sentinel-13"})
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            (tmp_path / "serve.sh").write_text("\n".join(shell_lines) + "\n")
-            (tmp_path / "vllm.service").write_text("\n".join(service_lines) + "\n")
-            (tmp_path / "manifest.json").write_text("\n".join(json_lines) + "\n")
-            (tmp_path / "Makefile").write_text("serve:\n\t" + "\n\t".join(option_lines) + "\n")
-
-            result = run_script("extract_llm_calls.py", tmp_path)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        output = json.loads(result.stdout)
-        self.assertIn("openrouter", output["providers"])
-        self.assertIn("vllm", output["providers"])
-        for sentinel in all_sentinels:
-            self.assertNotIn(sentinel, result.stdout)
-        self.assertIn("Authorization", result.stdout)
-        self.assertIn("Bearer", result.stdout)
-        self.assertIn("Basic", result.stdout)
-        self.assertIn("vllm", result.stdout)
-
-    def test_extract_llm_calls_redacts_generated_credential_cross_product(self):
-        module = load_script_module("extract_llm_calls.py")
-
-        def render_name(parts, casing):
-            if casing == "snake":
-                return "_".join(parts)
-            if casing == "upper":
-                return "_".join(parts).upper()
-            if casing == "kebab":
-                return "-".join(parts)
-            return parts[0] + "".join(part.title() for part in parts[1:])
-
-        name_shapes = (
-            ("auth", "token"),
-            ("token", "service"),
-            ("client", "secret"),
-            ("secret", "client"),
-            ("openai", "api", "key"),
-            ("api", "key", "file"),
-            ("cache", "salt"),
-            ("google", "application", "credential"),
-            ("proxy", "authorization"),
-        )
-        plural_forms = {
-            "token": "tokens",
-            "secret": "secrets",
-            "credential": "credentials",
-            "key": "keys",
-            "salt": "salts",
-            "authorization": "authorizations",
-        }
-        file_specs = (
-            ("serve.ts", "openrouter"),
-            ("manifest.json", "openrouter"),
-            ("serve.sh", "vllm"),
-        )
-        all_sentinels = set()
-        lines_by_file = {filename: [] for filename, _ in file_specs}
-        serial = 0
-        for filename, provider_signal in file_specs:
-            for shape in name_shapes:
-                for plural in (False, True):
-                    parts = list(shape)
-                    if plural and parts[-1] in plural_forms:
-                        parts[-1] = plural_forms[parts[-1]]
-                    for casing in ("snake", "upper", "kebab", "camel"):
-                        key = render_name(parts, casing)
-                        for separator in ("=", ":"):
-                            for quote in ("", "'", '"'):
-                                for scheme in (None, "Bearer", "Basic", "Token"):
-                                    sentinel = f"cross-secret-{serial:04d}"
-                                    serial += 1
-                                    all_sentinels.add(sentinel)
-                                    raw_value = sentinel
-                                    if scheme:
-                                        raw_value = f"{scheme} {raw_value}"
-                                    value = f"{quote}{raw_value}{quote}"
-                                    if filename == "manifest.json":
-                                        key_expression = f'"{key}"'
-                                        line = (
-                                            f'{{"provider": "{provider_signal}", '
-                                            f"{key_expression}{separator}{value}}}"
-                                        )
-                                    elif filename == "serve.ts":
-                                        line = (
-                                            f"const config = {{{key}{separator}{value}}}; "
-                                            f"{provider_signal}"
-                                        )
-                                    else:
-                                        line = (
-                                            f"{key}{separator}{value} "
-                                            f"{provider_signal} serve model"
-                                        )
-                                    lines_by_file[filename].append(line)
-
-        lines_by_file["serve.sh"].extend(
-            [
-                "curl -H 'Authorization: Token header-token-sentinel' vllm",
-                'curl -H "Proxy-Authorization: Basic proxy-header-sentinel" vllm',
-                'curl -H "X-Auth-Token: Bearer x-auth-header-sentinel" vllm',
-                'curl -H "X-Api-Key: api-header-sentinel" vllm',
-                'curl -u "curl-user:curl-password-sentinel" vllm',
-                "curl --user curl-user:curl-password-sentinel vllm",
-                "vllm --api-key Bearer option-scheme-sentinel",
-                "vllm --private-key Basic private-option-sentinel",
-                "vllm --auth-token Token auth-option-sentinel",
-            ]
-        )
-        all_sentinels.update(
-            {
-                "header-token-sentinel",
-                "proxy-header-sentinel",
-                "x-auth-header-sentinel",
-                "api-header-sentinel",
-                "curl-password-sentinel",
-                "curl-user:curl-password-sentinel",
-                "option-scheme-sentinel",
-                "private-option-sentinel",
-                "auth-option-sentinel",
-            }
-        )
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            for filename, lines in lines_by_file.items():
-                (tmp_path / filename).write_text("\n".join(lines) + "\n")
-
-            output = module.find_matches(tmp_path)
-            rendered = json.dumps(output, ensure_ascii=False)
-
-        for sentinel in all_sentinels:
-            self.assertNotIn(sentinel, rendered)
-        self.assertIn("Authorization", rendered)
-        self.assertIn("Proxy-Authorization", rendered)
-        self.assertIn("X-Auth-Token", rendered)
-        self.assertIn("Bearer", rendered)
-        self.assertIn("Basic", rendered)
-        self.assertIn("Token", rendered)
-        self.assertIn("vllm", rendered)
-
-    def test_sensitive_key_classifier_has_frozen_credential_floor(self):
-        module = load_script_module("extract_llm_calls.py")
-        credential_floor = (
-            "token",
-            "TOKEN",
-            "Token",
-            "GITHUB_TOKEN",
-            "GH_TOKEN",
-            "GITLAB_TOKEN",
-            "CI_JOB_TOKEN",
-            "NPM_TOKEN",
-            "SLACK_BOT_TOKEN",
-            "DISCORD_TOKEN",
-            "TELEGRAM_BOT_TOKEN",
-            "DATABRICKS_TOKEN",
-            "DIGITALOCEAN_TOKEN",
-            "CLOUDFLARE_TOKEN",
-            "RUNPOD_TOKEN",
-            "VLLM_TOKEN",
-            "HUGGINGFACE_TOKEN",
-            "APIKEY",
-            "apikey",
-            "APITOKEN",
-            "apitoken",
-            "ACCESSKEY",
-            "PRIVATEKEY",
-            "SECRETKEY",
-            "AUTHTOKEN",
-            "ACCESSTOKEN",
-            "BEARERTOKEN",
-            "REFRESHTOKEN",
-            "SESSIONTOKEN",
-            "CLIENTSECRET",
-            "CLIENT_SECRET",
-            "AWS_SECRET_ACCESS_KEY",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "OPENAI_API_KEY_FILE",
-            "X_AUTH_TOKEN",
-            "PROXY_AUTHORIZATION",
-            "HF_TOKEN",
-            "HUB_TOKEN",
-            "PAT_TOKEN",
-            "CACHE_SALT",
-            "PYTHONHASHSEED",
-        )
-        evidence_names = (
-            "prompt_tokens",
-            "completion_tokens",
-            "total_tokens",
-            "cached_tokens",
-            "cache_read_input_tokens",
-            "cache_creation_input_tokens",
-            "prompt_cache_hit_tokens",
-            "max_tokens",
-            "max_output_tokens",
-            "max_new_tokens",
-            "max_tokens_to_sample",
-            "num_tokens",
-            "token_count",
-            "reasoning_tokens",
-            "thinking_tokens",
-            "input_tokens",
-            "output_tokens",
-            "read_tokens",
-            "write_tokens",
-            "cache_write_tokens",
-            "max_num_batched_tokens",
-            "prompt_cache_key",
-        )
-        for identifier in credential_floor:
-            with self.subTest(identifier=identifier):
-                self.assertTrue(module.is_sensitive_key(identifier))
-        for identifier in evidence_names:
-            with self.subTest(identifier=identifier):
-                self.assertFalse(module.is_sensitive_key(identifier))
-
-    def test_extract_llm_calls_redacts_decorated_compact_and_vendor_keys(self):
-        module = load_script_module("extract_llm_calls.py")
-        key_shapes = (
-            ("github", "token"),
-            ("slack", "bot", "token"),
-            ("npm", "token"),
-            ("vllm", "token"),
-            ("openai", "api", "key"),
-            ("auth", "token"),
-            ("client", "secret"),
-        )
-        compact_and_camel = []
-        for parts in key_shapes:
-            compact_and_camel.extend(
-                (
-                    "".join(parts),
-                    parts[0] + "".join(part.title() for part in parts[1:]),
-                    "_".join(parts),
-                )
-            )
-        decorated_keys = (
-            'os.environ["ANTHROPIC_API_KEY"]',
-            "process.env['HF_TOKEN']",
-            'config["api_key"]',
-            'settings["llm.apiKey"]',
-            '"anthropic.api_key"',
-            "openai.api_key",
-        )
-        decorations = (
-            ("f", '"'),
-            ("b", '"'),
-            ("r", "'"),
-            ("rb", "'"),
-            ("u", "'"),
-            ("$", "'"),
-            ("backtick", "`"),
-        )
-        all_sentinels = set()
-        lines_by_file = {"decorated.py": [], "decorated.ts": [], "decorated.sh": []}
-        serial = 0
-        for key in (*compact_and_camel, *decorated_keys):
-            for decoration, quote in decorations:
-                sentinel = f"decorated-secret-{serial:03d}"
-                serial += 1
-                all_sentinels.add(sentinel)
-                scheme = ("", "Bearer ", "Basic ", "Token ")[serial % 4]
-                content = f"{scheme}{sentinel}"
-                if decoration == "backtick":
-                    value = f"`{content}`"
-                elif decoration == "$":
-                    value = f"${quote}{content}{quote}"
-                else:
-                    value = f"{decoration}{quote}{content}{quote}"
-                filename = ("decorated.py", "decorated.ts", "decorated.sh")[serial % 3]
-                if filename == "decorated.sh":
-                    line = f"{key}={value} vllm serve model"
-                elif filename == "decorated.ts":
-                    line = f"const config = {{{key}: {value}}}; openrouter"
-                else:
-                    line = f"headers = {{{key}: {value}}}; anthropic"
-                lines_by_file[filename].append(line)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            for filename, lines in lines_by_file.items():
-                (tmp_path / filename).write_text("\n".join(lines) + "\n")
-            output = module.find_matches(tmp_path)
-            rendered = json.dumps(output, ensure_ascii=False)
-
-        for sentinel in all_sentinels:
-            self.assertNotIn(sentinel, rendered)
-        self.assertIn("ANTHROPIC_API_KEY", rendered)
-        self.assertIn("llm.apiKey", rendered)
-        self.assertIn("Bearer", rendered)
-        self.assertIn("Basic", rendered)
-        self.assertIn("Token", rendered)
-
-    def test_extract_llm_calls_preserves_non_curl_user_options(self):
-        module = load_script_module("extract_llm_calls.py")
-        samples = (
-            "python -u -m vllm.entrypoints.openai.api_server --model model",
-            "docker run -u 1000:1000 vllm/vllm-openai",
-            "ssh -u deploy host vllm --model model",
-        )
-        for sample in samples:
-            with self.subTest(sample=sample):
-                self.assertEqual(module.redact_sensitive_text(sample), sample)
-
-    def test_extract_llm_calls_round_trips_usage_evidence_byte_identically(self):
-        module = load_script_module("extract_llm_calls.py")
-        evidence_samples = (
-            '{"prompt_tokens":1024,"completion_tokens":32,"total_tokens":1056,'
-            '"cached_tokens":512,"cache_read_input_tokens":256,'
-            '"cache_creation_input_tokens":128,"prompt_cache_hit_tokens":64,'
-            '"max_output_tokens":2048,"prompt_cache_key":"stable-prefix-v1"}',
-            "usage = {'prompt_tokens': 1024, 'completion_tokens': 32, "
-            "'total_tokens': 1056, 'cached_tokens': 512, "
-            "'cache_read_input_tokens': 256, 'cache_creation_input_tokens': 128, "
-            "'prompt_cache_hit_tokens': 64, 'max_new_tokens': 256, "
-            "'prompt_cache_key': 'stable-prefix-v1'}",
-            "vllm serve model --max-num-batched-tokens 8192 "
-            "--max-output-tokens 2048 --max-completion-tokens 1024 "
-            "prompt_cache_key=stable-prefix-v1",
-        )
-        for evidence in evidence_samples:
-            with self.subTest(evidence=evidence):
-                self.assertEqual(module.redact_sensitive_text(evidence), evidence)
-
-    def test_extract_llm_calls_redaction_runtime_is_bounded_directly(self):
-        module = load_script_module("extract_llm_calls.py")
-        for shape in ("A-" * 20000, "x:" * 20000):
-            long_line = "vllm " + shape
-            started = time.monotonic()
-            redacted = module.redact_sensitive_text(long_line)
-            elapsed = time.monotonic() - started
-
-            with self.subTest(shape=shape[:2]):
-                self.assertLess(elapsed, 2.0, f"direct redaction took {elapsed:.3f}s")
-                self.assertEqual(redacted, long_line)
-
-    def test_extract_llm_calls_preserves_noncredential_cache_and_token_names(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            (tmp_path / "serve.sh").write_text(
-                'vllm serve model prompt_cache_key="stable-prefix-v1" '
-                "--max-tokens 100 token_count=7\n"
-            )
-
-            result = run_script("extract_llm_calls.py", tmp_path)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        finding_text = "\n".join(finding["text"] for finding in json.loads(result.stdout)["findings"])
-        self.assertIn("prompt_cache_key=\"stable-prefix-v1\"", finding_text)
-        self.assertIn("--max-tokens 100", finding_text)
-        self.assertIn("token_count=7", finding_text)
-
-    def test_extract_llm_calls_bounds_redaction_before_matching_long_lines(self):
+    def test_extract_llm_calls_elides_source_snippet_for_long_lines(self):
         module = load_script_module("extract_llm_calls.py")
         long_line = "vllm " + ("A-" * 6000) + "\n"
         with tempfile.TemporaryDirectory() as tmp:
@@ -2855,7 +2430,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertLess(elapsed, 2.0, f"long-line scan took {elapsed:.3f}s")
         self.assertEqual(output["providers"].get("vllm"), 1)
         self.assertEqual(len(output["findings"]), 1)
-        self.assertLessEqual(len(output["findings"][0]["text"]), 200)
+        self.assertEqual(output["findings"][0]["text"], "[SOURCE_SNIPPET_ELIDED]")
+        self.assertEqual(output["source_snippet_policy"], "elided")
 
     def test_extract_llm_calls_excludes_dotenv_files_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
