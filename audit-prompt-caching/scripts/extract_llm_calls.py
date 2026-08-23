@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -139,50 +140,81 @@ VLLM_SIGNAL_LABELS = {
 }
 
 
+# Keep identifier components bounded.  The previous ``[A-Z0-9_-]*`` prefix
+# could retry every possible split of a long non-match, making extraction
+# quadratic.  A credential name can still have up to 64 bounded components on
+# either side of its sensitive component, which covers deployment identifiers
+# without permitting an unbounded regex search.
+SENSITIVE_NAME_COMPONENT = r"[A-Z0-9]{1,64}"
+SENSITIVE_NAME_PREFIX = rf"(?:{SENSITIVE_NAME_COMPONENT}[_-]){{0,64}}"
+SENSITIVE_NAME_TRAILING = rf"(?:[_-]{SENSITIVE_NAME_COMPONENT}){{0,64}}"
+SENSITIVE_NAME_CORE = (
+    r"(?:PYTHONHASHSEED|"
+    r"API[_-]?KEY|API[_-]?TOKENS?|"
+    r"ACCESS[_-]?KEY|PRIVATE[_-]?KEY|"
+    r"SALT|SEED|TOKEN(?:S)?|SECRET(?:S)?|PASSWORD(?:S)?|CREDENTIAL(?:S)?)"
+)
 SENSITIVE_ASSIGNMENT_NAME = (
-    r"[A-Z0-9_-]*"
-    r"(?:PYTHONHASHSEED|SALT|SEED|API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)"
+    rf"{SENSITIVE_NAME_PREFIX}{SENSITIVE_NAME_CORE}{SENSITIVE_NAME_TRAILING}"
 )
-SENSITIVE_OPTION_NAME = (
-    r"[A-Z0-9_-]*"
-    r"(?:SALT|SEED|API[-_]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)"
-)
+SENSITIVE_OPTION_NAME = SENSITIVE_ASSIGNMENT_NAME
+
+# These are ordinary request/usage fields, not credentials.  The matcher
+# deliberately recognizes TOKEN as a bounded component so names such as
+# API_TOKENS are covered, then leaves these well-known non-secret fields alone.
+NON_CREDENTIAL_NAMES = {
+    "INPUT_TOKENS",
+    "MAX_TOKENS",
+    "OUTPUT_TOKENS",
+    "TOKEN_COUNT",
+}
 
 
 SENSITIVE_ASSIGNMENT_PATTERNS = (
     re.compile(
-        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?{SENSITIVE_ASSIGNMENT_NAME}["']?\]?\s*[:=]\s*)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
+        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?(?P<name>{SENSITIVE_ASSIGNMENT_NAME})["']?\]?\s*[:=]\s*)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
     ),
     re.compile(
-        rf"""(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?{SENSITIVE_ASSIGNMENT_NAME}["']?\]?\s*[:=]\s*)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
+        rf"""(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?(?P<name>{SENSITIVE_ASSIGNMENT_NAME})["']?\]?\s*[:=]\s*)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
     ),
     re.compile(
-        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?{SENSITIVE_ASSIGNMENT_NAME}["']?\]?\s*[:=]\s*)(?P<value>[^\s"'`,;]+)'''
+        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?(?P<name>{SENSITIVE_ASSIGNMENT_NAME})["']?\]?\s*[:=]\s*)(?P<value>[^\s"'`,;]+)'''
     ),
     re.compile(
-        rf'''(?ix)(?P<prefix>--(?:{SENSITIVE_OPTION_NAME})\s+)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
+        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])--(?P<option>{SENSITIVE_OPTION_NAME})\s+)(?P<quote>")(?P<value>(?:\\.|[^"\\])*)"'''
     ),
     re.compile(
-        rf"""(?ix)(?P<prefix>--(?:{SENSITIVE_OPTION_NAME})\s+)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
+        rf"""(?ix)(?P<prefix>(?<![A-Za-z0-9_])--(?P<option>{SENSITIVE_OPTION_NAME})\s+)(?P<quote>')(?P<value>(?:\\.|[^'\\])*)'"""
     ),
     re.compile(
-        rf'''(?ix)(?P<prefix>--(?:{SENSITIVE_OPTION_NAME})\s+)(?P<value>[^\s"'`,;]+)'''
+        rf'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])--(?P<option>{SENSITIVE_OPTION_NAME})\s+)(?P<value>[^\s"'`,;]+)'''
     ),
+)
+
+AUTHORIZATION_HEADER_PATTERN = re.compile(
+    r'''(?ix)(?P<prefix>(?<![A-Za-z0-9_])["']?authorization["']?\s*:\s*["']?(?:bearer|basic)\s+)(?P<value>[^\s"'`,;]+)'''
 )
 
 
 def redact_sensitive_text(text):
     """Redact sensitive assignment/option values before emitting snippets."""
     for pattern in SENSITIVE_ASSIGNMENT_PATTERNS:
-        text = pattern.sub(
-            lambda match: (
+        def replace_assignment(match):
+            candidate = match.groupdict().get("name") or match.groupdict().get("option")
+            normalized = candidate.upper().replace("-", "_") if candidate else ""
+            if normalized in NON_CREDENTIAL_NAMES:
+                return match.group(0)
+            quote = match.groupdict().get("quote", "")
+            return (
                 f"{match.group('prefix')}"
-                f"{match.groupdict().get('quote', '')}"
-                "[REDACTED_SECRET]"
-                f"{match.groupdict().get('quote', '')}"
-            ),
-            text,
-        )
+                f"{quote}[REDACTED_SECRET]{quote}"
+            )
+
+        text = pattern.sub(replace_assignment, text)
+    text = AUTHORIZATION_HEADER_PATTERN.sub(
+        lambda match: f"{match.group('prefix')}[REDACTED_SECRET]",
+        text,
+    )
     return text
 
 
@@ -195,11 +227,17 @@ def should_scan(path):
 
 
 def iter_files(root):
-    for path in sorted(root.rglob("*")):
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        if should_scan(path):
-            yield path
+    for current, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            dirname
+            for dirname in dirnames
+            if dirname not in SKIP_DIRS and not dirname.startswith(".env")
+        )
+        current_path = Path(current)
+        for filename in sorted(filenames):
+            path = current_path / filename
+            if should_scan(path):
+                yield path
 
 
 def find_matches(root):
@@ -227,7 +265,7 @@ def find_matches(root):
                     "line": lineno,
                     "provider": provider,
                     "pattern": matched_patterns[0],
-                    "text": redact_sensitive_text(line.strip())[:200],
+                    "text": redact_sensitive_text(line.strip()[:200]),
                 }
                 if provider == "vllm":
                     finding["signals"] = list(

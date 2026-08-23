@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -2439,6 +2440,107 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("OPENROUTER_API_KEY", result.stdout)
         self.assertIn("vllm", result.stdout)
 
+    def test_extract_llm_calls_redacts_embedded_plural_and_header_credentials(self):
+        cases = {
+            "AWS_SECRET_ACCESS_KEY": "aws-secret-sentinel-01",
+            "GOOGLE_APPLICATION_CREDENTIALS": "google-credentials-sentinel-02",
+            "SECRET_KEY": "secret-key-sentinel-03",
+            "CLIENT_SECRETS": "client-secrets-sentinel-04",
+            "CACHE_SALT_VALUE": "cache-salt-sentinel-05",
+            "API_TOKENS": "api-tokens-sentinel-06",
+            "OPENAI_API_KEY_FILE": "openai-key-file-sentinel-07",
+            "PRIVATE_KEY": "private-key-sentinel-08",
+            "ACCESS_KEY": "access-key-sentinel-09",
+        }
+        all_sentinels = set(cases.values())
+        shell_lines = []
+        for name, value in cases.items():
+            shell_lines.extend(
+                [
+                    f"export {name}={value} vllm serve model --enable-prefix-caching",
+                    f"vllm serve model {name}='{value}-single' --enable-prefix-caching",
+                    f'vllm serve model {name}="{value}-double" --enable-prefix-caching',
+                ]
+            )
+            all_sentinels.update({f"{value}-single", f"{value}-double"})
+        shell_lines.extend(
+            [
+                'curl https://openrouter.ai/api/v1 -H "Authorization: Bearer bearer-sentinel-10" vllm',
+                'curl https://openrouter.ai/api/v1 -H "Authorization: Basic basic-sentinel-11" vllm',
+            ]
+        )
+        all_sentinels.update({"bearer-sentinel-10", "basic-sentinel-11"})
+
+        service_lines = [
+            f'Environment="{name}={value}-service" ExecStart=/usr/bin/vllm serve model'
+            for name, value in cases.items()
+        ]
+        all_sentinels.update(f"{value}-service" for value in cases.values())
+
+        json_lines = [
+            f'{{"command": "vllm serve model", "{name}": "{value}-json"}}'
+            for name, value in cases.items()
+        ]
+        all_sentinels.update(f"{value}-json" for value in cases.values())
+
+        option_lines = [
+            "vllm serve model --aws-secret-access-key aws-option-sentinel-12",
+            "vllm serve model --private-key private-option-sentinel-13",
+        ]
+        all_sentinels.update({"aws-option-sentinel-12", "private-option-sentinel-13"})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "serve.sh").write_text("\n".join(shell_lines) + "\n")
+            (tmp_path / "vllm.service").write_text("\n".join(service_lines) + "\n")
+            (tmp_path / "manifest.json").write_text("\n".join(json_lines) + "\n")
+            (tmp_path / "Makefile").write_text("serve:\n\t" + "\n\t".join(option_lines) + "\n")
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertIn("openrouter", output["providers"])
+        self.assertIn("vllm", output["providers"])
+        for sentinel in all_sentinels:
+            self.assertNotIn(sentinel, result.stdout)
+        self.assertIn("Authorization", result.stdout)
+        self.assertIn("Bearer", result.stdout)
+        self.assertIn("Basic", result.stdout)
+        self.assertIn("vllm", result.stdout)
+
+    def test_extract_llm_calls_preserves_noncredential_cache_and_token_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "serve.sh").write_text(
+                'vllm serve model prompt_cache_key="stable-prefix-v1" '
+                "--max-tokens 100 token_count=7\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        finding_text = "\n".join(finding["text"] for finding in json.loads(result.stdout)["findings"])
+        self.assertIn("prompt_cache_key=\"stable-prefix-v1\"", finding_text)
+        self.assertIn("--max-tokens 100", finding_text)
+        self.assertIn("token_count=7", finding_text)
+
+    def test_extract_llm_calls_bounds_redaction_before_matching_long_lines(self):
+        module = load_script_module("extract_llm_calls.py")
+        long_line = "vllm " + ("A-" * 6000) + "\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "long.yaml").write_text(long_line)
+
+            started = time.monotonic()
+            output = module.find_matches(tmp_path)
+            elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 2.0, f"long-line scan took {elapsed:.3f}s")
+        self.assertEqual(output["providers"].get("vllm"), 1)
+        self.assertEqual(len(output["findings"]), 1)
+        self.assertLessEqual(len(output["findings"][0]["text"]), 200)
+
     def test_extract_llm_calls_excludes_dotenv_files_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2458,6 +2560,14 @@ class PromptCacheScriptsTest(unittest.TestCase):
             (tmp_path / ".env.json").write_text(
                 '{"command": "vllm serve model --prefix-cache-retention-interval 0"}\n'
             )
+            (tmp_path / ".env.d").mkdir()
+            (tmp_path / ".env.d" / "production.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".envs").mkdir()
+            (tmp_path / ".envs" / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
             (tmp_path / "serve.sh").write_text(
                 "vllm serve model --prefix-cache-retention-interval 0\n"
             )
@@ -2468,7 +2578,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertEqual(output["files_scanned"], 1)
         scanned_paths = "\n".join(f["path"] for f in output["findings"])
-        for env_name in (".env", ".env.production", ".env.yaml", ".env.sh", ".env.json"):
+        for env_name in (
+            ".env",
+            ".env.production",
+            ".env.yaml",
+            ".env.sh",
+            ".env.json",
+            ".env.d",
+            ".envs",
+        ):
             self.assertNotIn(env_name, scanned_paths)
         self.assertNotIn("dotenv-secret", result.stdout)
 
@@ -2793,40 +2911,46 @@ class PromptCacheScriptsTest(unittest.TestCase):
         rules = json.loads((root / "references" / "rules.json").read_text())
         rule_map = {rule["id"]: rule for rule in rules["rules"]}
 
-        retention_rows = parse_markdown_table(
-            vllm,
-            "| Runtime | Effective value | Dense/non-eligible groups | SWA/Mamba/hybrid groups |",
-        )
-        retention = {
-            (row["Runtime"], row["Effective value"]): row for row in retention_rows
-        }
-        self.assertIn(
-            "startup/config error",
-            retention[("stable `v0.27.1` env-only", "`0`")]["Dense/non-eligible groups"],
-        )
-        self.assertIn(
-            "permitted no-op",
-            retention[("post-`017e9f4` source/main", "`0`")]["Dense/non-eligible groups"],
-        )
+        def assert_retention_semantics(reference_text):
+            retention_rows = parse_markdown_table(
+                reference_text,
+                "| Runtime | Effective value | Dense/non-eligible groups | SWA/Mamba/hybrid groups |",
+            )
+            retention = {
+                (row["Runtime"], row["Effective value"]): row
+                for row in retention_rows
+            }
+            self.assertIn(
+                "startup/config error",
+                retention[("stable `v0.27.1` env-only", "`0`")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "startup/config error",
+                retention[("stable `v0.27.1` env-only", "positive")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "permitted no-op",
+                retention[("post-`017e9f4` source/main", "`0`")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "full-attention groups ignore it",
+                retention[("post-`017e9f4` source/main", "positive")]["SWA/Mamba/hybrid groups"],
+            )
 
-        forbidden_patterns = (
-            r"(?is)positive interval[^.\n]{0,120}(?:no-op|harmless)[^.\n]{0,120}(?:full-attention|dense)",
-            r"(?is)(?:interval|value|retention)[^.\n]{0,80}0[^.\n]{0,100}(?:no retention|disables retention|keeps nothing)",
-            r"(?is)PYTHONHASHSEED[^.\n]{0,100}(?:tenant )?isolation|(?:tenant )?isolation[^.\n]{0,100}PYTHONHASHSEED",
-        )
-        for pattern in forbidden_patterns:
-            with self.subTest(pattern=pattern):
-                self.assertNotRegex(vllm, pattern)
-
-        natural_forbidden_claims = (
-            "A positive interval is a harmless no-op on full-attention groups.",
-            "Setting the interval to 0 disables retention entirely and keeps nothing.",
-            "Use a shared PYTHONHASHSEED as the tenant isolation boundary.",
-        )
-        mutated_reference = vllm + "\n" + " ".join(natural_forbidden_claims)
-        for pattern in forbidden_patterns:
-            with self.subTest(mutated_pattern=pattern):
-                self.assertRegex(mutated_reference, pattern)
+        assert_retention_semantics(vllm)
+        for original, replacement in (
+            (
+                "startup/config error: any non-`None` env value requires SWA/Mamba groups",
+                "permitted no-op",
+            ),
+            ("permitted no-op", "startup/config error"),
+            ("full-attention groups ignore it", "full-attention groups keep it"),
+        ):
+            mutated_reference = vllm.replace(original, replacement, 1)
+            self.assertNotEqual(mutated_reference, vllm)
+            with self.subTest(original=original):
+                with self.assertRaises(AssertionError):
+                    assert_retention_semantics(mutated_reference)
 
         self.assertIn("algorithm and effective seed are necessary but insufficient", vllm)
         self.assertIn("serialization/runtime", vllm)
