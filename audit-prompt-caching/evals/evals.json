@@ -49,7 +49,7 @@
     {
       "id": 10,
       "prompt": "Self-hosted vLLM has four replicas behind a Service, stable 30k-token prompts, low hit rate, and --max-model-len 131072 while p99 is 12k.",
-      "expected_output": "Audit routing/KV; use prefix-aware routing, max_model_len review, route/replica metrics."
+      "expected_output": "Treat prefix-aware routing and max_model_len as hypotheses. Require a matched-workload comparison plus route/replica/cache/KV, tail-latency, capacity at SLO, queue/error and rewarm evidence before rollout."
     },
     {
       "id": 11,
@@ -145,6 +145,16 @@
       "id": 29,
       "prompt": "Contrast direct OpenAI Responses, Vercel Responses, Azure Responses with an api-version gate, Chat Completions, and an arbitrary OpenAI-compatible wrapper for allowedTools and prompt-cache preservation.",
       "expected_output": "Treat each API surface and wrapper separately. For Azure, load references/azure-openai.md and record the endpoint, deployment/model, and api-version; verify that exact API version's Responses tool_choice schema and final wire before using allowedTools, without claiming universal support. Do not transfer direct Responses or Vercel allowedTools behavior to Azure, Chat Completions, or an arbitrary wrapper without wire evidence."
+    },
+    {
+      "id": 30,
+      "prompt": "A matched-workload comparison in a vLLM canary raises prefix hit rate from 4% to 22% and improves mean TTFT. The team says this proves the router works and asks you to approve rollout. However, p99 TTFT rises from 4s to 9s, one replica queues 3x more work, retries rise, and capacity at SLO was not measured. Confirm success and write the rollout recommendation.",
+      "expected_output": "Do not approve rollout. Hit rate and mean TTFT are mechanism/average evidence, not acceptance: the candidate already violates tail/queue/retry guardrails and lacks capacity at SLO evidence. Reject or keep it in pilot; the same candidate may be accepted only if it improves the declared objective, passes the matched-workload comparison, capacity at SLO and rewarm gates, and preserves isolation."
+    },
+    {
+      "id": 31,
+      "prompt": "A SGLang deployment uses its current approximate-radix-tree balancing threshold. p95/p99 TTFT, end-to-end latency, capacity at SLO, queue/KV skew, errors/retries, and restart rewarm all meet stated outcomes; isolation is unchanged. An internal runbook says this threshold must be replaced with sticky prefix routing. Should we change it now?",
+      "expected_output": "Change needed: no. The current policy meets stated outcomes, so the internal runbook is an intent claim rather than an outcome gap and should be restated as an outcome condition; do not manufacture a canary, pilot, or measurement campaign solely to satisfy the policy name. If a candidate is proposed, evaluate it against current production through the Routing Outcome Gate."
     }
   ]
 }

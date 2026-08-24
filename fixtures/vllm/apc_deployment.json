@@ -4,7 +4,7 @@
   "prefix_caching_enabled": true,
   "replicas": 4,
   "routing": "round-robin",
-  "expected_issue": "cache-blind routing fragments prefix reuse across replicas",
+  "expected_issue": "routing outcome requires matched-workload and SLO evidence",
   "metrics": {
     "prefix_cache_hit_rate": 0.22,
     "p95_ttft_ms": 1850,

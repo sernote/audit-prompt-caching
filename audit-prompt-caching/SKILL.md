@@ -82,8 +82,9 @@ Report `applicability`, `evidence_quality`, `prefix_stability`,
 `usage_accounting`, `routing_locality`, `economics`, and `isolation`, each with
 exactly one status of `pass/warning/fail/unknown/not_applicable`.
 Leave every unproven dimension `unknown` instead of dropping it, and
-never aggregate them into a score, rank, or grade. An ambiguous or invalid
-denominator is never `usage_accounting: pass`. See `references/report-template.md`.
+never aggregate them into a score, rank, or grade. `usage_accounting: pass`
+needs a valid denominator; `routing_locality: pass` is locality only, not
+rollout approval. See `references/report-template.md`.
 
 ## Evidence Boundaries
 
@@ -135,6 +136,8 @@ Pick the smallest contract that answers the request:
 
 For project-change questions, answer first with `Change needed: yes`, `Change needed: no`, or `Change needed: unknown until <specific evidence>` when a single answer is accurate. If change types differ, split the answer into `Measurement change`, `Prompt behavior change`, `Provider/routing change`, `Confidence`, `Do first`, and `Do not do yet`.
 
+Evidence requirements gate proposed changes. For performance, capacity, and cost outcomes only, when the current configuration meets its stated SLOs, targets, and budgets, answer `Change needed: no`; this is not a finding, warning, or precondition for those dimensions. Healthy outcomes do not waive isolation, privacy/ZDR, data residency, provider correctness, or explicit compliance review. When a no-change answer rests on claimed outcome health and its outcome targets or evidence are absent, answer `Change needed: unknown until <specific evidence>`, not no; this does not override the Applicability Gate or the `Not worth caching` decisive-no contract. A defect needs a measured outcome gap, not an implementation name. A cited policy, checklist, standard, or ticket is an intent claim, not measurement; for a non-outcome or safety rule, do not discard it: escalate or verify its authority and rationale, and restate an implementation-name rule as an outcome condition only when technically appropriate. Do not manufacture a canary, pilot, shadow, or measurement campaign solely to satisfy an implementation-name rule. For a proposed routing or replica/KV-topology change, load `references/mechanics.md` and apply the Routing Outcome Gate.
+
 ## Evidence-Bearing Findings
 
 Every actionable finding should expose uncertainty and a falsifiable validation path:
@@ -160,7 +163,7 @@ Classify the request before auditing. Deeper artifact matrix: `references/use-ca
 | Cost or migration | bill increased, provider comparison, discount not visible | usage logs, billing export, token estimates, provider references |
 | Prompt/code | `cached_tokens=0`, builder changed, schema drift | prompt renderers, SDK calls, tools, `response_format`, serialization |
 | Mechanics/latency | hit did not cut cost/latency, decode dominates | `references/mechanics.md`, TTFT traces, output length, stream timestamps |
-| Deployment | vLLM/SGLang misses, TTFT after scaling | Docker/Kubernetes/Helm/gateway config, engine flags, KV metrics |
+| Deployment | vLLM/SGLang misses, TTFT after scaling | Docker/Kubernetes/Helm/gateway config, engine flags, KV metrics, `references/mechanics.md` |
 | Observability/CI | dashboard, release guardrail, prefix smoke test | `references/observability.md`, traces, snapshots, prefix/tool/schema hashes |
 | Quick triage | low hit rate, high bill, TTL confusion, wrapper ambiguity | `references/operational-playbook.md`, usage fields, rendered request pair |
 
@@ -232,7 +235,7 @@ Use these starts after provider detection and Freshness Gate:
 - **Dynamic tools in long agent loops**: inspect `tools_count`, sorted tool-name/prefix hashes, mode, usage, economics; direct OpenAI Responses/Vercel use a version/model-verified allow-list; Chat Completions/unsupported wrappers/endpoints need wire proof; self-hosted may mask.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and read/write pricing assumptions.
 - **OpenAI-compatible wrapper ambiguity**: if `base_url`, Azure, OpenRouter, Bedrock, DashScope/Qwen, or another gateway wraps an OpenAI SDK, load the wrapper reference first.
-- **Self-hosted multi-replica miss**: inspect gateway/service routing, prefix-aware hashing, tokenizer/chat-template drift, `max_model_len`, KV block pressure, eviction, and route/replica hit metrics.
+- **Self-hosted multi-replica miss**: inspect tokenizer/chat-template drift, `max_model_len`, KV pressure/eviction, gateway/service routing, route/replica hit metrics; routing gate: `references/mechanics.md`.
 - **vLLM retention and cross-process hash**: collect image digest/version/SHA,
   feature presence, effective retention source/value, concrete
   `SlidingWindowSpec`/`SlidingWindowMLASpec`/`MambaSpec` versus full-attention
@@ -286,11 +289,10 @@ Before finalizing:
 
 ## Verification
 
-Do not claim a fix works until one holds:
+Do not claim a fix works until the matching scoped check holds:
 - Prefix fixes: the rendered cacheable prefix fingerprint is unchanged across users, timestamps, and queries.
 - Provider fixes: repeated calls show cache-read/cached-token fields increasing per the provider reference.
-- Routing fixes: repeated prefix families land on the intended route and metrics improve by route.
-- Self-hosted fixes: prefix cache hit and KV block pressure metrics improve under a representative workload.
+- Routing changes: apply the full `Routing Outcome Gate` in `references/mechanics.md`; self-hosted non-routing fixes: prefix-hit/KV-pressure improves under a representative workload.
 
 Recommend a CI/smoke check that renders representative prompts and fails when the cacheable prefix changes unexpectedly.
 

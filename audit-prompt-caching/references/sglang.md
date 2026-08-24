@@ -39,7 +39,7 @@ Move volatile values late in the request or into supported metadata. Verify by r
 
 ### Router And Multi-Replica Locality
 
-When multiple SGLang runtimes serve traffic, check whether routing is cache-aware. SGLang router docs describe cache-aware routing using approximate radix trees and balancing thresholds. A generic round-robin gateway can scatter shared prefixes across workers.
+When multiple SGLang runtimes serve traffic, inspect routing/cache settings. SGLang router docs describe approximate radix trees and balancing thresholds. A generic round-robin gateway can scatter shared prefixes across workers. Treat routing policies and thresholds as candidates; use the `Routing Outcome Gate` in `references/mechanics.md`.
 
 Inspect:
 - `sglang_router`
@@ -81,6 +81,8 @@ Watch:
 - cache-aware routing thresholds
 - cache flush/disable events
 - request prefix family cardinality
+
+Use `references/mechanics.md` for the normative `Routing Outcome Gate` and `references/observability.md` for its fields; locality metrics are evidence, not a verdict.
 
 ## Monitoring
 

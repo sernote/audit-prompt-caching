@@ -9,7 +9,8 @@ Use for release, incident, deploy, or monitoring reviews.
 - Prompt A/B flags or random few-shot examples before the stable prefix.
 - Context compaction that rewrites the stable anchor.
 - Provider wrapper or router changes without routed provider/model telemetry.
-- vLLM/SGLang scale-out behind round robin without prefix-aware routing.
+- Any vLLM/SGLang routing-policy or replica/KV-topology change, including scale-out, cache-aware or cache-blind, is a blocker when it lacks a matched-workload comparison, capacity at SLO, rewarm evidence, observability, rollback trigger, or an approved isolation decision, or when it has an unreviewed trust-boundary broadening; use the `Routing Outcome Gate` in `references/mechanics.md`.
+  Scope note: this routing-policy blocker does not block continued operation or an unrelated release of an unchanged routing policy, and does not block an emergency rollback to a previously running policy. A new routing-policy or replica/KV-topology change, including scale-out, remains a candidate and uses the gate. Other blockers here—prefix stability, provider correctness, hash/seed compatibility, and isolation—still apply to existing deployments and release/monitoring reviews.
 - `max_model_len` or KV settings changed without p99 input/KV pressure review.
 - Cache controls, `cachePoint`, `prompt_cache_key`, TTL, retention, or salts changed without provider-doc checks.
 - vLLM retention flag/env is used without evidence that the deployed runtime supports the feature; an env name in a manifest is not enough.
@@ -23,7 +24,8 @@ Use for release, incident, deploy, or monitoring reviews.
 - Rendered before/after prompt pair for each hot prompt family.
 - Prefix/tool/schema hashes and first divergence location.
 - Cache read/write fields by route/model/provider/region/replica.
-- TTFT or prefill, final latency, output tokens, and tool timing.
+- TTFT/prefill, final latency, output tokens, and tool timing.
+- For routing-policy or replica/KV-topology changes: objective/SLO/rollback, matched-workload comparison, capacity at SLO, and rewarm; see `references/mechanics.md` and `references/observability.md`.
 - Prompt version, deploy SHA, SDK/provider version, router settings.
 - image digest/version/commit SHA, resolved cache config (including feature presence and retention source/value), concrete KV-group geometry, and redacted hash/seed compatibility status.
 - Privacy or isolation decision for cache key/salt boundaries.
@@ -33,7 +35,7 @@ Use for release, incident, deploy, or monitoring reviews.
 1. Applicability Gate: hot, repeated, long stable prefix, safe reuse.
 2. Prefix stability: static first, dynamic late, append-only history.
 3. Provider correctness: fields, thresholds, breakpoint syntax, TTL/retention.
-4. Routing/KV: sticky or prefix-aware route, KV capacity, eviction.
+4. Routing/KV: KV capacity, eviction; use the `Routing Outcome Gate` in `references/mechanics.md`; use `references/observability.md` for fields.
 5. Economics: output share and write premium before claiming savings.
 
 Do not block on generic cache advice when the route is cold, unique, short, output-bound, or intentionally isolated.

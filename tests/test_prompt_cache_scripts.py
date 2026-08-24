@@ -23,8 +23,12 @@ FIXTURES = ROOT / "fixtures"
 # provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # Restoring the operational prompt-segment classification and the truthful
-# Combined vLLM geometry and dynamic-tool evidence contracts measure 6010 tokens.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6010
+# Combined vLLM geometry, dynamic-tool evidence, safety carve-outs, and
+# scoped no-change contracts measure 6341 tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6341
+# Review-round ceiling after the scoped routing gate and rollback safety wording.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 54350
+# Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -3881,7 +3885,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "vllm:prefix_cache_hits",
             "vllm:prefix_cache_queries",
             "vllm:prompt_tokens_cached",
-            "synthetic benchmark speedup",
+            "Synthetic benchmark speedup",
             "production ROI",
         ]:
             self.assertIn(required, reference)
@@ -3944,6 +3948,322 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "top-level `cache_control`",
         ]:
             self.assertIn(required, combined)
+
+    def test_ap7_treats_cache_aware_routing_as_a_measured_candidate(self):
+        root = ROOT / "audit-prompt-caching"
+        rules = json.loads((root / "references" / "rules.json").read_text())
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+        ap7 = rule_map["AP-7"]
+
+        self.assertNotIn("Lost locality", ap7["summary"])
+        ap7_text = " ".join(ap7[field] for field in ("summary", "fix", "avoid", "validation"))
+        self.assertIn("candidate", ap7_text.lower())
+        self.assertIn("matched-workload comparison", ap7["fix"])
+        self.assertIn("hit-only", ap7["avoid"].lower())
+        self.assertIn("capacity at SLO", ap7["validation"])
+        self.assertIn("rewarm", ap7["validation"].lower())
+        self.assertIn("references/mechanics.md", ap7["fix"])
+        summary = ap7["summary"].lower()
+        self.assertRegex(summary, r"proposed\s+rollout")
+        self.assertIn("open", summary)
+        self.assertIn("outcome gap", summary)
+
+        predeploy = (root / "references" / "predeploy-checklist.md").read_text().lower()
+        self.assertNotIn("round robin without prefix-aware routing", predeploy)
+        self.assertIn("cache-aware or cache-blind", predeploy)
+        self.assertIn("references/mechanics.md", predeploy)
+        scope = predeploy.split("## blockers", 1)[0]
+        self.assertNotIn("these blockers apply to a proposed", scope)
+        blockers = extract_markdown_section(predeploy, "blockers")
+        routing_scope = next(
+            line for line in blockers.splitlines()
+            if "scope note:" in line
+        )
+        for required in (
+            "routing-policy",
+            "continued operation",
+            "unrelated release",
+            "emergency rollback",
+            "scale-out",
+            "candidate",
+            "prefix stability",
+            "provider correctness",
+            "hash/seed compatibility",
+            "isolation",
+        ):
+            with self.subTest(predeploy_scope_anchor=required):
+                self.assertIn(required, routing_scope)
+        routing_blocker = next(
+            line for line in predeploy.splitlines()
+            if "routing-policy or replica/kv-topology change" in line
+        )
+        self.assertIn("scale-out", routing_blocker)
+        self.assertIn("is a blocker when", routing_blocker)
+        self.assertIn("unreviewed trust-boundary broadening", routing_blocker)
+        self.assertNotIn("and no unreviewed trust-boundary broadening", routing_blocker)
+        self.assertIn("other blockers here", routing_scope)
+        self.assertIn("still apply", routing_scope)
+        self.assertIn("remains a candidate", routing_scope)
+        self.assertRegex(
+            routing_scope,
+            r"continued operation.*unrelated release.*unchanged routing policy.*emergency rollback to a previously running policy",
+        )
+        self.assertIn("does not block", routing_scope)
+
+        self.assertEqual(
+            rule_map["AP-9b"],
+            {
+                "id": "AP-9b",
+                "category": "cache-isolation",
+                "default_severity": "medium",
+                "summary": "Isolation fragmentation.",
+                "search": "cache_salt, per-user keys, tenant routing.",
+                "fix": "Use coarsest safe trust boundary.",
+                "avoid": "Weakening privacy or ZDR.",
+                "validation": "Boundary/loss documented.",
+            },
+        )
+
+    def test_routing_outcome_gate_is_consistent_across_core_references(self):
+        root = ROOT / "audit-prompt-caching"
+        mechanics = (root / "references" / "mechanics.md").read_text()
+        gate = extract_markdown_section(mechanics, "Routing Outcome Gate")
+
+        self.assertIn("Routing Outcome Gate", mechanics)
+        for required in ("matched-workload comparison", "capacity at SLO", "rewarm"):
+            self.assertIn(required, mechanics)
+            self.assertIn(required, gate)
+        for required in (
+            "cited policy",
+            "not itself an outcome gap",
+            "For a candidate under evaluation",
+            "pilot/canary only",
+        ):
+            with self.subTest(gate_anchor=required):
+                self.assertIn(required.lower(), gate.lower())
+        self.assertRegex(
+            gate.lower(),
+            r"performance.*capacity.*cost.*outcomes.*met.*no unresolved safety or correctness concern",
+        )
+        self.assertIn("no unresolved safety or correctness concern", gate.lower())
+        self.assertNotIn("no separate safety or correctness review is pending", gate.lower())
+        self.assertIn("may be no-change", gate.lower())
+        self.assertRegex(
+            gate.lower(),
+            r"for unchanged continued operation or an unrelated release.*may be no-change",
+        )
+        self.assertRegex(
+            gate.lower(),
+            r"emergency rollback to a previously running policy.*not a candidate|emergency rollback to a previously running policy.*may proceed",
+        )
+        self.assertRegex(
+            gate.lower(),
+            r"for a candidate under evaluation, missing evidence is pilot/canary only",
+        )
+        self.assertLess(gate.index("Before applying this gate"), gate.index("Require:"))
+        self.assertRegex(
+            gate.lower(),
+            r"routing-policy or replica/kv-topology change.*including scale-out.*candidate",
+        )
+        self.assertRegex(
+            gate.lower(),
+            r"unchanged.*continued operation.*unrelated release",
+        )
+        self.assertIn("restart, scale, and failover", gate.lower())
+        for required in (
+            "Use this reference when the symptom is latency",
+            "### High Hit Rate, Low Savings",
+            "### TTFT Improved, Total Latency Did Not",
+            "### Total Prompt Tokens Look High",
+            "### Self-Hosted Hit Rate Looks Good, Throughput Still Bad",
+            "For cost audits, collect raw usage records",
+        ):
+            self.assertIn(required, mechanics)
+
+        consumers = [
+            root / "SKILL.md",
+            root / "references" / "predeploy-checklist.md",
+            root / "references" / "observability.md",
+            root / "references" / "report-template.md",
+            root / "references" / "vllm.md",
+            root / "references" / "sglang.md",
+        ]
+        for path in consumers:
+            text = path.read_text()
+            with self.subTest(path=path):
+                self.assertIn("Routing Outcome Gate", text)
+                self.assertIn("references/mechanics.md", text)
+                self.assertNotIn("use prefix-aware routing", text.lower())
+
+        for path in (root / "references" / "vllm.md", root / "references" / "sglang.md"):
+            with self.subTest(engine=path.name):
+                engine_text = path.read_text().lower()
+                self.assertNotIn("is cache-blind; use", engine_text)
+
+        skill = (root / "SKILL.md").read_text().lower()
+        self.assertIn("routing_locality: pass", skill)
+        self.assertIn("locality only", skill)
+        self.assertIn("rollout approval", skill)
+        for required in (
+            "tokenizer/chat-template drift",
+            "max_model_len",
+            "kv pressure/eviction",
+            "gateway/service routing",
+        ):
+            self.assertIn(required, skill)
+
+        observability = (root / "references" / "observability.md").read_text()
+        for required in (
+            "p50",
+            "p95",
+            "p99",
+            "TTFT",
+            "end-to-end latency",
+            "throughput",
+            "capacity at SLO",
+            "queue",
+            "per-replica",
+            "KV",
+            "error",
+            "retry",
+            "rewarm",
+            "recovery time",
+        ):
+            self.assertIn(required.lower(), observability.lower(), required)
+
+        report = (root / "references" / "report-template.md").read_text().lower()
+        self.assertIn("routing_locality: pass", report)
+        self.assertIn("locality only", report)
+        self.assertIn("cannot by itself", report)
+        self.assertIn("approve a routing-policy rollout", report)
+
+    def test_routing_change_contract_is_always_loaded_and_policy_neutral(self):
+        # These structural checks pin loading, ordering, and fixture safety only;
+        # fresh-context behavioral evaluation remains the proof of agent behavior.
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        skill_contract = (
+            "Evidence requirements gate proposed changes",
+            "stated SLOs, targets, and budgets",
+            "Change needed: no",
+            "not a finding, warning, or precondition",
+            "A defect needs a measured outcome gap, not an implementation name",
+            "policy, checklist, standard, or ticket",
+            "intent claim, not measurement",
+            "Do not manufacture a canary, pilot, shadow, or measurement campaign",
+        )
+        for required in skill_contract:
+            with self.subTest(always_loaded_anchor=required):
+                self.assertIn(required, skill)
+
+        section = extract_markdown_section(skill, "Agent-First Output Contracts")
+        contract_lower = section.lower()
+        for required in (
+            "performance",
+            "capacity",
+            "cost",
+            "isolation",
+            "privacy",
+            "zdr",
+            "residency",
+            "provider correctness",
+            "do not waive",
+            "change needed: unknown until",
+            "outcome targets",
+            "escalate",
+            "authority",
+            "rationale",
+        ):
+            with self.subTest(safety_or_unknown_anchor=required):
+                self.assertIn(required, contract_lower)
+        self.assertRegex(
+            contract_lower,
+            r"healthy outcomes do not waive.*isolation.*privacy/zdr.*residency.*provider correctness",
+        )
+        self.assertRegex(
+            contract_lower,
+            r"when a no-change answer rests on claimed.*outcome health.*outcome targets or evidence are absent.*change needed: unknown until.*not no",
+        )
+        self.assertRegex(
+            contract_lower,
+            r"this does not override.*applicability gate.*not worth caching",
+        )
+        self.assertRegex(
+            contract_lower,
+            r"routing or replica/kv-topology change.*references/mechanics\.md",
+        )
+
+        self.assertIn("Evidence requirements gate proposed changes", section)
+        self.assertLess(
+            skill.index("Evidence requirements gate proposed changes"),
+            skill.index("## Evidence-Bearing Findings"),
+        )
+
+        package = ROOT / "audit-prompt-caching"
+        package_text = "\n".join(
+            path.read_text()
+            for path in package.rglob("*")
+            if path.is_file() and path.suffix in {".md", ".json"}
+        ).lower()
+        self.assertNotIn("round robin without prefix-aware routing", package_text)
+
+        fixture = json.loads((FIXTURES / "vllm" / "apc_deployment.json").read_text())
+        self.assertIn("outcome", fixture["expected_issue"].lower())
+        self.assertNotIn("fragment", fixture["expected_issue"].lower())
+
+    def test_routing_verification_does_not_accept_mechanism_only(self):
+        skill = self.skill_text()
+        verification = extract_markdown_section(skill, "Verification").lower()
+
+        self.assertIn("until the matching scoped check holds", verification)
+        self.assertRegex(
+            verification,
+            r"routing.*full.*routing outcome gate|routing.*routing outcome gate.*not.*prefix-hit",
+        )
+        self.assertIn("self-hosted non-routing fixes", verification)
+        self.assertIn("prefix-hit/kv-pressure", verification)
+
+    def test_evals_cover_routing_harmful_hit_and_evidence_gap(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        by_id = {item["id"]: item for item in evals["evals"]}
+
+        evidence_gap = by_id[10]
+        evidence_gap_text = (
+            evidence_gap["prompt"] + "\n" + evidence_gap["expected_output"]
+        )
+        for required in ("four replicas", "30k-token", "--max-model-len 131072"):
+            self.assertIn(required, evidence_gap_text)
+        self.assertIn("matched-workload comparison", evidence_gap["expected_output"])
+        self.assertIn("capacity at SLO", evidence_gap["expected_output"])
+        self.assertIn("rewarm", evidence_gap["expected_output"].lower())
+        self.assertNotIn("use prefix-aware routing", evidence_gap["expected_output"].lower())
+
+        harmful_hit = by_id[30]
+        harmful_hit_text = harmful_hit["prompt"] + "\n" + harmful_hit["expected_output"]
+        for required in (
+            "prefix hit rate from 4% to 22%",
+            "p99 TTFT rises from 4s to 9s",
+            "capacity at SLO",
+            "Do not approve rollout",
+            "mechanism",
+            "reject",
+            "rewarm",
+        ):
+            self.assertIn(required.lower(), harmful_hit_text.lower(), required)
+
+        sibling = by_id[31]
+        sibling_text = sibling["prompt"] + "\n" + sibling["expected_output"]
+        for required in (
+            "SGLang",
+            "approximate-radix-tree",
+            "stated outcomes",
+            "internal runbook",
+            "Change needed: no",
+            "intent claim",
+            "outcome condition",
+        ):
+            self.assertIn(required.lower(), sibling_text.lower(), required)
 
     def test_trigger_eval_preserves_negative_non_cache_cases(self):
         trigger_eval = json.loads(
@@ -4581,14 +4901,63 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6010,
-            "the whole-skill baseline must equal the measured restored content",
+            6341,
+            "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(
             estimated_plugin_eval_tokens(self.skill_text()),
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
             "SKILL.md grew above the plugin-eval invoked-token baseline",
         )
+
+    def test_deferred_references_stay_within_review_round_ceiling(self):
+        deferred_chars = sum(
+            len(path.read_text())
+            for path in (ROOT / "audit-prompt-caching").rglob("*")
+            if path.is_file()
+            and path.name != "SKILL.md"
+            and "__pycache__" not in path.parts
+            and not any(
+                part.startswith(".")
+                for part in path.relative_to(ROOT / "audit-prompt-caching").parts
+            )
+        )
+        self.assertLessEqual(
+            math.ceil(deferred_chars / 4),
+            PLUGIN_EVAL_DEFERRED_TOKEN_CEILING,
+            "deferred references grew above the measured review-round ceiling",
+        )
+
+    def test_package_backticked_references_resolve(self):
+        package = ROOT / "audit-prompt-caching"
+        path_pattern = re.compile(r"`((?:references|scripts|evals)/[^`\s]+)`")
+        bare_json_path_pattern = re.compile(
+            r"(?<![`A-Za-z0-9_])((?:references|scripts|evals)/[\w.-]+(?:/[\w.-]+)*\.(?:md|py|json))"
+        )
+
+        for source in package.rglob("*"):
+            if not source.is_file() or source.suffix not in {".md", ".json"}:
+                continue
+            for target in path_pattern.findall(source.read_text()):
+                with self.subTest(source=source, target=target):
+                    self.assertTrue(
+                        (package / target).is_file(),
+                        f"{source}: missing package reference {target}",
+                    )
+
+        for source in package.rglob("*.json"):
+            for target in bare_json_path_pattern.findall(source.read_text()):
+                with self.subTest(source=source, target=target):
+                    self.assertTrue(
+                        (package / target).is_file(),
+                        f"{source}: missing bare JSON package reference {target}",
+                    )
+
+    def test_evals_json_stays_pretty_printed(self):
+        path = ROOT / "audit-prompt-caching" / "evals" / "evals.json"
+        text = path.read_text()
+        expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n"
+        self.assertEqual(text, expected)
 
     def test_skill_defines_explicit_cache_plane_gate(self):
         skill = self.skill_text()

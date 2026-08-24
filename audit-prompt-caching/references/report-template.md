@@ -72,6 +72,8 @@ Every dimension defaults to `unknown`. Leave missing evidence visible as `unknow
 
 An `ambiguous` or `invalid` usage denominator can never be reported as `usage_accounting: pass`; the renderer rejects that combination, forces `warning`/`fail`, and marks the hit ratio non-decision-grade.
 
+`routing_locality: pass` proves locality only; it cannot by itself approve a routing-policy rollout. Routing Outcome Gate: `references/mechanics.md`.
+
 ## Evidence Needed Next
 
 List rendered prompt pair, usage fields, route/model/provider, prefix/tool/schema hashes, TTFT/prefill, output tokens, and deployment/router/KV metrics needed to raise or lower severity. For a Deployment Audit, include image digest/version/commit, capability and resolved config evidence, concrete KV spec classes and attention geometry, effective retention plus source, scheduler block size, hash algorithm, redacted seed compatibility status, KV tier, and the `cache_salt` boundary fingerprint policy.
