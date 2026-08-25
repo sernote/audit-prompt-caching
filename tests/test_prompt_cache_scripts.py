@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -5598,12 +5599,54 @@ class PromptCacheScriptsTest(unittest.TestCase):
             ancestor_source = ancestor_repo / "src" / "client.ts"
             ancestor_source.parent.mkdir(parents=True)
             ancestor_source.write_text("const client = \"openrouter\";\n")
+            fake_rg = Path(temp_dir) / "fake-bin" / "rg"
+            fake_rg.parent.mkdir()
+            fake_rg.write_text(
+                "#!/usr/bin/env python3\n"
+                "import re, sys\n"
+                "from pathlib import Path\n"
+                "args = sys.argv[1:]\n"
+                "joined = ' '.join(args)\n"
+                "explicit = [Path(arg) for arg in args if Path(arg).is_file()]\n"
+                "skip = {'.git', '.hg', '.svn', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', 'node_modules', '.venv', 'venv', 'dist', 'build', 'vendor'}\n"
+                "if explicit:\n"
+                "    candidates = explicit\n"
+                "else:\n"
+                "    candidates = [path for path in Path.cwd().rglob('*') if path.is_file() and not any(part in skip for part in path.relative_to(Path.cwd()).parts)]\n"
+                "if 'openrouter|openrouter.ai/api/v1' in joined:\n"
+                "    pattern = r'openrouter|openrouter\\.ai/api/v1|@openrouter/sdk|openrouter/auto|OPENROUTER_API_KEY'\n"
+                "elif 'x-openrouter-cache|' in joined:\n"
+                "    pattern = r'x-openrouter-cache|x-openrouter-(experimental-)?metadata|cache_enabled|cache_ttl_seconds|session_id|x-session-id|prompt_cache_key|@preset/|cache_control|prompt_cache_breakpoint|prompt_cache_options|transforms|plugins|data_collection|zdr'\n"
+                "elif 'kind:' in joined:\n"
+                "    pattern = r'api[_-]?key|authorization|bearer|basic|://|accountkey|sharedaccesskey|hooks\\.slack\\.com|password|client-key-data'\n"
+                "elif '(^|' in joined:\n"
+                "    pattern = r'session_id|[\\\"\\\']?(user|metadata|preset)'\n"
+                "else:\n"
+                "    sys.exit(1)\n"
+                "found = []\n"
+                "for path in candidates:\n"
+                "    try:\n"
+                "        if re.search(pattern, path.read_bytes().decode('utf-8', 'replace'), re.I):\n"
+                "            found.append(str(path) if explicit else './' + path.relative_to(Path.cwd()).as_posix())\n"
+                "    except OSError:\n"
+                "        pass\n"
+                "for path in found:\n"
+                "    sys.stdout.buffer.write(path.encode() + b'\\0')\n"
+                "sys.exit(0 if found else 1)\n"
+            )
+            fake_rg.chmod(0o755)
+            if shutil.which("rg") is None:
+                result_env["PATH"] = f"{fake_rg.parent}:{result_env.get('PATH', '')}"
             ancestor_result = subprocess.run(
                 ["/bin/bash", "-c", mechanics_script],
                 capture_output=True,
                 text=True,
                 check=False,
-                env={**result_env, "AUDITEE_REPO": str(ancestor_repo)},
+                env={
+                    **result_env,
+                    "AUDITEE_REPO": str(ancestor_repo),
+                    "PATH": f"{fake_rg.parent}:{result_env.get('PATH', '')}",
+                },
             )
             result = subprocess.run(
                 ["/bin/bash", "-c", mechanics_script],
