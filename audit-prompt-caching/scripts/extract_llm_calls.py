@@ -7,8 +7,9 @@ snippets are always elided: the ``text`` field is always
 ``elided``. This scanner is a lexical locator only: a
 line may match comments, dead code, or overridden configuration, and the
 scanner never resolves active/effective values or source precedence. Paths are
-emitted verbatim; open the reported path:line and verify the resolved runtime
-configuration during Deployment Audit.
+emitted verbatim; symlinked files/directories are skipped and counted; open the
+reported path:line and verify the resolved runtime configuration during
+Deployment Audit.
 """
 
 import argparse
@@ -28,6 +29,7 @@ SKIP_DIRS = {
     ".mypy_cache",
     ".ruff_cache",
     "node_modules",
+    "vendor",
     ".venv",
     "venv",
     "dist",
@@ -228,26 +230,44 @@ SOURCE_SNIPPET_TEXT = "[SOURCE_SNIPPET_ELIDED]"
 
 
 def should_scan(path):
-    if path.name.startswith(".env"):
+    if path.is_symlink() or path.name.startswith(".env"):
         return False
     return path.is_file() and (
         path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_FILENAMES
     )
 
 
-def iter_files(root):
+def iter_files(root, symlinks_skipped=None, read_errors=None):
+    def record_read_error(_error):
+        if read_errors is not None:
+            read_errors[0] += 1
+
     root = Path(root)
-    if root.name.startswith(".env") or root.name in SKIP_DIRS:
+    if root.is_symlink():
+        if symlinks_skipped is not None:
+            symlinks_skipped[0] += 1
         return
-    for current, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(
-            dirname
-            for dirname in dirnames
-            if dirname not in SKIP_DIRS and not dirname.startswith(".env")
-        )
+    for current, dirnames, filenames in os.walk(
+        root, onerror=record_read_error
+    ):
         current_path = Path(current)
+        kept_dirnames = []
+        for dirname in sorted(dirnames):
+            path = current_path / dirname
+            if path.is_symlink():
+                if symlinks_skipped is not None:
+                    symlinks_skipped[0] += 1
+                continue
+            if dirname in SKIP_DIRS or dirname.startswith(".env"):
+                continue
+            kept_dirnames.append(dirname)
+        dirnames[:] = kept_dirnames
         for filename in sorted(filenames):
             path = current_path / filename
+            if path.is_symlink():
+                if symlinks_skipped is not None:
+                    symlinks_skipped[0] += 1
+                continue
             if should_scan(path):
                 yield path
 
@@ -256,12 +276,15 @@ def find_matches(root):
     findings = []
     providers = {provider: 0 for provider in PROVIDER_PATTERNS}
     files_scanned = 0
-    for path in iter_files(root):
-        files_scanned += 1
+    symlinks_skipped = [0]
+    read_errors = [0]
+    for path in iter_files(root, symlinks_skipped, read_errors):
         try:
-            lines = path.read_text(errors="replace").splitlines()
+            lines = path.read_text(errors="replace").split("\n")
         except OSError:
+            read_errors[0] += 1
             continue
+        files_scanned += 1
         for lineno, line in enumerate(lines, 1):
             for provider, patterns in PROVIDER_PATTERNS.items():
                 matched_patterns = [
@@ -290,6 +313,8 @@ def find_matches(root):
     return {
         "root": str(root),
         "files_scanned": files_scanned,
+        "symlinks_skipped": symlinks_skipped[0],
+        "read_errors": read_errors[0],
         "matches": len(findings),
         "providers": providers,
         "findings": findings,
