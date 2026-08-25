@@ -80,6 +80,14 @@
     "should_trigger": true
   },
   {
+    "query": "Compare an OpenRouter response-cache HIT with provider prompt-cache cached_tokens and route attribution",
+    "should_trigger": true
+  },
+  {
+    "query": "Explain OpenRouter response cache behavior for an ordinary JSON API response",
+    "should_trigger": false
+  },
+  {
     "query": "Cross-process vLLM block hash mismatch between sha256 and xxhash workers on a shared FS/OBJ/P2P cache",
     "should_trigger": true
   },

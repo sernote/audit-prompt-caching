@@ -26,9 +26,13 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # Combined vLLM geometry, dynamic-tool evidence, safety carve-outs, and
 # scoped no-change contracts measure 6341 tokens.
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6341
-# Review-round ceiling after the scoped routing gate and rollback safety wording.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 54350
-# Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
+# Measured refresh ceiling: repository ceil(len(deferred references) / 4) is
+# 58055 after the final OpenRouter source mapping; 50 tokens of explicit slack
+# are retained. The final plugin-eval 0.1.2 static report independently
+# measured 58066 tokens.
+# Future wording changes must remeasure and update this ceiling and plan, not
+# compress established safety guidance.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 58105
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -4786,6 +4790,315 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ):
             self.assertIn(required, normalized)
 
+
+    def test_openrouter_reference_covers_current_cache_contract(self):
+        package = ROOT / "audit-prompt-caching"
+        main_path = package / "references" / "openrouter.md"
+        detail_path = package / "references" / "openrouter-response-cache.md"
+        self.assertTrue(main_path.exists(), "missing OpenRouter main reference")
+        self.assertTrue(detail_path.exists(), "missing OpenRouter response-cache detail")
+
+        main = main_path.read_text()
+        detail = detail_path.read_text()
+        combined = main + "\n" + detail
+        required_headings = [
+            "## Sticky Provider Routing",
+            "## Cross-Provider Prompt-Cache Marker Translation",
+            "## OpenRouter Response-Cache Confounder",
+            "## Route/Provider/Model Attribution",
+            "## Batch and Warm-Up Semantics",
+        ]
+        for heading in required_headings + [
+            "## Mechanics",
+            "## Audit Checklist",
+            "## Diagnostics",
+        ]:
+            with self.subTest(heading=heading):
+                self.assertIn(heading, main)
+
+        self.assertIn("Last reviewed:", main)
+        self.assertIn("Last reviewed:", detail)
+        self.assertIn("references/openrouter-response-cache.md", main)
+        self.assertIn("## Response-Cache Evidence Details", detail)
+        for heading in required_headings:
+            self.assertNotIn(heading, detail)
+
+        official_sources = [
+            "https://openrouter.ai/docs/guides/best-practices/prompt-caching",
+            "https://openrouter.ai/docs/guides/routing/provider-selection",
+            "https://openrouter.ai/docs/llms.txt",
+            "https://openrouter.ai/docs/cookbook/administration/usage-accounting",
+            "https://openrouter.ai/docs/api/api-reference/generations/get-request-%26-usage-metadata-for-a-generation",
+            "https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion",
+            "https://openrouter.ai/docs/api/api-reference/responses/create-a-response",
+            "https://openrouter.ai/docs/guides/features/response-caching",
+            "https://openrouter.ai/docs/guides/features/router-metadata",
+            "https://openrouter.ai/docs/guides/features/zdr",
+            "https://openrouter.ai/docs/batch-quickstart",
+            "https://openrouter.ai/docs/guides/features/message-transforms",
+        ]
+        for source in official_sources:
+            with self.subTest(source=source):
+                self.assertIn(source, combined)
+        self.assertNotIn("/docs/guides/administration/usage-accounting", combined)
+        self.assertNotIn("/api-reference/generations/get-generation", combined)
+
+        section_sources = {
+            "Sticky Provider Routing": "https://openrouter.ai/docs/guides/best-practices/prompt-caching",
+            "Cross-Provider Prompt-Cache Marker Translation": "https://openrouter.ai/docs/guides/best-practices/prompt-caching",
+            "OpenRouter Response-Cache Confounder": "https://openrouter.ai/docs/guides/features/response-caching",
+            "Route/Provider/Model Attribution": "https://openrouter.ai/docs/guides/features/router-metadata",
+            "Batch and Warm-Up Semantics": "https://openrouter.ai/docs/batch-quickstart",
+        }
+        for heading, source in section_sources.items():
+            with self.subTest(section=heading):
+                section = extract_markdown_section(main, heading)
+                self.assertIn("Source:", section)
+                self.assertIn(source, section)
+
+        sticky = extract_markdown_section(main, "Sticky Provider Routing")
+        for required in (
+            "10 minutes",
+            "successful requests reset",
+            "error does not update",
+            "256 characters",
+            "session_id",
+            "x-session-id",
+            "prompt_cache_key",
+            "metadata.session_id",
+            "session_id → x-session-id → prompt_cache_key → opening-message identity",
+            "cache-read pricing",
+            "verify per model/provider",
+            "non-chat",
+            "grouping",
+            "sticky routing does not apply",
+            "provider.order",
+            "disables automatic sticky routing",
+            "measured pilot",
+            "not a universal fix",
+        ):
+            with self.subTest(anchor=required):
+                self.assertIn(required, sticky)
+
+        marker = extract_markdown_section(
+            main, "Cross-Provider Prompt-Cache Marker Translation"
+        )
+        for required in (
+            "cache_control",
+            "prompt_cache_breakpoint",
+            "TTL is not translated",
+            "prompt_cache_options",
+            "OpenAI-only",
+            "Anthropic Claude",
+            "Responses",
+            "input_tokens_details",
+            "prompt_tokens_details",
+            "cache_write_tokens",
+            "explicit caching",
+            "cache-write pricing",
+            "missing fields are not automatically failures",
+            "inclusive",
+            "necessary but not sufficient",
+            "context length",
+            "context compression",
+            "compressed and uncompressed prompts are different cache inputs",
+        ):
+            with self.subTest(anchor=required):
+                self.assertIn(required, marker)
+
+        response_section = extract_markdown_section(
+            main, "OpenRouter Response-Cache Confounder"
+        )
+        response_evidence = response_section + "\n" + detail
+        for required in (
+            "gateway_response",
+            "X-OpenRouter-Cache",
+            "X-OpenRouter-Cache-Status",
+            "X-OpenRouter-Cache-Age",
+            "X-OpenRouter-Cache-TTL",
+            "X-OpenRouter-Cache-Source-Id",
+            "X-OpenRouter-Cache-Clear",
+            "1–86400",
+            "200 OK",
+            "concurrent",
+            "evict",
+            "normalized",
+            "JSON property order",
+            "API key",
+            "zeroed",
+            "does not call the provider",
+            "all-zero usage alone is not proof",
+            "response_cache_source_id",
+            "ZDR",
+            "passive",
+            "verbatim",
+            "not provider prompt-cache activity",
+        ):
+            with self.subTest(anchor=required):
+                self.assertIn(required, response_evidence)
+
+        attribution = extract_markdown_section(main, "Route/Provider/Model Attribution")
+        for required in (
+            "X-OpenRouter-Metadata",
+            "openrouter_metadata.requested",
+            "strategy",
+            "selected",
+            "attempts",
+            "pipeline",
+            "context_compression",
+            "metadata absence is not a HIT detector",
+            "X-Generation-Id",
+            "provider_name",
+            "preset_id",
+            "cache_discount",
+            "native_tokens_cached",
+            "upstream_inference_cost",
+            "session_id",
+            "not a provider request trace",
+        ):
+            with self.subTest(anchor=required):
+                self.assertIn(required, attribution)
+
+        batch = extract_markdown_section(main, "Batch and Warm-Up Semantics")
+        for required in (
+            "Anthropic `:batch`",
+            "Batch API",
+            "not a model variant",
+            "llms.txt",
+            "one-hour",
+            "successive",
+            "generation IDs",
+            "response-cache HIT cannot warm",
+        ):
+            with self.subTest(anchor=required):
+                self.assertIn(required, batch)
+
+        mechanics = extract_markdown_section(main, "Mechanics")
+        for required in (
+            'rg -n "openrouter|OPENROUTER_API_KEY|openrouter.ai/api/v1|@openrouter/sdk|OpenRouter|openrouter/auto" .',
+            'rg -l -i "x-openrouter-cache|x-openrouter-(experimental-)?metadata|cache_enabled|cache_ttl_seconds|session_id|x-session-id|prompt_cache_key" .',
+            "model",
+            "models",
+            "provider",
+            "plugins",
+            "messages",
+            "cache_control",
+            "account provider preferences",
+            "HMAC-SHA256",
+            "keyed hash",
+            "zdr",
+            "data_collection",
+            "context compression",
+            "compressed and uncompressed prompts are different cache inputs",
+        ):
+            with self.subTest(anchor=required):
+                self.assertIn(required, mechanics)
+
+        checklist = extract_markdown_section(main, "Audit Checklist")
+        self.assertIn("Routing Outcome Gate", checklist)
+        self.assertIn("references/mechanics.md", checklist)
+        self.assertNotIn(
+            "Do not use `provider.order` when relying on automatic sticky routing",
+            combined,
+        )
+        self.assertNotIn(
+            "Check current docs before assuming direct Anthropic/Gemini/OpenAI cache controls pass through unchanged.",
+            combined,
+        )
+        self.assertNotIn(
+            "Disable or log context-compression plugin behavior during diagnosis;",
+            combined,
+        )
+
+        diagnostics = extract_markdown_section(main, "Diagnostics")
+        self.assertIn("If writes exist but reads stay low", diagnostics)
+
+        # Stale-sticky-claim guard: a sanctioned upstream TTL change requires
+        # updating the reference and this exception scope, never deleting the guard.
+        stale_duration = re.compile(
+            r"(?<![0-9])(?:(?:5|five)\s*[-–—‑ ]?(?:min(?:ute)?s?|m)|300\s*[-–—‑ ]?(?:s|sec(?:ond)?s?))\b",
+            re.IGNORECASE,
+        )
+        marker_section = extract_markdown_section(
+            main, "Cross-Provider Prompt-Cache Marker Translation"
+        )
+        main_without_marker = main.replace(marker_section, "")
+        self.assertIsNone(stale_duration.search(main_without_marker))
+        self.assertIsNone(stale_duration.search(detail))
+        self.assertNotRegex(response_section, r"(?<![0-9])300(?![0-9])")
+
+        for hedge in (
+            "audit synthesis",
+            "not a quoted provider enumeration",
+            "unresolved",
+            "verification per model/provider",
+            "provisional",
+            "necessary but not sufficient",
+            "not evidence",
+            "not a guarantee",
+            "out of scope",
+            "review-verified",
+            "measured anchor",
+        ):
+            with self.subTest(hedge=hedge):
+                self.assertIn(hedge, combined)
+
+        self.assertLessEqual(len(main), 14000)
+        self.assertLessEqual(len(detail), 5000)
+        self.assertLessEqual(len(main) + len(detail), 18000)
+
+    def test_openrouter_reference_preserves_analyzer_shape_boundaries(self):
+        # This is an adapter-artifact regression guard, not routed-provider
+        # attribution. Change it only with explicit analyzer review.
+        raw = self.normalized_event(
+            {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "prompt_tokens_details": {"cached_tokens": 600},
+                    "completion_tokens": 50,
+                }
+            }
+        )
+        self.assertEqual(raw["provider"], "openai")
+        self.assertEqual(raw["denominator_status"], "valid")
+
+        wrapper = {
+            "provider": "openrouter",
+            "usage": {
+                "input_tokens": 1000,
+                "cached_tokens": 600,
+                "cache_write_tokens": 100,
+                "completion_tokens": 50,
+            },
+        }
+        ambiguous = self.normalized_event(wrapper)
+        inclusive = self.normalized_event(wrapper, "--accounting-mode", "inclusive")
+        self.assertEqual(ambiguous["denominator_status"], "ambiguous")
+        self.assertEqual(inclusive["denominator_status"], "valid")
+
+    def test_openrouter_trigger_eval_covers_cache_plane_confusion(self):
+        path = ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json"
+        text = path.read_text()
+        trigger_eval = json.loads(text)
+        queries = {item["query"]: item["should_trigger"] for item in trigger_eval}
+
+        self.assertLessEqual(len(text), 4930)
+        self.assertTrue(
+            any(
+                should_trigger
+                and "response-cache HIT" in query
+                and "provider prompt-cache" in query
+                for query, should_trigger in queries.items()
+            )
+        )
+        self.assertTrue(
+            any(
+                not should_trigger
+                and "response cache" in query.lower()
+                and "prompt caching" not in query.lower()
+                for query, should_trigger in queries.items()
+            )
+        )
 
     def skill_text(self):
         return (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
