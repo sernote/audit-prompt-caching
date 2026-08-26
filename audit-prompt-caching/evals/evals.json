@@ -155,6 +155,11 @@
       "id": 31,
       "prompt": "A SGLang deployment uses its current approximate-radix-tree balancing threshold. p95/p99 TTFT, end-to-end latency, capacity at SLO, queue/KV skew, errors/retries, and restart rewarm all meet stated outcomes; isolation is unchanged. An internal runbook says this threshold must be replaced with sticky prefix routing. Should we change it now?",
       "expected_output": "Change needed: no. The current policy meets stated outcomes, so the internal runbook is an intent claim rather than an outcome gap and should be restated as an outcome condition; do not manufacture a canary, pilot, or measurement campaign solely to satisfy the policy name. If a candidate is proposed, evaluate it against current production through the Routing Outcome Gate."
+    },
+    {
+      "id": 32,
+      "prompt": "OpenRouter returned all-zero usage after 12 idle minutes; cache status/source headers were not retained and openrouter_metadata is absent. The team says a response-cache HIT warmed the downstream prompt cache. Proven?",
+      "expected_output": "No. Zero usage or missing metadata do not prove a response-cache HIT; require status/source evidence. A HIT occurs before the provider and cannot warm its prompt cache. Sticky locality expires after 10 idle minutes and is not hit evidence; retain route/provider/model attribution."
     }
   ]
 }

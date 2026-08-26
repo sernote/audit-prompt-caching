@@ -1,39 +1,51 @@
 # OpenRouter Prompt Cache Reference
 
-Last reviewed: 2026-08-11. Verify official docs before exact claims about model/provider support, cache read/write pricing, sticky routing, `provider.order`, `provider.only`, `provider.ignore`, fallback, `openrouter/auto`, `cache_control`, usage fields, ZDR, or context compression.
+Last reviewed: 2026-08-27. Recheck current docs before exact claims.
 
-Official sources:
-- Prompt caching: https://openrouter.ai/docs/guides/best-practices/prompt-caching
-- Provider routing: https://openrouter.ai/docs/guides/routing/provider-selection
-- Usage accounting: https://openrouter.ai/docs/guides/administration/usage-accounting
-- Generation metadata: https://openrouter.ai/docs/api/api-reference/generations/get-generation
-- Message transforms: https://openrouter.ai/docs/guides/features/message-transforms
+Sources: https://openrouter.ai/docs/guides/best-practices/prompt-caching;
+https://openrouter.ai/docs/guides/features/response-caching;
+https://openrouter.ai/docs/guides/features/router-metadata;
+https://openrouter.ai/docs/guides/features/zdr.
 
-## Mechanics
+## Provider Prompt Cache
 
-OpenRouter is an OpenAI-compatible router, not one provider. Prompt-cache behavior depends on the downstream provider/model plus OpenRouter route stability. Detect it before generic OpenAI advice:
+OpenRouter is a router. Keep downstream `provider_prompt` evidence separate
+from OpenRouter `gateway_response` replay.
 
-```bash
-rg -n "openrouter|OPENROUTER_API_KEY|openrouter.ai/api/v1|@openrouter/sdk|OpenRouter|openrouter/auto" .
-```
+- Sticky sessions expire after 10 minutes idle; success resets the timer and
+  provider errors do not update it. Locality is not a hit.
+- Chat/Responses routing keys: body `session_id`, header `x-session-id`,
+  `prompt_cache_key`, then opening messages.
+- `provider.order` disables automatic stickiness. Fallbacks, filters, and
+  router models can change provider/model; retain both.
+- Chat reports `cached_tokens` and `cache_write_tokens` under
+  `usage.prompt_tokens_details`; Responses uses `usage.input_tokens_details`.
+  Missing fields remain unresolved.
+- OpenRouter translates `cache_control` and `prompt_cache_breakpoint` on
+  supported routes, but not their TTLs. Verify the final provider and wire.
+- Concurrent Anthropic `:batch` lines need not share a fresh write. Sync
+  warm-up or successive-batch plans are active changes.
 
-OpenRouter can expose `usage.prompt_tokens_details.cached_tokens` and `cache_write_tokens` when available. `cache_write_tokens > 0` with repeated `cached_tokens == 0` means writes are not turning into reads; missing fields are not automatically failures.
+## Response Cache Boundary
 
-Use `session_id` or the `x-session-id` header for sticky provider routing. If neither is supplied, OpenRouter can fall back to a provider-compatible `prompt_cache_key`. Sticky affinity expires after inactivity (currently documented as five minutes); it improves locality but does not itself prove a provider cache hit. Do not use `provider.order` when relying on automatic sticky routing: the documented behavior disables that automatic selection path. Log only a keyed hash of any session/group key.
+OpenRouter response caching is opt-in and runs before the provider. A HIT cannot
+warm the provider prompt cache. Partition HITs before provider-cache ratios,
+TTFT, cost, or warm-up analysis.
 
-## Audit Checklist
+Prove a HIT with `X-OpenRouter-Cache-Status: HIT` or corroborating
+`X-OpenRouter-Cache-Source-Id`. HIT usage is zeroed, but all-zero usage alone is
+not proof. Cache hits omit `openrouter_metadata`; absence is still not proof
+because router metadata is opt-in.
 
-- Inspect `model`, `models`, `provider`, `plugins`, `messages`, `cache_control`, and account provider preferences.
-- Measure actual routed provider/model; manual provider ordering, `provider.only`, `provider.ignore`, sorting, fallback, `allow_fallbacks`, and `openrouter/auto` can fragment cache locality.
-- Keep first system/developer and first non-system messages stable because sticky routing can be conversation-scoped.
-- A stable operation anchor as the first non-system message is only a measured pilot, not a universal fix.
-- Prefer keyed hashes such as HMAC-SHA256 for first-message and prefix fingerprints.
-- Check current docs before assuming direct Anthropic/Gemini/OpenAI cache controls pass through unchanged.
-- Privacy filters, `zdr`, `data_collection`, and provider allow/ignore lists can correctly remove cache-capable routes.
-- Disable or log context-compression plugin behavior during diagnosis; compressed and uncompressed prompts are different cache inputs.
+## Audit Evidence
 
-## Diagnostics
+Retained `X-OpenRouter-Metadata: enabled` data exposes endpoint, attempts,
+strategy, and pipeline stages. Record route/provider/model, cache usage, and
+keyed prefix hashes; never raw prompts, credentials, sessions, or cache keys.
 
-Ask for raw request body, `cached_tokens`, `cache_write_tokens`, generation id, routed model/provider, cache discount/cost details, first-message and prefix hashes, and account privacy/provider settings.
+Account-level ZDR disables OpenRouter response caching. Per-request
+`provider.zdr` filters provider routes but does not itself disable that gateway
+cache; provider in-memory prompt caching may still be allowed under ZDR.
 
-If writes exist but reads stay low, check opening-message drift, provider fallback, auto-router changes, unsupported provider cache behavior, ignored `cache_control`, context compression, or TTL expiry.
+If writes exist but reads stay low, check prefix drift, route/fallback changes,
+provider support, marker translation, context compression, TTL, and eviction.
