@@ -10,6 +10,11 @@ scanner never resolves active/effective values or source precedence. Paths are
 emitted verbatim; symlinked files/directories are skipped and counted; open the
 reported path:line and verify the resolved runtime configuration during
 Deployment Audit.
+
+The CLI always emits JSON after a completed traversal. Exit status 0 means the
+traversal encountered no skipped symlinks or read errors; it does not make an
+empty result conclusive. Exit status 2 with JSON means traversal coverage is
+incomplete. Argument-parsing failures use status 2 without JSON.
 """
 
 import argparse
@@ -324,13 +329,19 @@ def find_matches(root):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Find likely LLM provider calls in a repository."
+        description=(
+            "Find likely LLM provider calls in a repository. JSON plus status 2 "
+            "means incomplete symlink/read coverage; status 0 only means the "
+            "traversal completed without those errors, not that empty evidence "
+            "is conclusive."
+        )
     )
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
-    print(json.dumps(find_matches(root), ensure_ascii=False, indent=2))
-    return 0
+    result = find_matches(root)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 2 if result["symlinks_skipped"] or result["read_errors"] else 0
 
 
 if __name__ == "__main__":

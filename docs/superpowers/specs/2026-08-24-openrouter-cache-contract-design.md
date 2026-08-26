@@ -171,6 +171,14 @@ The final Opus closure round additionally requires a readable-directory guard fo
 
 The final attempted Claude Opus xhigh code-review rerun was blocked by the external Claude session limit for both security and correctness agents. The saved prior Opus report was applied; this limitation is recorded as a remaining review caveat, not an approval signal.
 
+## PR review-comment closure amendment
+
+This amendment supersedes every earlier current-exception statement of `main <=23,000` or `combined <=27,000`, including criterion 10. The reviewed limits are `main <=24,500`, `detail <=5,000`, and `combined <=28,500`; the deferred package MUST remain `<=245,000` characters and its repository ceiling MUST equal `ceil(final deferred characters / 4) + 50` and remain `<=61,300` tokens. The final measured values are 24,349 main, 4,008 detail, 28,357 combined, and 244,295 deferred characters, yielding 61,074 repository-estimated tokens and a 61,124 ceiling. Plugin-eval 0.1.2 independently reports 61,086 deferred tokens, 34,512 above its prior `heavyMax = 26,574`; the resulting package-wide score remains 63/100 and is pre-existing focused-PR debt rather than a regression to hide in this closure.
+
+Criterion 10's changed-file whitelist is amended for this closure to permit only `audit-prompt-caching/references/openrouter.md`, `audit-prompt-caching/scripts/extract_llm_calls.py`, `tests/test_prompt_cache_scripts.py`, `README.md`, this spec, and the follow-up implementation plan. `README.md` is outside the deferred package budget and is permitted because the extractor's provider-agnostic CLI contract must be discoverable outside OpenRouter audits.
+
+The extractor and shell locator share a fail-closed process contract: status `0` means the completed traversal/search encountered none of the defined coverage errors, while status `2` means coverage is incomplete. Extractor status `2` after traversal retains its JSON result; argparse or preflight status `2` may have no JSON. Status `0`, an empty result, or `files_scanned: 0` never proves evidence is resolved. The shell locator MUST preserve partial path-only output, aggregate discovery/control/excluded-inventory/body/pre-check errors through cleanup, and list excluded credential/config paths without opening files or printing values. No provider facts, routing recommendations, production settings, or response-cache behavior change in this amendment.
+
 ## Out of scope
 
 - Implementing or changing OpenRouter response caching, prompt-cache controls, presets, headers, routing, or production traffic.

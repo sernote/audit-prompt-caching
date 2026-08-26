@@ -1,4 +1,5 @@
 import csv
+import io
 import importlib.util
 import json
 import math
@@ -30,12 +31,12 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # scoped no-change contracts measure 6341 tokens.
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6341
 # Measured refresh ceiling: repository ceil(len(deferred references) / 4) is
-# 60580 after the final OpenRouter security closure; 50 tokens of explicit
+# 61074 after the review-comment closure; 50 tokens of explicit
 # slack are retained. The final plugin-eval 0.1.2 static report is rerun after
 # the final reference review and recorded in the implementation plan.
 # Future wording changes must remeasure and update this ceiling and plan, not
 # compress established safety guidance.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 60630
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 61124
 BASELINE_DESCRIPTION_CHARS = 679
 
 
@@ -2510,6 +2511,39 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "credentials.yaml",
             {finding["path"] for finding in output["findings"]},
         )
+
+    def test_openrouter_extractor_returns_nonzero_for_incomplete_coverage(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "auditee"
+            root.mkdir()
+            (root / "client.py").write_text("import openai\n")
+            (root / "linked.py").symlink_to(root / "client.py")
+
+            result = run_script("extract_llm_calls.py", root)
+            output = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(output["symlinks_skipped"], 1)
+            self.assertEqual(output["read_errors"], 0)
+
+            read_error_root = Path(tmp) / "read-error"
+            read_error_root.mkdir()
+            (read_error_root / "client.py").write_text("import openai\n")
+            with mock.patch.object(Path, "read_text", side_effect=OSError("denied")):
+                captured = io.StringIO()
+                with mock.patch.object(sys, "stdout", captured):
+                    status = module.main([str(read_error_root)])
+            output = json.loads(captured.getvalue())
+            self.assertEqual(status, 2)
+            self.assertEqual(output["read_errors"], 1)
+            self.assertEqual(output["symlinks_skipped"], 0)
+
+            empty = Path(tmp) / "empty"
+            empty.mkdir()
+            result = run_script("extract_llm_calls.py", empty)
+            output = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output["files_scanned"], 0)
 
     def test_extract_llm_calls_scans_explicit_root_named_build(self):
         module = load_script_module("extract_llm_calls.py")
@@ -5464,11 +5498,11 @@ class PromptCacheScriptsTest(unittest.TestCase):
             with self.subTest(hedge=hedge):
                 self.assertIn(hedge, combined)
 
-        # The final symlink/locator/credential closure needs 23,000 main / 27,000
-        # combined Python characters; the increase is reviewed and measured.
-        self.assertLessEqual(len(main), 23000)
+        # Review-comment closure needs 24,500 main / 28,500 combined Python
+        # characters; the superseding increase is reviewed and measured.
+        self.assertLessEqual(len(main), 24500)
         self.assertLessEqual(len(detail), 5000)
-        self.assertLessEqual(len(main) + len(detail), 27000)
+        self.assertLessEqual(len(main) + len(detail), 28500)
 
     def test_openrouter_discovery_snippet_runs_on_legacy_bash(self):
         main = (ROOT / "audit-prompt-caching" / "references" / "openrouter.md").read_text()
@@ -5553,6 +5587,12 @@ class PromptCacheScriptsTest(unittest.TestCase):
             session_only.write_text("const body = { session_id: sid };\n")
             newline_credential = auditee / "credential\npath.txt"
             newline_credential.write_text("api_key: [REDACTED]\n")
+            excluded_env = auditee / ".env.cache"
+            excluded_env.write_text("cache_enabled: true\n")
+            excluded_tfvars = auditee / "routing.tfvars"
+            excluded_tfvars.write_text("cache_enabled: true\n")
+            excluded_credentials = auditee / "openrouter-credentials.yaml"
+            excluded_credentials.write_text("cache_enabled: true\n")
             hidden_source = auditee / ".github" / "workflows" / "deploy.yml"
             hidden_source.parent.mkdir(parents=True)
             hidden_source.write_text("openrouter: true\nOPENROUTER_API_KEY: [REDACTED]\n")
@@ -5603,12 +5643,27 @@ class PromptCacheScriptsTest(unittest.TestCase):
             fake_rg.parent.mkdir()
             fake_rg.write_text(
                 "#!/usr/bin/env python3\n"
-                "import re, sys\n"
+                "import fnmatch, re, sys\n"
                 "from pathlib import Path\n"
                 "args = sys.argv[1:]\n"
                 "joined = ' '.join(args)\n"
                 "explicit = [Path(arg) for arg in args if Path(arg).is_file()]\n"
                 "skip = {'.git', '.hg', '.svn', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', 'node_modules', '.venv', 'venv', 'dist', 'build', 'vendor'}\n"
+                "if '--files' in args:\n"
+                "    globs = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == '--iglob']\n"
+                "    positive = [glob for glob in globs if not glob.startswith('!')]\n"
+                "    found = []\n"
+                "    for path in Path.cwd().rglob('*'):\n"
+                "        if not path.is_file():\n"
+                "            continue\n"
+                "        relative = path.relative_to(Path.cwd())\n"
+                "        if any(part in skip for part in relative.parts):\n"
+                "            continue\n"
+                "        if any(fnmatch.fnmatch(path.name.lower(), glob.lower()) for glob in positive):\n"
+                "            found.append('./' + relative.as_posix())\n"
+                "    for path in found:\n"
+                "        sys.stdout.buffer.write(path.encode() + b'\\0')\n"
+                "    sys.exit(0 if found else 1)\n"
                 "if explicit:\n"
                 "    candidates = explicit\n"
                 "else:\n"
@@ -5635,8 +5690,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 "sys.exit(0 if found else 1)\n"
             )
             fake_rg.chmod(0o755)
-            if shutil.which("rg") is None:
-                result_env["PATH"] = f"{fake_rg.parent}:{result_env.get('PATH', '')}"
+            result_env["PATH"] = f"{fake_rg.parent}:{result_env.get('PATH', '')}"
             ancestor_result = subprocess.run(
                 ["/bin/bash", "-c", mechanics_script],
                 capture_output=True,
@@ -5654,6 +5708,31 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 text=True,
                 check=False,
                 env=result_env,
+            )
+            interactive_env = result_env.copy()
+            interactive_env["HISTFILE"] = "/dev/null"
+            interactive_env["BASH_SILENCE_DEPRECATION_WARNING"] = "1"
+            bash_version = subprocess.run(
+                ["/bin/bash", "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.splitlines()[0]
+            interactive = subprocess.run(
+                ["/bin/bash", "--norc", "-i"],
+                input=mechanics_script + "\n",
+                capture_output=True,
+                text=True,
+                check=False,
+                env=interactive_env,
+            )
+            history_control = subprocess.run(
+                ["/bin/bash", "--norc", "-i"],
+                input='g="X!x"\nprintf "%s\\n" "${g#!}"\n',
+                capture_output=True,
+                text=True,
+                check=False,
+                env=interactive_env,
             )
             injection_marker = Path(temp_dir) / "INJECTED"
             injection_env = os.environ.copy()
@@ -5730,6 +5809,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn(f"CRED {webhook_credential}", result.stdout)
         self.assertIn(f"CRED {bare_credential}", result.stdout)
         self.assertIn(f"CRED {binary_credential}", result.stdout)
+        excluded_section = result.stdout.split(
+            "== excluded config/credential paths: approval required before opening ==",
+            1,
+        )[1].split("== body-key-files ==", 1)[0]
+        self.assertIn(f"EXCLUDED {excluded_env}", excluded_section)
+        self.assertIn(f"EXCLUDED {excluded_tfvars}", excluded_section)
+        self.assertIn(f"EXCLUDED {excluded_credentials}", excluded_section)
+        self.assertNotIn(str(source), excluded_section)
+        self.assertNotIn("cache_enabled: true", result.stdout)
         quoted_newline_credential = subprocess.run(
             ["/bin/bash", "-c", "printf '%q' \"$1\"", "bash", str(newline_credential)],
             capture_output=True,
@@ -5737,6 +5825,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             check=True,
         ).stdout
         self.assertIn(f"CRED {quoted_newline_credential}", result.stdout)
+        self.assertIn(f"EXCLUDED {quoted_newline_credential}", result.stdout)
         self.assertNotIn("\n/etc/passwd\n", result.stdout)
         self.assertNotIn(str(vendored_node), result.stdout)
         self.assertNotIn(str(vendored_venv), result.stdout)
@@ -5749,6 +5838,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertNotIn("client-key-data", result.stdout)
         self.assertIn("== credential candidates: approval required before opening ==", result.stdout)
         self.assertIn("AUDITEE_REPO is unreadable", failed_discovery.stdout)
+        self.assertEqual(interactive.returncode, 0, f"{bash_version}\n{interactive.stderr}")
+        self.assertNotIn("event not found", interactive.stderr, bash_version)
+        interactive_excluded = interactive.stdout.split(
+            "== excluded config/credential paths: approval required before opening ==",
+            1,
+        )[1].split("== body-key-files ==", 1)[0]
+        self.assertNotIn(str(source), interactive_excluded)
+        self.assertLess(len(interactive_excluded.splitlines()), 20, bash_version)
+        self.assertIn("event not found", history_control.stderr, bash_version)
 
     def test_openrouter_reference_preserves_analyzer_shape_boundaries(self):
         # This is an adapter-artifact regression guard, not routed-provider
@@ -5828,6 +5926,204 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("body-key search skipped: discovery search failed", result.stdout)
         self.assertNotIn("== body-key-files ==", result.stdout)
         self.assertIn("partial.ts", result.stdout)
+        self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_openrouter_discovery_propagates_each_search_error(self):
+        main = (ROOT / "audit-prompt-caching" / "references" / "openrouter.md").read_text()
+        mechanics_script = re.findall(r"```bash\n(.*?)\n```", main, re.DOTALL)[1]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            fake_bin = temp / "bin"
+            fake_bin.mkdir()
+            fake_rg = fake_bin / "rg"
+            fake_rg.write_text(
+                "#!/usr/bin/env python3\n"
+                "import os, sys\n"
+                "args = sys.argv[1:]\n"
+                "joined = ' '.join(args)\n"
+                "phase = ('inventory' if '--files' in args else\n"
+                "         'discovery' if 'openrouter.ai/api/v1' in joined else\n"
+                "         'control' if 'x-openrouter-cache|' in joined else\n"
+                "         'precheck' if 'kind:' in joined else 'body')\n"
+                "if os.environ.get('FAIL_PHASE') == phase:\n"
+                "    sys.exit(2)\n"
+                "if phase == 'discovery' and not os.environ.get('NO_MATCH'):\n"
+                "    sys.stdout.buffer.write(b'./openrouter.ts\\0')\n"
+                "    sys.exit(0)\n"
+                "sys.exit(1)\n"
+            )
+            fake_rg.chmod(0o755)
+            auditee = temp / "auditee"
+            auditee.mkdir()
+            (auditee / "openrouter.ts").write_text('const client = "openrouter";\n')
+            base_env = {
+                **os.environ,
+                "AUDITEE_REPO": str(auditee),
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            }
+
+            for phase in ("discovery", "control", "inventory", "body", "precheck"):
+                with self.subTest(phase=phase):
+                    result = subprocess.run(
+                        ["/bin/bash", "-c", mechanics_script],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env={**base_env, "FAIL_PHASE": phase},
+                    )
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+            no_match = subprocess.run(
+                ["/bin/bash", "-c", mechanics_script],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**base_env, "NO_MATCH": "1"},
+            )
+            self.assertEqual(no_match.returncode, 0, no_match.stderr)
+            self.assertIn(
+                "inventory unresolved, not evidence that controls are absent",
+                no_match.stdout,
+            )
+
+    def test_openrouter_discovery_propagates_cd_and_body_mktemp_failures(self):
+        main = (ROOT / "audit-prompt-caching" / "references" / "openrouter.md").read_text()
+        mechanics_script = re.findall(r"```bash\n(.*?)\n```", main, re.DOTALL)[1]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            fake_bin = temp / "bin"
+            fake_bin.mkdir()
+            fake_rg = fake_bin / "rg"
+            fake_rg.write_text(
+                "#!/usr/bin/env python3\n"
+                "import os, shutil, sys\n"
+                "from pathlib import Path\n"
+                "args = sys.argv[1:]\n"
+                "joined = ' '.join(args)\n"
+                "root = Path(os.environ['AUDITEE_REPO'])\n"
+                "mode = os.environ.get('REMOVE_FOR')\n"
+                "if '--files' in args:\n"
+                "    sys.exit(1)\n"
+                "if 'openrouter.ai/api/v1' in joined:\n"
+                "    if mode == 'control_cd': shutil.rmtree(root)\n"
+                "    sys.stdout.buffer.write(b'./openrouter.ts\\0')\n"
+                "    sys.exit(0)\n"
+                "if 'x-openrouter-cache|' in joined:\n"
+                "    if mode == 'inventory_cd': shutil.rmtree(root)\n"
+                "    sys.exit(1)\n"
+                "if 'kind:' in joined:\n"
+                "    sys.exit(1)\n"
+                "root.mkdir(parents=True, exist_ok=True)\n"
+                "(root / 'openrouter.ts').write_text('openrouter')\n"
+                "if mode == 'precheck_cd': shutil.rmtree(root)\n"
+                "sys.exit(1)\n"
+            )
+            fake_rg.chmod(0o755)
+
+            for mode in ("control_cd", "inventory_cd", "precheck_cd"):
+                with self.subTest(mode=mode):
+                    auditee = temp / mode
+                    auditee.mkdir()
+                    (auditee / "openrouter.ts").write_text("openrouter\n")
+                    result = subprocess.run(
+                        ["/bin/bash", "-c", mechanics_script],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env={
+                            **os.environ,
+                            "AUDITEE_REPO": str(auditee),
+                            "REMOVE_FOR": mode,
+                            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                        },
+                    )
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+            auditee = temp / "mktemp-auditee"
+            auditee.mkdir()
+            (auditee / "openrouter.ts").write_text("openrouter\n")
+            real_mktemp = shutil.which("mktemp")
+            self.assertIsNotNone(real_mktemp)
+            count_file = temp / "mktemp-count"
+            fake_mktemp = fake_bin / "mktemp"
+            fake_mktemp.write_text(
+                "#!/usr/bin/env python3\n"
+                "import os, sys\n"
+                "from pathlib import Path\n"
+                "counter = Path(os.environ['MKTEMP_COUNT'])\n"
+                "count = int(counter.read_text()) + 1 if counter.exists() else 1\n"
+                "counter.write_text(str(count))\n"
+                "if count == 3: sys.exit(1)\n"
+                "os.execv(os.environ['REAL_MKTEMP'], [os.environ['REAL_MKTEMP'], *sys.argv[1:]])\n"
+            )
+            fake_mktemp.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/bash", "-c", mechanics_script],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={
+                    **os.environ,
+                    "AUDITEE_REPO": str(auditee),
+                    "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                    "MKTEMP_COUNT": str(count_file),
+                    "REAL_MKTEMP": str(real_mktemp),
+                },
+            )
+            self.assertEqual(count_file.read_text(), "4")
+            self.assertIn("body-key temporary list creation failed", result.stdout)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("rg"), "requires real ripgrep")
+    def test_openrouter_excluded_inventory_runs_with_real_rg(self):
+        main = (ROOT / "audit-prompt-caching" / "references" / "openrouter.md").read_text()
+        mechanics_script = re.findall(r"```bash\n(.*?)\n```", main, re.DOTALL)[1]
+        rg_version = subprocess.run(
+            [shutil.which("rg"), "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.splitlines()[0]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            auditee = Path(temp_dir) / "auditee"
+            auditee.mkdir()
+            intended = [
+                auditee / ".env.cache",
+                auditee / "routing.tfvars",
+                auditee / "openrouter-credentials.yaml",
+            ]
+            for path in intended:
+                path.write_text("cache_enabled: true\n")
+            ordinary = auditee / "openrouter.ts"
+            ordinary.write_text('const client = "openrouter";\n')
+            skipped = [
+                auditee / ".git" / "credentials",
+                auditee / "node_modules" / "aws-credentials.json",
+                auditee / "vendor" / "routing.tfvars",
+            ]
+            for path in skipped:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("cache_enabled: true\n")
+            result = subprocess.run(
+                ["/bin/bash", "-c", mechanics_script],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "AUDITEE_REPO": str(auditee)},
+            )
+
+        diagnostic = f"{rg_version}\n{result.stdout}\n{result.stderr}"
+        self.assertEqual(result.returncode, 0, diagnostic)
+        excluded = result.stdout.split(
+            "== excluded config/credential paths: approval required before opening ==",
+            1,
+        )[1].split("== body-key", 1)[0]
+        for path in intended:
+            self.assertIn(f"EXCLUDED {path}", excluded, diagnostic)
+        for path in skipped:
+            self.assertNotIn(str(path), excluded, diagnostic)
+        self.assertNotIn(str(ordinary), excluded, diagnostic)
+        self.assertNotIn("cache_enabled: true", result.stdout, diagnostic)
 
     def test_openrouter_trigger_eval_covers_cache_plane_confusion(self):
         path = ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json"
