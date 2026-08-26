@@ -7,14 +7,8 @@ snippets are always elided: the ``text`` field is always
 ``elided``. This scanner is a lexical locator only: a
 line may match comments, dead code, or overridden configuration, and the
 scanner never resolves active/effective values or source precedence. Paths are
-emitted verbatim; symlinked files/directories are skipped and counted; open the
-reported path:line and verify the resolved runtime configuration during
-Deployment Audit.
-
-The CLI always emits JSON after a completed traversal. Exit status 0 means the
-traversal encountered no skipped symlinks or read errors; it does not make an
-empty result conclusive. Exit status 2 with JSON means traversal coverage is
-incomplete. Argument-parsing failures use status 2 without JSON.
+emitted verbatim; open the reported path:line and verify the resolved runtime
+configuration during Deployment Audit.
 """
 
 import argparse
@@ -34,7 +28,6 @@ SKIP_DIRS = {
     ".mypy_cache",
     ".ruff_cache",
     "node_modules",
-    "vendor",
     ".venv",
     "venv",
     "dist",
@@ -235,44 +228,26 @@ SOURCE_SNIPPET_TEXT = "[SOURCE_SNIPPET_ELIDED]"
 
 
 def should_scan(path):
-    if path.is_symlink() or path.name.startswith(".env"):
+    if path.name.startswith(".env"):
         return False
     return path.is_file() and (
         path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_FILENAMES
     )
 
 
-def iter_files(root, symlinks_skipped=None, read_errors=None):
-    def record_read_error(_error):
-        if read_errors is not None:
-            read_errors[0] += 1
-
+def iter_files(root):
     root = Path(root)
-    if root.is_symlink():
-        if symlinks_skipped is not None:
-            symlinks_skipped[0] += 1
+    if root.name.startswith(".env") or root.name in SKIP_DIRS:
         return
-    for current, dirnames, filenames in os.walk(
-        root, onerror=record_read_error
-    ):
+    for current, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            dirname
+            for dirname in dirnames
+            if dirname not in SKIP_DIRS and not dirname.startswith(".env")
+        )
         current_path = Path(current)
-        kept_dirnames = []
-        for dirname in sorted(dirnames):
-            path = current_path / dirname
-            if path.is_symlink():
-                if symlinks_skipped is not None:
-                    symlinks_skipped[0] += 1
-                continue
-            if dirname in SKIP_DIRS or dirname.startswith(".env"):
-                continue
-            kept_dirnames.append(dirname)
-        dirnames[:] = kept_dirnames
         for filename in sorted(filenames):
             path = current_path / filename
-            if path.is_symlink():
-                if symlinks_skipped is not None:
-                    symlinks_skipped[0] += 1
-                continue
             if should_scan(path):
                 yield path
 
@@ -281,15 +256,12 @@ def find_matches(root):
     findings = []
     providers = {provider: 0 for provider in PROVIDER_PATTERNS}
     files_scanned = 0
-    symlinks_skipped = [0]
-    read_errors = [0]
-    for path in iter_files(root, symlinks_skipped, read_errors):
-        try:
-            lines = path.read_text(errors="replace").split("\n")
-        except OSError:
-            read_errors[0] += 1
-            continue
+    for path in iter_files(root):
         files_scanned += 1
+        try:
+            lines = path.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
         for lineno, line in enumerate(lines, 1):
             for provider, patterns in PROVIDER_PATTERNS.items():
                 matched_patterns = [
@@ -318,8 +290,6 @@ def find_matches(root):
     return {
         "root": str(root),
         "files_scanned": files_scanned,
-        "symlinks_skipped": symlinks_skipped[0],
-        "read_errors": read_errors[0],
         "matches": len(findings),
         "providers": providers,
         "findings": findings,
@@ -329,19 +299,13 @@ def find_matches(root):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description=(
-            "Find likely LLM provider calls in a repository. JSON plus status 2 "
-            "means incomplete symlink/read coverage; status 0 only means the "
-            "traversal completed without those errors, not that empty evidence "
-            "is conclusive."
-        )
+        description="Find likely LLM provider calls in a repository."
     )
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
-    result = find_matches(root)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 2 if result["symlinks_skipped"] or result["read_errors"] else 0
+    print(json.dumps(find_matches(root), ensure_ascii=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":

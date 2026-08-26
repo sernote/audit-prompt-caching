@@ -115,9 +115,7 @@ observation from one workload, not a rule to expect everywhere. Cost tracked the
 
 - Log a keyed hash of the effective `prompt_cache_key` per request, not only per run, and diff the
   hashes across restarts. The diagnostic needs equality only, so use HMAC-SHA256 under a
-  service-held key — never log the raw value. The key must be at least 32 bytes from a CSPRNG,
-  generated for this audit, never derived from a value being digested, and never a reused
-  production secret. Generated keys are derived from conversation,
+  service-held key — never log the raw value. Generated keys are derived from conversation,
   session, tenant, or user identifiers, and caller-supplied keys often are too; do not log raw
   session tokens, IDs, or user-derived key values (see `observability.md`).
 - Log which grouping handle produced it: reused conversation, session, group id, `RunState`, or a

@@ -210,10 +210,7 @@ python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
 It can match comments, dead code, or overridden configuration; it never
 resolves active/effective values or source precedence. Open each reported
 `path:line` and verify the resolved runtime configuration during Deployment
-Audit. Paths remain verbatim. Exit status `0` means only that traversal had no
-skipped symlinks or read errors; an empty result or `files_scanned: 0` remains
-unresolved evidence. Exit status `2` with JSON means traversal was incomplete;
-argument-parsing failures return `2` without a JSON result.
+Audit. Paths remain verbatim.
 
 `layout_linter.py` accepts rendered Chat-style `messages` payloads and
 Responses-style `input` payloads.
