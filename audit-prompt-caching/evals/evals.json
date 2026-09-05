@@ -160,6 +160,11 @@
       "id": 32,
       "prompt": "OpenRouter returned all-zero usage after 12 idle minutes; cache status/source headers were not retained and openrouter_metadata is absent. The team says a response-cache HIT warmed the downstream prompt cache. Proven?",
       "expected_output": "No. Zero usage or missing metadata do not prove a response-cache HIT; require status/source evidence. A HIT occurs before the provider and cannot warm its prompt cache. Sticky locality expires after 10 idle minutes and is not hit evidence; retain route/provider/model attribution."
+    },
+    {
+      "id": 33,
+      "prompt": "Standalone vllm-router commit 1d10e71fb7bb4c0adc9f2c16ec77bf5dd4aa1586 uses cache_aware on regular HTTP /v1/chat/completions. Repeated nonempty messages without session_params produce matched_chars=0,input_chars=0. All responses are HTTP 200 and circuit-breaker successes, but one stream ends without its intended terminal markers. Should we add a shared session_id and report healthy prefix caching?",
+      "expected_output": "Inspect the endpoint's extract_text_for_routing: this pinned chat path supplies session_params.session_id or an empty string, not messages. Do not infer zero engine input or zero KV reuse from 0/0, and do not add a shared session ID merely to raise a match ratio; session affinity is not prompt-token overlap or an isolation policy. Check other APIs and deployed revisions separately. HTTP 200/circuit-breaker success does not prove intended stream completion. Preserve client terminal outcome, actual engine usage and genuine attempt identity; unknown remains unknown. Apply the Routing Outcome Gate before any policy change."
     }
   ]
 }

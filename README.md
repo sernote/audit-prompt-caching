@@ -58,6 +58,8 @@ Use $audit-prompt-caching to audit this project for prompt-cache misses. Start w
 
 Code and configuration are enough to begin; production logs are optional
 supporting evidence. A justified "no change needed" result is valid.
+The short [real-project guide](docs/first-audit.md) covers checking a finding
+and sharing optional feedback.
 
 Project background and longer examples are on the
 [project page](https://notevskii.tech/projects/audit-prompt-caching/). Updates
@@ -137,11 +139,14 @@ The usage fixture and ROI scenario are arithmetic demonstrations, not a
 production guarantee. Validate real outcomes with the provider's usage fields,
 billing export, route evidence, and latency measurements.
 
-## Routing Evidence Demo
+## Experimental Routing Evidence Helper
 
-For a self-hosted deployment, a cache prediction and the observed request
-result need separate evidence. Try the synthetic routing export from the
-repository root:
+For an advanced self-hosted investigation, this optional helper joins an
+existing normalized export. There is no bundled native-log adapter, and the
+complete capture-to-analysis path still needs validation on a real deployment.
+Start a project audit from code and configuration using the guide above.
+
+To explore the helper's output, try the synthetic export from the repository root:
 
 ```bash
 python3 audit-prompt-caching/scripts/analyze_routing_logs.py \
@@ -157,6 +162,12 @@ not native vllm-router logs. The limit applies to one attempt, not a percentile
 SLO or a policy rollout decision. Predictions retain their own target worker;
 they are not assumed to describe the selected worker. See the
 [routing fixtures](fixtures/routing/README.md) for the supported examples.
+
+The [routing capture reference](docs/routing-capture.md) describes the evidence
+needed when a real investigation requires matching router decisions to worker
+and client outcomes. The [router observation example](examples/router-observation/README.md)
+shows two verified API/metric pitfalls, with recorded artifacts and optional
+instructions to reproduce them using a synthetic HTTP worker.
 
 ## Cache Flow
 
@@ -265,6 +276,10 @@ Audit. Paths remain verbatim.
 
 `layout_linter.py` accepts rendered Chat-style `messages` payloads and
 Responses-style `input` payloads.
+
+`analyze_routing_logs.py` is experimental and requires the
+[normalized export contract](audit-prompt-caching/references/routing-evidence.md).
+It does not accept ordinary router logs directly.
 
 `render_audit_report.py` takes `--cache-plane` once per plane in scope
 (`gateway_response`, `provider_prompt`, `engine_kv`, `external_kv`,

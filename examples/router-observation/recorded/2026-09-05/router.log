@@ -1,0 +1,69 @@
+DEBUG: Main function started
+DEBUG: Parsing prefill arguments
+DEBUG: Prefill URLs parsed: []
+DEBUG: Filtering CLI arguments
+DEBUG: Raw args: ["/private/tmp/vllm-router-target-20260905/debug/vllm-router", "--host", "127.0.0.1", "--port", "49681", "--worker-urls", "http://127.0.0.1:49680", "--policy", "cache_aware", "--log-level", "debug", "--prometheus-host", "127.0.0.1", "--prometheus-port", "49682", "--disable-retries", "--request-timeout-secs", "10", "--worker-startup-timeout-secs", "15", "--worker-startup-check-interval", "1"]
+DEBUG: Parsing CLI arguments with clap
+DEBUG: Filtered args: ["/private/tmp/vllm-router-target-20260905/debug/vllm-router", "--host", "127.0.0.1", "--port", "49681", "--worker-urls", "http://127.0.0.1:49680", "--policy", "cache_aware", "--log-level", "debug", "--prometheus-host", "127.0.0.1", "--prometheus-port", "49682", "--disable-retries", "--request-timeout-secs", "10", "--worker-startup-timeout-secs", "15", "--worker-startup-check-interval", "1"]
+DEBUG: CLI args parsed successfully
+DEBUG: vllm_pd_disaggregation: false
+VLLM Router starting...
+Host: 127.0.0.1:49681
+Mode: Regular (vllm)
+Policy: cache_aware
+DEBUG: Converting to RouterConfig
+DEBUG: RouterConfig created successfully
+DEBUG: Validating configuration
+DEBUG: Configuration validated successfully
+DEBUG: Creating ServerConfig
+DEBUG: CLI host: 127.0.0.1, port: 49681
+DEBUG: ServerConfig created successfully - host: 127.0.0.1, port: 49681
+DEBUG: Creating Tokio runtime
+DEBUG: Tokio runtime created successfully
+DEBUG: Starting server startup function
+DEBUG: Server startup function called
+DEBUG: Initializing logging
+DEBUG: Logging initialized
+DEBUG: Initializing Prometheus metrics
+DEBUG: Prometheus metrics initialized
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::server[0m[2m:[0m [2msrc/server.rs[0m[2m:[0m[2m847:[0m Starting router on 127.0.0.1:49681 | mode: Regular { worker_urls: ["http://127.0.0.1:49680"] } | policy: CacheAware { cache_threshold: 0.3, balance_abs_threshold: 64, balance_rel_threshold: 1.5, eviction_interval_secs: 120, max_tree_size: 67108864 } | kv_connector: Nixl | max_payload: 512MB
+DEBUG: Creating HTTP client
+DEBUG: HTTP client created
+DEBUG: Creating AppContext
+DEBUG: AppContext created
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::server[0m[2m:[0m [2msrc/server.rs[0m[2m:[0m[2m945:[0m Single router mode (enable_igw=false)
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::routers::http::router[0m[2m:[0m [2msrc/routers/http/router.rs[0m[2m:[0m[2m251:[0m Waiting for 1 unique hosts (representing 1 workers) to become healthy (timeout: 15s)
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::routers::http::router[0m[2m:[0m [2msrc/routers/http/router.rs[0m[2m:[0m[2m321:[0m 1 out of 1 unique hosts are healthy (representing 1 workers)
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::registry[0m[2m:[0m [2msrc/policies/registry.rs[0m[2m:[0m[2m60:[0m Worker added for model unknown, count: 1
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::registry[0m[2m:[0m [2msrc/policies/registry.rs[0m[2m:[0m[2m164:[0m Using default policy for model unknown
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::policies::registry[0m[2m:[0m [2msrc/policies/registry.rs[0m[2m:[0m[2m83:[0m Assigning policy cache_aware to new model unknown
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m423:[0m Initializing workers for cache-aware policy: http://127.0.0.1:49680
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m442:[0m Creating tree for model key: 'default' with 1 workers
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::server[0m[2m:[0m [2msrc/server.rs[0m[2m:[0m[2m957:[0m Started health checker for workers with 60s interval
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::server[0m[2m:[0m [2msrc/server.rs[0m[2m:[0m[2m972:[0m Started request queue with size: 100, timeout: 60s
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::middleware[0m[2m:[0m [2msrc/middleware.rs[0m[2m:[0m[2m421:[0m Starting concurrency queue processor
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::server[0m[2m:[0m [2msrc/server.rs[0m[2m:[0m[2m1008:[0m Router ready | workers: ["http://127.0.0.1:49680"]
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::server[0m[2m:[0m [2msrc/server.rs[0m[2m:[0m[2m1037:[0m Starting server on 127.0.0.1:49681
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::core::token_bucket[0m[2m:[0m [2msrc/core/token_bucket.rs[0m[2m:[0m[2m73:[0m Token bucket: acquired 1 tokens, 32767 remaining
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::middleware[0m[2m:[0m [2msrc/middleware.rs[0m[2m:[0m[2m508:[0m Acquired token immediately
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m256:[0m Load status for model: max_load=0, min_load=0, is_imbalanced=false
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m280:[0m Available tree keys: ["default"]
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m299:[0m Using cache-aware routing for model 'default'
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m309:[0m Cache match for model 'default': matched_chars=0, input_chars=0, match_rate=0.00
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::core::token_bucket[0m[2m:[0m [2msrc/core/token_bucket.rs[0m[2m:[0m[2m137:[0m Token bucket: returned 1 tokens, 32768 available
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::core::token_bucket[0m[2m:[0m [2msrc/core/token_bucket.rs[0m[2m:[0m[2m73:[0m Token bucket: acquired 1 tokens, 32767 remaining
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::middleware[0m[2m:[0m [2msrc/middleware.rs[0m[2m:[0m[2m508:[0m Acquired token immediately
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m256:[0m Load status for model: max_load=0, min_load=0, is_imbalanced=false
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m280:[0m Available tree keys: ["default"]
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m299:[0m Using cache-aware routing for model 'default'
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m309:[0m Cache match for model 'default': matched_chars=0, input_chars=0, match_rate=0.00
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::core::token_bucket[0m[2m:[0m [2msrc/core/token_bucket.rs[0m[2m:[0m[2m137:[0m Token bucket: returned 1 tokens, 32768 available
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::core::token_bucket[0m[2m:[0m [2msrc/core/token_bucket.rs[0m[2m:[0m[2m73:[0m Token bucket: acquired 1 tokens, 32767 remaining
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::middleware[0m[2m:[0m [2msrc/middleware.rs[0m[2m:[0m[2m508:[0m Acquired token immediately
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m256:[0m Load status for model: max_load=0, min_load=0, is_imbalanced=false
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m280:[0m Available tree keys: ["default"]
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m299:[0m Using cache-aware routing for model 'default'
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::policies::cache_aware[0m[2m:[0m [2msrc/policies/cache_aware.rs[0m[2m:[0m[2m309:[0m Cache match for model 'default': matched_chars=0, input_chars=0, match_rate=0.00
+[2m2026-09-05 15:37:25[0m [34mDEBUG[0m [2mvllm_router_rs::core::token_bucket[0m[2m:[0m [2msrc/core/token_bucket.rs[0m[2m:[0m[2m137:[0m Token bucket: returned 1 tokens, 32768 available
+[2m2026-09-05 15:37:25[0m [32m INFO[0m [2mvllm_router_rs::server[0m[2m:[0m [2msrc/server.rs[0m[2m:[0m[2m1070:[0m Received terminate signal, starting graceful shutdown
+[2m2026-09-05 15:37:25[0m [33m WARN[0m [2mvllm_router_rs::middleware[0m[2m:[0m [2msrc/middleware.rs[0m[2m:[0m[2m461:[0m Concurrency queue processor shutting down
