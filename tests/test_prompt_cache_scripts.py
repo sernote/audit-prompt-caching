@@ -22,12 +22,13 @@ FIXTURES = ROOT / "fixtures"
 # The former 0.85 character heuristic was retired: the required complete
 # provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
-# Restoring the operational prompt-segment classification and the truthful
-# Combined vLLM geometry, dynamic-tool evidence, safety carve-outs, and
-# scoped no-change contracts measure 6341 tokens.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6341
-# Review-round ceiling after the scoped routing gate and rollback safety wording.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 54350
+# The optional normalized-routing helper hook adds 53 estimated tokens to the
+# 6341 baseline; provider guidance and the Routing Outcome Gate are preserved.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6394
+# Remeasured package corpus after adding routing-evidence.md and its stdlib
+# helper. This includes script source, not just references loaded by an agent.
+# See docs/superpowers/plans/2026-09-05-first-audit-and-routing-evidence.md.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 59427
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -3464,7 +3465,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         ci = ci_path.read_text()
         for expected in (
-            "python3 -m unittest tests/test_prompt_cache_scripts.py",
+            "python3 -m unittest discover -s tests -p 'test_*.py'",
             "validate_skill_package.py audit-prompt-caching",
             "run_trigger_eval.py audit-prompt-caching",
             "compile(path.read_text()",
@@ -4901,7 +4902,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6341,
+            6394,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(
