@@ -70,9 +70,9 @@ updated to these measured values; no unrelated content was compressed to fit.
 - Validate an exporter against one actual deployed router/worker/client trace.
   Preserve genuine attempt IDs and timing boundaries; missing native fields
   require instrumentation or an explicit unknown, not heuristic joins.
-- Run external first-audit pilots and collect useful-result, completion,
-  time-to-result and repeat-use evidence through the optional feedback template.
-  No pilot results or outreach are claimed here.
+- Apply the skill to a real project task and verify one conclusion. Readers can
+  share useful findings or friction through the optional feedback template;
+  participant quotas are not a publication or release requirement.
 - Publish the prepared editorial series and connect site articles, talks and
   project entry points to the runnable audit. This code change does not publish
   a site, Habr article or Telegram post.

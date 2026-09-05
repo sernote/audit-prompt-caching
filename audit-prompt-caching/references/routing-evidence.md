@@ -44,6 +44,14 @@ Inspect joined/decision-only/outcome-only coverage, separate request/attempt cou
 
 ## vllm-router mapping boundary
 
+Inspect the endpoint's routing input before interpreting overlap. In the pinned
+regular HTTP chat path below, `extract_text_for_routing()` uses
+`session_params.session_id` or an empty string, not the messages. Thus character
+overlap can describe a session key, and 0/0 can accompany a nonempty prompt.
+See `references/vllm.md` for the API-specific source and limits. The v1 export
+does not encode the routing input representation; preserve it in the source
+mapping, and never relabel session-key overlap as prompt-token/KV reuse.
+
 At commit [1d10e71](https://github.com/vllm-project/router/blob/1d10e71fb7bb4c0adc9f2c16ec77bf5dd4aa1586/src/policies/cache_aware.rs), the match log is a best-match character estimate; selection can fall back to another worker. Tracing may provide an inherited request ID, but does not guarantee a correlated policy-attempt ID. Inspect the [HTTP route](https://github.com/vllm-project/router/blob/1d10e71fb7bb4c0adc9f2c16ec77bf5dd4aa1586/src/routers/http/router.rs) and [middleware](https://github.com/vllm-project/router/blob/1d10e71fb7bb4c0adc9f2c16ec77bf5dd4aa1586/src/middleware.rs) for the deployed version.
 
 An exporter needs genuine request/attempt mapping and worker/client observations. Leave prediction target or measurements unknown when absent. Do not derive engine reuse from a router metric name, or terminal success from HTTP headers/circuit-breaker status. This v1 helper does not reconstruct KV-event replay, offload timing or counterfactual outcomes of another policy.
