@@ -179,6 +179,25 @@ retention/geometry mismatch from cross-process hash mismatch.
 
 vLLM Automatic Prefix Caching reuses KV blocks for identical token prefixes. Visible text is insufficient: tokenizer, chat template, BOS/EOS, adapters, multimodal hashes, and special-token handling can change the cache input.
 
+### Standalone router input depends on the API path
+
+Router check: 2026-09-05, standalone `vllm-project/router` commit
+[`1d10e71`](https://github.com/vllm-project/router/blob/1d10e71fb7bb4c0adc9f2c16ec77bf5dd4aa1586/src/protocols/spec.rs#L535-L559).
+Before interpreting `cache_aware`, trace the deployed endpoint through
+`extract_text_for_routing()` to the policy. In this pinned regular HTTP path,
+`/v1/chat/completions` supplies a nonempty `session_params.session_id`, or an
+empty string when it is absent/blank; it does not extract the message prefix.
+The policy can therefore report `input_chars=0` for a nonempty chat prompt.
+That is not evidence of zero engine input tokens or zero engine cache reuse.
+
+The [completion path](https://github.com/vllm-project/router/blob/1d10e71fb7bb4c0adc9f2c16ec77bf5dd4aa1586/src/protocols/spec.rs#L758-L770)
+extracts from `prompt`; check its representation separately. Never transfer
+the chat behavior to another endpoint, release, PD mode or router project.
+Do not add a session ID solely to increase a reported match ratio: matching
+session strings is an affinity signal, not proof of shared prompt tokens or KV.
+For an offline export, preserve the actual routing input's meaning and use
+`references/routing-evidence.md` for identity, units and outcome boundaries.
+
 ## Audit Checklist
 
 - `max_model_len` far above p99 input can reserve KV memory for rare long contexts and reduce cache capacity for common routes.
