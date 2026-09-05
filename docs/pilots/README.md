@@ -9,15 +9,18 @@ setup. Only share a redacted excerpt with the operator if you choose to.
 
 ## 1. Pin the pilot version
 
-The first-audit example and normalized-routing analyzer are currently in draft
-PR #21 on `codex/cache-first-audit`, not stable `main`. Use the tested commit
-below for this pilot:
+This pilot uses draft [PR #22](https://github.com/sernote/audit-prompt-caching/pull/22),
+stacked on [PR #21](https://github.com/sernote/audit-prompt-caching/pull/21), rather
+than stable `main`. The tested commit includes the first-audit example, normalized
+routing analyzer and pinned router API-path guidance.
+
+The SHA pins the skill code; use this current PR guide for the pilot protocol.
 
 ```bash
 git clone https://github.com/sernote/audit-prompt-caching.git audit-prompt-caching-pilot &&
 cd audit-prompt-caching-pilot &&
-git checkout --detach 54f333fd06fafc7a8428aab7242682548c5891af &&
-test "$(git rev-parse HEAD)" = "54f333fd06fafc7a8428aab7242682548c5891af" &&
+git checkout --detach 8c1b18c00d482df68b78a1bb3af3fe7c296971fa &&
+test "$(git rev-parse HEAD)" = "8c1b18c00d482df68b78a1bb3af3fe7c296971fa" &&
 bash install.sh --source-dir . --agent codex
 ```
 

@@ -61,7 +61,7 @@ logs in either ledger.
 | `task_context` | `demo` or `real`. |
 | `audit_path` | `prompt_config` or `normalized_routing`. |
 | `project_scope_alias` | Non-identifying label such as `support_agent`; never a private URL. |
-| `skill_ref` | Exact tested commit, expected to be `54f333fd06fafc7a8428aab7242682548c5891af` for this pilot. |
+| `skill_ref` | Exact tested commit, expected to be `8c1b18c00d482df68b78a1bb3af3fe7c296971fa` for this pilot. |
 | `started_at`, `result_at` | ISO 8601 timestamp with offset, or empty when unknown or no result exists. |
 | `outcome` | One value from the outcome list below, or empty while in progress. |
 | `useful_completion` | `yes`, `no`, or empty while in progress. |

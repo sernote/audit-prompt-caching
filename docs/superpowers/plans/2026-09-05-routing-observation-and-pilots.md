@@ -57,10 +57,10 @@ The original checkout and the first PR remain intact.
 - [x] Verify affected behavior, package and link integrity, command examples,
   and whitespace. Run existing suite if code or package integration changes.
 - [x] Run spec review, then quality review; resolve actionable findings.
-- [ ] Commit and prepare a separate draft PR stacked on #21, making the
+- [x] Commit and prepare a separate draft PR stacked on #21, making the
   dependency and supported conclusions explicit. Do not merge or publish
   articles implicitly.
-- [ ] Update the durable editorial execution record with actual results,
+- [x] Update the durable editorial execution record with actual results,
   unavailable evidence and the next concrete input needed for real pilots.
 
 ## Decisions and observed progress
@@ -125,3 +125,16 @@ leave other provider references and the Routing Outcome Gate intact.
 - Technical spec review passed after a regression reproduced and fixed an
   erroneous successful manifest on metrics-write failure. Pilot spec and
   quality reviews passed; final whole-branch quality review: **APPROVE**.
+
+## Delivery
+
+Implementation commit: `8c1b18c00d482df68b78a1bb3af3fe7c296971fa`.
+Draft [PR #22](https://github.com/sernote/audit-prompt-caching/pull/22) targets
+`codex/cache-first-audit` and remains dependent on draft #21. The pilot guide
+and operator schema pin the tested implementation commit; main is unchanged.
+The final documentation commit only advances those pins and records completion.
+
+The author's local editorial execution record links to the PR, lab artifacts
+and pilot guide and distinguishes this completed preparation from external pilot
+results, publication or a comparative GPU benchmark. No pilot invitations or
+Habr/Telegram posts were sent. CI status must be read for the final PR head.
