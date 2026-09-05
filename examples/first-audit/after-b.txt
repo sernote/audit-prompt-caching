@@ -1,0 +1,11 @@
+Task instructions:
+Review the support request.
+Return three sections: summary, likely cause, and next safe check.
+Do not invent system state.
+Call out evidence that is missing.
+Keep the answer under 120 words.
+
+Request context:
+Timestamp: 2026-09-05T09:18:00Z
+Ticket: SUP-1047
+Customer message: The invoice PDF opens as a blank page.

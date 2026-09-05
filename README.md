@@ -6,17 +6,9 @@
 ![Stdlib only](https://img.shields.io/badge/scripts-stdlib--only-green)
 ![Codex skill](https://img.shields.io/badge/Codex-skill-compatible-black)
 
-`audit-prompt-caching` is a portable Codex/agent skill for finding why LLM cache reuse fails across the request path: prompt/prefix caches, provider cache telemetry, cache-aware routing, agent tool stability, Bedrock checkpoints, OpenRouter routing drift, provider migration risk, and vLLM/SGLang KV reuse.
-
-## Updates And Field Notes
-
-I share practical notes on building AI platforms, agent infrastructure, prompt-cache audits, and production lessons in the [Telegram channel](https://t.me/+ymZhCIjiWyYzZTVi).
-
-## Why This Exists
-
-LLM cache reuse usually fails silently. A timestamp in the system prompt, shuffled tool schemas, a changed first user message, an OpenRouter fallback, or a new vLLM replica can turn repeated 20k-token requests into cold prefill again.
-
-That failure is expensive because it often looks like a generic "LLM cost went up" or "agents got slower" incident. This skill gives agents a cache-specific audit path: inspect prefix stability, provider semantics, cache telemetry, routing locality, KV pressure, and whether caching is even the right lever.
+`audit-prompt-caching` finds where repeated LLM requests stop sharing a stable
+prefix, then checks whether provider semantics, routing, or self-hosted KV
+behavior support a cache change at all.
 
 ## Quick Start
 
@@ -26,23 +18,71 @@ Install the skill:
 npx skills add https://github.com/sernote/audit-prompt-caching --skill audit-prompt-caching
 ```
 
-Then start a new Codex session and ask:
-
-```text
-Use $audit-prompt-caching to audit this repo for prompt-cache misses, unstable prompt prefixes, dynamic tools/schemas, routing issues, and deployment cache-locality problems.
-```
-
-```text
-Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
-```
-
-## Local Demo
-
-Run the fixture audit locally:
+Try the first local audit:
 
 ```bash
 git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git
 cd audit-prompt-caching
+python3 audit-prompt-caching/scripts/prefix_stability_check.py --json \
+  examples/first-audit/before-a.txt examples/first-audit/before-b.txt
+python3 audit-prompt-caching/scripts/prefix_stability_check.py --json \
+  examples/first-audit/after-a.txt examples/first-audit/after-b.txt
+```
+
+The example keeps the same task instructions and request context, but moves the
+changing timestamp and ticket details after the stable instructions. The
+measured common UTF-8 prefix grows from `43` to `254` bytes. Both commands exit
+with status `1` because the complete requests still differ by design. See the
+[first-audit walkthrough](examples/first-audit/README.md) for the exact output
+and limits of this measurement.
+
+## Audit Hero Shot
+
+```text
++------------------------------------------------------------+
+| LLM CACHE AUDIT                                            |
++------------------------------------------------------------+
+| Before: 43 stable UTF-8 bytes                              |
+| After:  254 stable UTF-8 bytes                             |
+| Change: stable task instructions moved before context      |
+| Evidence: local rendered text comparison                   |
+| Next: check provider eligibility and real usage telemetry  |
++------------------------------------------------------------+
+```
+
+To audit your own project, start a new Codex session in its repository and ask:
+
+```text
+Use $audit-prompt-caching to audit this project for prompt-cache misses. Start with the request-building code and configuration. Check prefix layout, tools and schemas, history changes, provider or router settings, and deployment cache locality. Tell me when no change is justified and what evidence would be needed before claiming cache hits or savings.
+```
+
+Code and configuration are enough to begin; production logs are optional
+supporting evidence. A justified "no change needed" result is valid.
+
+Project background and longer examples are on the
+[project page](https://notevskii.tech/projects/audit-prompt-caching/). Updates
+and field notes are in the public [Telegram channel](https://t.me/sergeinotevskii).
+
+## Why This Exists
+
+LLM cache reuse can fail silently. A timestamp in the system prompt, shuffled
+tool schemas, or a changed first user message can make repeated requests
+diverge early. A managed-router fallback or a new self-hosted replica can send
+byte-identical requests to a route or worker without reusable cache state.
+
+This skill gives agents a cache-specific audit path: inspect prefix stability,
+provider semantics, cache telemetry, routing locality, KV pressure, and whether
+caching is the right lever for the workload.
+
+## Synthetic Usage Demo
+
+The bundled usage fixture is synthetic data for exercising the reporting
+helpers. It is separate from the first prefix-stability audit above and does
+not describe a live provider workload.
+
+From the same repository root used in Quick Start, run its arithmetic:
+
+```bash
 python3 audit-prompt-caching/scripts/analyze_usage_logs.py \
   fixtures/openai/repeated_prefix_usage.jsonl
 ```
@@ -54,7 +94,7 @@ python3 audit-prompt-caching/scripts/render_audit_report.py \
   --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
   --provider openai \
   --engine "Responses API" \
-  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
+  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | synthetic cold-start record | the first fixture record has zero cached tokens by construction | treat it as demo input rather than a defect | use real repeated-call telemetry for conclusions"
 ```
 
 Lint known-good rendered request fixtures:
@@ -70,25 +110,10 @@ python3 audit-prompt-caching/scripts/layout_linter.py \
 `input` payloads when checking for volatile early content, unstable tool order,
 and dynamic schema fields.
 
-## Audit Hero Shot
+## Synthetic Fixture Signal
 
-```text
-+------------------------------------------------------------+
-| LLM CACHE AUDIT                                            |
-+------------------------------------------------------------+
-| Provider/API: openai / Responses API                       |
-| Cache hit ratio: 59.62%                                    |
-| Output share: 7.17%                                        |
-| Main blocker: cold request has zero cached tokens           |
-| Cache impact: first request pays full prefill               |
-| Fix: warm repeated prefix before measuring steady state     |
-| Validate: confirm cached-token fields and TTFT improve      |
-+------------------------------------------------------------+
-```
-
-## Fixture Signal
-
-The bundled OpenAI fixture is synthetic and safe to share, but it is still executable evidence:
+These values are computed only from the bundled synthetic records. They verify
+the helper's arithmetic; they are not evidence about production cache behavior.
 
 | Signal | Value |
 |---|---:|
@@ -98,7 +123,9 @@ The bundled OpenAI fixture is synthetic and safe to share, but it is still execu
 | Cache hit ratio | 59.62% |
 | Output share | 7.17% |
 
-Example ROI model for 1,000 requests with 9k static input tokens, 300 dynamic input tokens, 2k output tokens, 71% cache hit rate, and explicit sample prices:
+The following is a separate synthetic ROI calculation for 1,000 requests with
+9k static input tokens, 300 dynamic input tokens, 2k output tokens, 71% cache
+hit rate, and explicit sample prices:
 
 ```text
 Total cost: $34.60 -> $23.10
@@ -106,7 +133,30 @@ Total savings: 33.24%
 Input savings: 61.84%
 ```
 
-These are fixture numbers, not a production guarantee. Always validate with your provider usage fields and billing export.
+The usage fixture and ROI scenario are arithmetic demonstrations, not a
+production guarantee. Validate real outcomes with the provider's usage fields,
+billing export, route evidence, and latency measurements.
+
+## Routing Evidence Demo
+
+For a self-hosted deployment, a cache prediction and the observed request
+result need separate evidence. Try the synthetic routing export from the
+repository root:
+
+```bash
+python3 audit-prompt-caching/scripts/analyze_routing_logs.py \
+  fixtures/routing/slow-with-reuse.jsonl --attempt-ttft-limit-ms 500
+```
+
+The helper joins decisions and outcomes by run, request and attempt. It keeps
+missing evidence visible and can identify actual reuse alongside a client TTFT
+violation. That observation does not establish what caused the delay.
+
+It accepts the documented [normalized JSONL export](audit-prompt-caching/references/routing-evidence.md),
+not native vllm-router logs. The limit applies to one attempt, not a percentile
+SLO or a policy rollout decision. Predictions retain their own target worker;
+they are not assumed to describe the selected worker. See the
+[routing fixtures](fixtures/routing/README.md) for the supported examples.
 
 ## Cache Flow
 
@@ -183,6 +233,7 @@ python3 audit-prompt-caching/scripts/layout_linter.py path/to/rendered_request.j
 python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
 python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
 python3 audit-prompt-caching/scripts/analyze_usage_logs.py --jsonl-normalized usage.jsonl
+python3 audit-prompt-caching/scripts/analyze_routing_logs.py routing.jsonl --attempt-ttft-limit-ms 500
 python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
   --static-tokens 9000 \
   --dynamic-tokens 300 \
@@ -314,6 +365,7 @@ audit-prompt-caching/
     economics.md
     gemini.md
     mechanics.md
+    routing-evidence.md
     predeploy-checklist.md
     report-template.md
     qwen.md
@@ -322,6 +374,7 @@ audit-prompt-caching/
     use-cases.md
   scripts/
     analyze_usage_logs.py
+    analyze_routing_logs.py
     estimate_cache_roi.py
     extract_llm_calls.py
     layout_linter.py
@@ -339,6 +392,7 @@ fixtures/
   bedrock/
   openrouter/
   vllm/
+  routing/
   expected/
 ```
 
@@ -359,10 +413,18 @@ The repository also includes JSON eval prompts:
 Run the local script/package tests:
 
 ```bash
-python3 -m unittest tests/test_prompt_cache_scripts.py
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 These evals are a starting point. A full proof cycle should still compare baseline agent behavior against behavior with the skill enabled.
+
+## First-Audit Feedback
+
+After trying the skill on a project, [share an audit result](https://github.com/sernote/audit-prompt-caching/issues/new?template=audit-result.md).
+A useful finding, a justified no-change result, missing evidence or an incomplete
+audit all help improve the first-use path. The template asks for a small
+shareable example and optional discovery source; nothing is collected
+automatically.
 
 ## Project Quality Gates
 

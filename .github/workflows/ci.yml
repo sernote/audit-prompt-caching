@@ -22,7 +22,7 @@ jobs:
           python-version: "3.x"
 
       - name: Run script tests
-        run: python3 -m unittest tests/test_prompt_cache_scripts.py
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
 
       - name: Validate skill package
         run: python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
