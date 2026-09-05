@@ -1,0 +1,1 @@
+audit_id,participant_id,task_context,audit_path,project_scope_alias,skill_ref,started_at,result_at,outcome,useful_completion,artifacts_available,help_level,next_measurement,finding_review_coverage,contradicted_actionable_finding,repeat_type,notes

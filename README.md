@@ -158,6 +158,12 @@ SLO or a policy rollout decision. Predictions retain their own target worker;
 they are not assumed to describe the selected worker. See the
 [routing fixtures](fixtures/routing/README.md) for the supported examples.
 
+For a real first task, use the [pilot guide](docs/pilots/README.md), which pins
+the available draft version and explains what to return. If the routing export
+does not exist yet, start with the [native capture contract](docs/pilots/native-routing-capture.md).
+The [loopback observation lab](examples/router-observation/README.md) exercises
+a real router with a synthetic HTTP worker; it does not benchmark inference.
+
 ## Cache Flow
 
 ```mermaid
