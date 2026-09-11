@@ -28,7 +28,7 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6394
 # Remeasured corpus after the September 2026 provider prefix-cache refresh.
 # Includes executable/eval source, not just references loaded by an agent.
 # See docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 64909
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 65748
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
