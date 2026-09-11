@@ -84,10 +84,12 @@ PROVIDER_PATTERNS = {
     ],
     "bedrock": [
         r"\bbedrock-runtime\b",
+        r"\bbedrock-mantle\b",
         r"\bBedrockRuntime\b",
         r"\bclient\.converse\b",
         r"\binvoke_model\b",
         r"\bcachePoint\b",
+        r"\bcacheDetails\b",
         r"\bCacheReadInputTokens\b",
         r"\bCacheWriteInputTokens\b",
     ],
@@ -159,10 +161,12 @@ SIGNAL_LABELS = {
     r"\bcache_control\b": "cache_control",
     # Bedrock
     r"\bbedrock-runtime\b": "bedrock-runtime",
+    r"\bbedrock-mantle\b": "bedrock-mantle",
     r"\bBedrockRuntime\b": "BedrockRuntime",
     r"\bclient\.converse\b": "client_converse",
     r"\binvoke_model\b": "invoke_model",
     r"\bcachePoint\b": "cachePoint",
+    r"\bcacheDetails\b": "cacheDetails",
     r"\bCacheReadInputTokens\b": "CacheReadInputTokens",
     r"\bCacheWriteInputTokens\b": "CacheWriteInputTokens",
     # OpenRouter
