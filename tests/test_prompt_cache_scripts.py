@@ -24,11 +24,11 @@ FIXTURES = ROOT / "fixtures"
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # The optional normalized-routing helper hook adds 53 estimated tokens to the
 # 6341 baseline; provider guidance and the Routing Outcome Gate are preserved.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6468
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6478
 # Remeasured corpus after the September 2026 provider prefix-cache refresh.
 # Includes executable/eval source, not just references loaded by an agent.
 # See docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 71014
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 71756
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -4523,6 +4523,34 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("tokenhub_api", signals)
         self.assertIn("hunyuan_model", signals)
 
+    def test_xiaomi_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "xiaomi.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "automatic",
+            "limited-time free",
+            "4096-token",
+            "provider: xiaomi",
+            "`cached_tokens` granularity",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/xiaomi.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://api.xiaomimimo.com/v1')\nmodel = 'mimo-v2.5-pro'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["xiaomi"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("mimo_api", signals)
+        self.assertIn("mimo_model", signals)
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
@@ -5129,7 +5157,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6468,
+            6478,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(

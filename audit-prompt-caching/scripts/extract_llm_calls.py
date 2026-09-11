@@ -176,6 +176,12 @@ PROVIDER_PATTERNS = {
         r"\bhy[34](?:-preview)?\b",
         r"\bTENCENT_API_KEY\b",
     ],
+    "xiaomi": [
+        r"\bxiaomimimo\b",
+        r"\bapi\.xiaomimimo\.com\b",
+        r"\bmimo-v\d",
+        r"\bMIMO_API_KEY\b",
+    ],
 }
 
 
@@ -272,6 +278,11 @@ SIGNAL_LABELS = {
     r"\btokenhub(?:-intl)?\.tencentcloudmaas\.com\b": "tokenhub_api",
     r"\bhy[34](?:-preview)?\b": "hunyuan_model",
     r"\bTENCENT_API_KEY\b": "TENCENT_API_KEY",
+    # Xiaomi MiMo
+    r"\bxiaomimimo\b": "xiaomimimo",
+    r"\bapi\.xiaomimimo\.com\b": "mimo_api",
+    r"\bmimo-v\d": "mimo_model",
+    r"\bMIMO_API_KEY\b": "MIMO_API_KEY",
 }
 
 LEGACY_PATTERN_ALIASES = {

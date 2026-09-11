@@ -392,6 +392,7 @@ audit-prompt-caching/
     xai.md
     mistral.md
     tencent.md
+    xiaomi.md
   scripts/
     analyze_usage_logs.py
     analyze_routing_logs.py
