@@ -22,13 +22,16 @@ FIXTURES = ROOT / "fixtures"
 # The former 0.85 character heuristic was retired: the required complete
 # provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
-# The optional normalized-routing helper hook adds 53 estimated tokens to the
-# 6341 baseline; provider guidance and the Routing Outcome Gate are preserved.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6394
-# Remeasured corpus after the pinned router API-path correction and eval 33.
+# The optional normalized-routing helper hook added 53 estimated tokens to the
+# 6341 baseline; the AP-15 effort-continuity trigger, playbook, and linter
+# description add 282 more. Provider guidance and the Routing Outcome Gate are
+# preserved. See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6676
+# Remeasured corpus after the Claude 5 family / GPT-6 Astra effort-continuity
+# references, AP-15 rule, linter branch, and evals 34-36.
 # Includes executable/eval source, not just references loaded by an agent.
-# See docs/superpowers/plans/2026-09-06-simplify-first-audit.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 60163
+# See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 65570
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -2999,9 +3002,10 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "feature detection",
             "prefix_cache_retention_interval",
             "prefix_caching_hash_algo",
-            "AP-1 through AP-14",
+            "AP-1 through AP-15",
             "AP-9b",
             "AP-14",
+            "AP-15",
         ):
             self.assertIn(required, skill, required)
 
@@ -3422,6 +3426,235 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
         self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 5)
+
+    def test_layout_linter_validates_direct_gpt6_astra_cache_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-6-astra",
+                        "reasoning": {"effort": "medium"},
+                        "input": [
+                            {
+                                "role": "developer",
+                                "content": [
+                                    {
+                                        "type": "input_text",
+                                        "text": "Stable policy",
+                                        "prompt_cache_breakpoint": {
+                                            "mode": "explicit"
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "type": "configuration_update",
+                                "reasoning": {"effort": "high"},
+                            },
+                            {"role": "user", "content": "Hard follow-up"},
+                        ],
+                        "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
+                        "prompt_cache_key": "policy-family-v1",
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cache_policy"]["model_support"], "gpt-6")
+        self.assertTrue(output["cache_policy"]["validated"])
+        self.assertIn("AP-11", output["clean_checks"])
+        self.assertIn("AP-15", output["clean_checks"])
+        self.assertEqual(output["effort_policy"]["provider"], "openai")
+        self.assertEqual(output["effort_policy"]["request_effort"], "medium")
+        self.assertEqual(output["effort_policy"]["per_message_effort_items"], 1)
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+
+    def test_layout_linter_flags_configuration_update_outside_astra(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6-terra",
+                        "input": [
+                            {"role": "developer", "content": "Stable policy"},
+                            {
+                                "type": "configuration_update",
+                                "reasoning": {"effort": "high"},
+                            },
+                            {"role": "user", "content": "Question"},
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        finding = next(
+            item for item in output["findings"] if item["rule_id"] == "AP-15"
+        )
+        self.assertEqual(finding["category"], "effort-continuity")
+        self.assertIn("gpt-6-astra", finding["issue"])
+        self.assertEqual(finding["evidence"], "$.input[1]")
+        self.assertFalse(output["effort_policy"]["per_message_effort_supported"])
+        self.assertNotIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_flags_configuration_update_in_pro_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-6-astra",
+                        "reasoning": {"effort": "high", "mode": "pro"},
+                        "input": [
+                            {"role": "developer", "content": "Stable policy"},
+                            {
+                                "type": "configuration_update",
+                                "reasoning": {"effort": "low"},
+                                "instructions": "not allowed here",
+                            },
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        issues = [
+            item["issue"] for item in output["findings"] if item["rule_id"] == "AP-15"
+        ]
+        self.assertTrue(any("pro" in issue for issue in issues), issues)
+        self.assertTrue(
+            any("only reasoning.effort" in issue for issue in issues), issues
+        )
+
+    def test_layout_linter_validates_anthropic_per_message_effort(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "claude-fable-5-1",
+                        "max_tokens": 4096,
+                        "output_config": {"effort": "high"},
+                        "system": [
+                            {
+                                "type": "text",
+                                "text": "Stable policy",
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ],
+                        "messages": [
+                            {"role": "user", "content": "Plan the migration."},
+                            {"role": "assistant", "content": "Three steps."},
+                            {
+                                "role": "system",
+                                "content": [],
+                                "output_config": {"effort": "low"},
+                            },
+                            {"role": "user", "content": "Summarize it."},
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertIn("AP-15", output["clean_checks"])
+        self.assertEqual(output["effort_policy"]["provider"], "anthropic")
+        self.assertEqual(output["effort_policy"]["request_effort"], "high")
+        self.assertEqual(output["effort_policy"]["per_message_effort_items"], 1)
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertEqual(
+            output["effort_policy"]["beta_header"],
+            "mid-conversation-output-config-2026-07-01",
+        )
+
+    def test_layout_linter_flags_anthropic_per_message_effort_on_unsupported_model(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "claude-fable-5",
+                        "messages": [
+                            {"role": "user", "content": "Plan the migration."},
+                            {
+                                "role": "system",
+                                "content": [],
+                                "output_config": {"effort": "low"},
+                            },
+                            {"role": "user", "content": "Summarize it."},
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        finding = next(
+            item for item in output["findings"] if item["rule_id"] == "AP-15"
+        )
+        self.assertEqual(finding["evidence"], "$.messages[1]")
+        self.assertIn("per-message effort", finding["issue"])
+        self.assertFalse(output["effort_policy"]["per_message_effort_supported"])
+
+    def test_layout_linter_reports_effort_policy_without_items(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.4",
+                        "messages": [{"role": "user", "content": "Question"}],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["effort_policy"]["provider"], "openai")
+        self.assertIsNone(output["effort_policy"]["request_effort"])
+        self.assertEqual(output["effort_policy"]["per_message_effort_items"], 0)
+        self.assertNotIn("AP-15", output["clean_checks"])
+
+    def test_layout_fixtures_cover_effort_continuity(self):
+        good_astra = FIXTURES / "layout" / "good_openai_astra_effort_request.json"
+        bad_astra = FIXTURES / "layout" / "bad_openai_astra_effort_request.json"
+        good_claude = FIXTURES / "layout" / "good_anthropic_effort_request.json"
+        bad_claude = FIXTURES / "layout" / "bad_anthropic_effort_request.json"
+        for path in (good_astra, bad_astra, good_claude, bad_claude):
+            self.assertTrue(path.exists(), f"missing fixture: {path}")
+
+        for path in (good_astra, good_claude):
+            result = run_script("layout_linter.py", path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("AP-15", json.loads(result.stdout)["clean_checks"])
+
+        for path in (bad_astra, bad_claude):
+            result = run_script("layout_linter.py", path)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            rule_ids = {
+                item["rule_id"] for item in json.loads(result.stdout)["findings"]
+            }
+            self.assertIn("AP-15", rule_ids)
 
     def test_layout_linter_leaves_provider_wrappers_unvalidated(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -4902,7 +5135,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6394,
+            6676,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(

@@ -1,0 +1,10 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning": {"effort": "high", "mode": "pro"},
+  "input": [
+    {"role": "developer", "content": "Stable reusable policy for every request in this workflow."},
+    {"role": "user", "content": "Classify the first customer question."},
+    {"type": "configuration_update", "reasoning": {"effort": "low"}, "instructions": "Be brief."},
+    {"role": "user", "content": "Summarize the classification."}
+  ]
+}

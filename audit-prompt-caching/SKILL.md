@@ -17,7 +17,8 @@ until the applicability, telemetry, and trust-boundary checks justify them.
 Use this skill for LLM calls where repeated prompt prefixes may affect cost,
 TTFT, prefill latency, or self-hosted KV reuse. Typical triggers:
 
-- `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, writes without reads, or unclear usage fields; GPT-5.6 `prompt_cache_options`/`prompt_cache_breakpoint`; or migration from `prompt_cache_retention`.
+- `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, writes without reads, or unclear usage fields; GPT-5.6/GPT-6 Astra `prompt_cache_options`/`prompt_cache_breakpoint`; or migration from `prompt_cache_retention`.
+- Effort or reasoning changes inside a cached conversation: per-step `reasoning.effort`, GPT-6 Astra `configuration_update`, Claude per-message `output_config.effort`, thinking toggles.
 - Cache hit rate, TTFT, prefill latency, or input-token cost changed; LLM cost or speed regressed around repeated long prompts, shared context, long agents, or tool loops, or a reported hit rate is not trusted.
 - LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter: inspect prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loops, or context compaction.
 - Long system prompts, tool catalogs, schemas, static documents, few-shot/RAG context, provider cache APIs, or vLLM/SGLang multi-replica KV deployments with KV pressure, tokenizer/chat-template drift, cache salts, or APC benchmarks such as `vllm bench serve`, `prefix_repetition`, and `benchmark_prefix_caching.py`.
@@ -121,7 +122,7 @@ If the gate fails, report why caching is not the right lever yet and recommend m
 
 ## Language Match Rule
 
-Answer in the user's language by default. Preserve provider/API field names exactly, such as `cached_tokens`, `cache_write_tokens`, `prompt_cache_options`, `prompt_cache_breakpoint`, `cache_control`, `cachePoint`, `TTFT`, and `prompt_cache_key`, but explain them in the user's language.
+Answer in the user's language by default. Preserve provider/API field names exactly, such as `cached_tokens`, `cache_write_tokens`, `prompt_cache_options`, `prompt_cache_breakpoint`, `configuration_update`, `output_config.effort`, `cache_control`, `cachePoint`, `TTFT`, and `prompt_cache_key`, but explain them in the user's language.
 
 ## Agent-First Output Contracts
 
@@ -179,7 +180,7 @@ migration, `references/predeploy-checklist.md` for release or incident work,
 Use scripts when deterministic evidence is better than prose:
 
 - `scripts/prefix_stability_check.py`: whole-input comparison; `--canonical-json` is opt-in and does not prove explicit breakpoint reuse.
-- `scripts/layout_linter.py`: GPT-5.6 layout and cache-control placement checks; wrappers remain unvalidated.
+- `scripts/layout_linter.py`: GPT-5.6/GPT-6 Astra layout and cache-control checks plus AP-15 effort continuity (`configuration_update`, Claude per-message `output_config`); wrappers remain unvalidated and headers are invisible, so the Claude beta header is reported, not verified.
 - `scripts/analyze_usage_logs.py`: normalize JSON/JSONL/CSV usage and `cache_write_tokens`; use `--accounting-mode` only with known wrapper semantics.
 - `scripts/analyze_routing_logs.py`: join normalized decision/outcome JSONL using `references/routing-evidence.md`; preserve missing evidence and separate prediction targets. Not a native-log parser or rollout decision.
 - `scripts/estimate_cache_roi.py`: estimate read/write cost; paid writes require `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
@@ -230,6 +231,7 @@ Use these starts after provider detection and Freshness Gate:
 
 - **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, Responses vs Chat usage fields, `prompt_cache_key`, model cache controls, output-token dominance, and wrapper ambiguity.
 - **GPT-5.6 paid writes**: validate `prompt_cache_options` and marked blocks, separate inclusive `cached_tokens`/`cache_write_tokens` from input totals, and require current pricing before claiming savings. Prefer explicit mode when implicit writes churn on a volatile suffix.
+- **Effort change mid-conversation**: a changed `reasoning.effort`, `output_config.effort`, or thinking configuration between requests of one conversation is prefix drift (AP-15); check it before prompt text. Cache-preserving forms: `gpt-6-astra` standard mode `configuration_update` items (rejected in pro mode) and an effort-only `role: "system"` message on Claude Fable 5.1, Mythos 5.1, and Opus 5 with the `mid-conversation-output-config-2026-07-01` beta. Elsewhere hold effort constant; validate with cache-read fields on the next turn and re-run ROI with the Fable 5.1 0.025x read price.
 - **Claude/Bedrock/OpenRouter writes without reads**: distinguish write/create from read/hit fields, then inspect breakpoint placement, dynamic content before it, TTL/retention, model/region/API support, fallback routing, and the routed provider/model.
 - **Gemini Interactions or managed session cache**: distinguish an explicit cache object from an opaque continuation handle (`previous_interaction_id`, `previous_response_id`), keep it inside the intended conversation, and normalize `total_cached_tokens` as inclusive before comparing routes.
 - **KV events, HiCache, or PD disaggregation**: separate prefix mismatch from eviction, tier transfer/offload, event delivery, and decode-side KV reuse. Compare TTFT/prefill and worker/tier metrics first.
@@ -247,15 +249,16 @@ Use these starts after provider detection and Freshness Gate:
 
 ## Rule Categories
 
-`references/rules.json` holds the machine-readable AP-1 through AP-14 inventory.
+`references/rules.json` holds the machine-readable AP-1 through AP-15 inventory.
 AP-9b is the isolation/trust boundary; AP-14 is technical hash compatibility
-inside an already authorized sharing group. Turn rules into findings with this
+inside an already authorized sharing group; AP-15 is effort/reasoning
+configuration continuity inside a cached conversation. Turn rules into findings with this
 priority taxonomy:
 
 | Priority | Category | Examples |
 |---|---|---|
 | P0 | Provider correctness | usage fields, thresholds, cache activation, TTL/retention |
-| P1 | Prefix stability | static-first ordering, no volatile early values, stable tools/schemas |
+| P1 | Prefix stability | static-first ordering, no volatile early values, stable tools/schemas, constant or positional effort changes |
 | P2 | Measurement | denominator status, cache ratio, writes vs reads, output share, TTFT |
 | P3 | Architecture | RAG/CAG, plane separation, multi-tenant boundaries, routing locality |
 | P4 | Reporting | file-line findings, before/after layout, ROI assumptions, validation |

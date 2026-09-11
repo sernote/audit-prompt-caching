@@ -1,10 +1,12 @@
 # OpenAI Prefix Cache Reference
 
-Last reviewed: 2026-08-10. Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
+Last reviewed: 2026-09-11 (GPT-6 Astra section; developers.openai.com was unreachable from the review environment, so Astra facts come from the GPT-6 Astra guide text vendored in the openai/codex repository and from `openai-python` SDK types). Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, `configuration_update`, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
 
 Official sources:
 - Prompt caching: https://developers.openai.com/api/docs/guides/prompt-caching
 - GPT-5.6 guidance: https://developers.openai.com/api/docs/guides/latest-model
+- GPT-6 Astra guide: https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md
+- Reasoning guide (change reasoning mid-conversation): https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation
 - Models: https://developers.openai.com/api/docs/models/all
 - Data controls: https://developers.openai.com/api/docs/guides/your-data
 - API reference: https://developers.openai.com/api/docs/api-reference
@@ -42,6 +44,17 @@ Direct GPT-5.6 models add paid writes and optional explicit cache boundaries:
 - `prompt_cache_retention` is the older automatic-cache contract and is deprecated for GPT-5.6; `ttl: "30m"` is a minimum reuse lifetime, not a maximum retention guarantee.
 - Cache writes are billed separately; at review time the model guide states 1.25x the uncached input rate. Supply current prices to the ROI helper rather than copying that multiplier into code.
 
+## GPT-6 Astra Contract Snapshot
+
+`gpt-6-astra` (family alias `gpt-6`; verify alias routing before use) inherits the GPT-5.6 cache contract above: `prompt_cache_options` (`mode`, `ttl: "30m"`), `prompt_cache_breakpoint`, paid writes, `prompt_cache_key` for improved matching, and no fallback to an unmarked prefix. The Astra migration guide says to replace `prompt_cache_retention` with `prompt_cache_options.ttl: "30m"` when coming from GPT-5.5 or earlier. What is new for cache audits:
+
+- **Effort changes without losing the prefix.** Request-level `reasoning.effort` shapes the rendered prompt, so changing it between responses of one conversation restarts the cache on every OpenAI model. On GPT-6 Astra, keep request-level `reasoning.effort` constant and append a positional input item instead: `{"type": "configuration_update", "reasoning": {"effort": "<level>"}}` directly before the user turn that needs a different level. It applies to that response and later ones until another `configuration_update` replaces it; everything before it is unchanged, so the cached prefix still matches. The SDK type allows only `type`, optional `id`, and `reasoning.effort`.
+- **Compatibility limits.** `configuration_update` is documented for `gpt-6-astra` in standard, single-agent mode only. With `reasoning.mode: "pro"` the API rejects it (`The 'configuration_update' item type is not supported with pro or tournament models`). Other models keep effort in the request-level field. `layout_linter.py` reports these as `AP-15` and exposes an `effort_policy` block.
+- **Effort levels.** GPT-6 Astra does not support `none`; the migration guide says to start `none`/`minimal` routes at `low`. Preserve the old effective effort explicitly when migrating instead of relying on defaults. `reasoning.context` (`auto`, `current_turn`, `all_turns`; `gpt-5.6` family defaults to `all_turns`) decides which reasoning items are rendered back, so a change there is also prefix drift.
+- **Lookback statement.** The current SDK docstring for `prompt_cache_options` says matching considers up to the latest 80 breakpoints in the conversation with no content-block lookback limit, and each request writes up to four breakpoints. This matches the create references cited in the GPT-5.6 section; treat the older 50-breakpoint figure as superseded unless the guide still shows it.
+- **Cache diagnostics.** `prompt_cache_options.comparison_response_id` requests prompt-cache diagnostics against an earlier response when the feature is enabled for the organization. Use it to locate the first divergent element; usage fields stay the production source of ratios.
+- **Pricing (unverified).** Third-party pages report $10/$1/$12.50/$50 per MTok (input/cached input/cache write/output) up to 272K input tokens and a long-context tier above that. These figures were not confirmed on openai.com during this review; pass current prices to `estimate_cache_roi.py` explicitly and mark them as assumptions in reports.
+
 For Responses, read `cached_tokens` and `cache_write_tokens` under `usage.input_tokens_details`; for Chat Completions, use `usage.prompt_tokens_details`. Both are breakdowns of the reported input total, so do not add them to `input_tokens` or `prompt_tokens`.
 
 Keep data-control layers separate. Cache entries are organization-scoped. ZDR, response storage, cache application state, and Regional Inference have different contracts; encrypted GPU-local storage is not a Regional processing guarantee. Re-check the data-controls guide before making a residency or ZDR claim.
@@ -51,6 +64,7 @@ Keep data-control layers separate. Cache entries are organization-scoped. ZDR, r
 - Detect Responses vs Chat Completions and wrapper layers before choosing usage fields.
 - Apply GPT-5.6 controls only to confirmed direct OpenAI routes; an OpenAI-compatible wrapper is not proof of support.
 - Keep `prompt_cache_key` stable at route or prompt-family granularity; avoid per-request keys and over-broad hot keys.
+- Check whether `reasoning.effort` (or Chat `reasoning_effort`) varies between requests of one conversation; on `gpt-6-astra` standard mode expect `configuration_update` items instead, elsewhere expect a constant level (AP-15).
 - Remove request IDs, timestamps, tenant IDs, and per-request constants from tools, JSON schema, and `response_format`.
 - Sort tools and schema serialization where app code controls order.
 - Keep image representation and `detail` stable.
@@ -74,7 +88,7 @@ written = completion.usage.prompt_tokens_details.cache_write_tokens
 total = completion.usage.prompt_tokens
 ```
 
-If `cached_tokens == 0`, check prefix drift, prompt length, tools/schema drift, image drift, inconsistent key/retention, wrapper routing, model/API changes, or a hot prefix/key. If cached tokens are high but savings are low, check output-token share, decode/final latency, TPM rate limits, and traffic cadence.
+If `cached_tokens == 0`, check prefix drift, prompt length, tools/schema drift, image drift, inconsistent key/retention, a request-level `reasoning.effort` or `reasoning.context` change, wrapper routing, model/API changes, or a hot prefix/key. If cached tokens are high but savings are low, check output-token share, decode/final latency, TPM rate limits, and traffic cadence.
 
 ## Prompt Caching dashboard and aggregate evidence
 
