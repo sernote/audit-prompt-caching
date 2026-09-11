@@ -22,6 +22,8 @@ FIELD_ALIASES = {
         "cached_tokens",
         "prompt_cache_hit_tokens",
         "total_cached_tokens",
+        "cached_token",
+        "cached_prompt_text_tokens",
     ),
     "cache_read_input_tokens": (
         "cache_read_input_tokens",
@@ -229,6 +231,16 @@ def gemini_generate_content_usage_envelope(record):
     )
 
 
+# OpenAI-shaped cached-token spellings: OpenAI/most vendors, DeepSeek Chat,
+# TokenHub's singular key, and xAI gRPC usage.
+OPENAI_COMPATIBLE_CACHED_NAMES = (
+    "cached_tokens",
+    "prompt_cache_hit_tokens",
+    "cached_token",
+    "cached_prompt_text_tokens",
+)
+
+
 def openai_breakdown_value(usage, usage_prefix, details, details_prefix, names):
     value, path = extracted_value(details, names, details_prefix)
     if path:
@@ -250,10 +262,15 @@ def extract_openai(record):
     return extraction(
         input_tokens=extracted_value(usage, input_names, prefix),
         cached_tokens=openai_breakdown_value(
-            usage, prefix, details, details_prefix, ("cached_tokens",)
+            usage, prefix, details, details_prefix, OPENAI_COMPATIBLE_CACHED_NAMES
         ),
         cache_write_tokens=openai_breakdown_value(
             usage, prefix, details, details_prefix, ("cache_write_tokens",)
+        ),
+        # DashScope/Qwen OpenAI-compatible responses report explicit-cache
+        # writes inside the details object; the total stays inclusive.
+        cache_creation_input_tokens=extracted_value(
+            details, ("cache_creation_input_tokens",), details_prefix
         ),
         output_tokens=extracted_value(usage, output_names, prefix),
     )
@@ -358,6 +375,46 @@ class OpenAIUsageAdapter(UsageSurfaceAdapter):
         return extract_openai(record)
 
 
+# OpenAI-compatible vendors whose official docs describe ``cached_tokens`` as a
+# subset of the prompt total (inclusive) and, where offered, an
+# Anthropic-compatible Messages route with additive cache_read/cache_creation
+# fields. A record must carry one of these labels in ``provider`` to opt in;
+# unlabeled wrapper usage stays ambiguous. Kept in sync with references/.
+OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS = frozenset(
+    {
+        "moonshot",
+        "moonshotai",
+        "kimi",
+        "deepseek",
+        "qwen",
+        "dashscope",
+        "alibaba",
+        "minimax",
+        "xai",
+        "x-ai",
+        "grok",
+        "mistral",
+        "mistralai",
+        "tencent",
+        "hunyuan",
+        "xiaomi",
+        "mimo",
+        "upstage",
+        "zai",
+        "z-ai",
+        "zhipu",
+        "yandex",
+        "yandexgpt",
+    }
+)
+
+ANTHROPIC_SHAPE_FIELDS = ("cache_read_input_tokens", "cache_creation_input_tokens")
+
+
+def has_anthropic_shape(usage):
+    return has_any_field(usage, ANTHROPIC_SHAPE_FIELDS)
+
+
 class AnthropicUsageAdapter(UsageSurfaceAdapter):
     shape = "anthropic"
     provider = "anthropic-compatible"
@@ -365,16 +422,44 @@ class AnthropicUsageAdapter(UsageSurfaceAdapter):
 
     def matches(self, record):
         provider = provider_name(record)
-        if provider:
-            return provider == "anthropic"
         usage = usage_object(record)
-        return (
-            "cache_read_input_tokens" in usage
-            or "cache_creation_input_tokens" in usage
-        )
+        if provider:
+            return provider == "anthropic" or (
+                provider in OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS
+                and has_anthropic_shape(usage)
+                and "prompt_tokens" not in usage
+            )
+        return has_anthropic_shape(usage)
 
     def extract(self, record):
         return extract_anthropic(record)
+
+
+class OpenAICompatibleUsageAdapter(UsageSurfaceAdapter):
+    """Labeled OpenAI-compatible vendor usage with documented inclusive cache fields."""
+
+    shape = "openai-compatible"
+    provider = "openai-compatible"
+    semantics = "inclusive"
+
+    def matches(self, record):
+        provider = provider_name(record)
+        if provider not in OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS:
+            return False
+        usage = usage_object(record)
+        if has_anthropic_shape(usage) and "prompt_tokens" not in usage:
+            return False
+        if not ("prompt_tokens" in usage or "input_tokens" in usage):
+            return False
+        # A labeled vendor record without any cached-token field is "not
+        # observed", not a measured zero; leave it ambiguous.
+        details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
+        return has_any_field(usage, OPENAI_COMPATIBLE_CACHED_NAMES) or has_any_field(
+            details, OPENAI_COMPATIBLE_CACHED_NAMES
+        )
+
+    def extract(self, record):
+        return extract_openai(record)
 
 
 class BedrockUsageAdapter(UsageSurfaceAdapter):
@@ -445,6 +530,7 @@ class UnknownUsageAdapter(UsageSurfaceAdapter):
 USAGE_SURFACE_ADAPTERS = (
     OpenAIUsageAdapter(),
     AnthropicUsageAdapter(),
+    OpenAICompatibleUsageAdapter(),
     BedrockUsageAdapter(),
     GeminiInteractionsUsageAdapter(),
     GeminiGenerateContentUsageAdapter(),

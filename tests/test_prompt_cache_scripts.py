@@ -26,12 +26,14 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # 6341 baseline; the AP-15 effort-continuity trigger, playbook, and linter
 # description add 282 more. Provider guidance and the Routing Outcome Gate are
 # preserved. See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6676
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # Remeasured corpus after the Claude 5 family / GPT-6 Astra effort-continuity
 # references, AP-15 rule, linter branch, and evals 34-36.
 # Includes executable/eval source, not just references loaded by an agent.
-# See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 65570
+# See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
+# docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
+# references and the labeled OpenAI-compatible usage adapter).
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 77677
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -749,6 +751,164 @@ class PromptCacheScriptsTest(unittest.TestCase):
             },
         )
         self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reads_dashscope_openai_compatible_cache_creation(self):
+        # DashScope/Qwen reports explicit-cache writes inside the OpenAI-shaped
+        # prompt_tokens_details object; the total stays inclusive. The record is
+        # deliberately unlabeled, so the generic OpenAI-shape adapter (reported
+        # as provider "openai") handles it; labeled records are covered below.
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "prompt_tokens": 2200,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 0,
+                        "cache_creation_input_tokens": 2156,
+                    },
+                    "completion_tokens": 40,
+                },
+            }
+        )
+
+        self.assertEqual(event["provider"], "openai")
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(
+            event["source_fields"]["cache_creation_input_tokens"],
+            "usage.prompt_tokens_details.cache_creation_input_tokens",
+        )
+        self.assertEqual(event["cache_creation_input_tokens"], 2156)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_treats_labeled_moonshot_chat_usage_as_inclusive(self):
+        # Moonshot/Kimi Chat Completions report cached_tokens at the usage top
+        # level and document it as a subset of prompt_tokens.
+        event = self.normalized_event(
+            {
+                "provider": "moonshot",
+                "model": "kimi-k2.6",
+                "usage": {
+                    "prompt_tokens": 3000,
+                    "cached_tokens": 2560,
+                    "completion_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["provider"], "moonshot")
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["source_fields"]["cached_tokens"], "usage.cached_tokens")
+        self.assertEqual(event["total_input_tokens"], 3000)
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_keeps_unlabeled_top_level_cached_tokens_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "prompt_tokens": 3000,
+                    "cached_tokens": 2560,
+                    "completion_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_routes_labeled_vendor_messages_usage_to_additive_adapter(self):
+        # The same vendor's Anthropic-compatible Messages route reports
+        # additive cache_read/cache_creation fields.
+        event = self.normalized_event(
+            {
+                "provider": "moonshot",
+                "usage": {
+                    "input_tokens": 400,
+                    "cache_read_input_tokens": 2560,
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["total_input_tokens"], 2960)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_labeled_vendor_mixed_shape_keeps_openai_counts(self):
+        # Some proxies emit top-level Anthropic fields next to prompt_tokens;
+        # the OpenAI-shaped counts must win for a labeled vendor.
+        event = self.normalized_event(
+            {
+                "provider": "minimax",
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "prompt_tokens_details": {"cached_tokens": 800},
+                    "cache_creation_input_tokens": 0,
+                    "completion_tokens": 10,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["input_tokens"], 1000)
+        self.assertEqual(event["cached_tokens"], 800)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reads_vendor_cached_token_spellings(self):
+        for provider, usage, path in (
+            ("tencent", {"prompt_tokens": 900, "cached_token": 512}, "usage.cached_token"),
+            (
+                "xai",
+                {"prompt_tokens": 900, "cached_prompt_text_tokens": 512},
+                "usage.cached_prompt_text_tokens",
+            ),
+            (
+                "deepseek",
+                {"prompt_tokens": 900, "prompt_cache_hit_tokens": 512},
+                "usage.prompt_cache_hit_tokens",
+            ),
+            (
+                "qwen",
+                {
+                    "prompt_tokens": 900,
+                    "prompt_tokens_details": {"cached_tokens": 512},
+                },
+                "usage.prompt_tokens_details.cached_tokens",
+            ),
+        ):
+            with self.subTest(provider=provider):
+                event = self.normalized_event({"provider": provider, "usage": usage})
+                self.assertEqual(event["accounting_semantics"], "inclusive")
+                self.assertEqual(event["cached_tokens"], 512)
+                self.assertEqual(event["source_fields"]["cached_tokens"], path)
+                self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_labeled_vendor_without_cache_field_stays_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "provider": "yandex",
+                "usage": {"prompt_tokens": 900, "completion_tokens": 20},
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_labeled_qwen_messages_usage_is_additive(self):
+        event = self.normalized_event(
+            {
+                "provider": "qwen",
+                "usage": {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 2000,
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 20,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["total_input_tokens"], 2100)
 
     def test_analyze_usage_logs_reports_anthropic_usage_provenance(self):
         event = self.normalized_event(
@@ -4529,6 +4689,194 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertIsInstance(rule[key], str, rule["id"])
                 self.assertTrue(rule[key].strip(), rule["id"])
 
+    def test_moonshot_reference_and_detection_cover_kimi_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "moonshot.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "256 tokens",
+            "`usage.cached_tokens`",
+            "`cache_read_input_tokens`",
+            "reasoning effort",
+            "`prompt_cache_key`",
+            "/v1/caching",
+            "provider: moonshot",
+        ):
+            self.assertIn(required, reference)
+        skill = (root / "SKILL.md").read_text()
+        self.assertIn("`references/moonshot.md`", skill)
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "kimi.py").write_text(
+                "client = OpenAI(base_url='https://api.moonshot.ai/v1')\n"
+                "model = 'kimi-k2.6'\n"
+            )
+            output = module.find_matches(tmp_path)
+        self.assertEqual(output["providers"]["moonshot"], 2)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("moonshot_api", signals)
+        self.assertIn("kimi_model", signals)
+
+    def test_minimax_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "minimax.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "512 input tokens",
+            "most recent 4 markers",
+            "`cache_control`",
+            "provider: minimax",
+            "5-minute lifetime",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/minimax.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = Anthropic(base_url='https://api.minimax.io/anthropic')\nmodel = 'MiniMax-M3'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["minimax"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("minimax_api", signals)
+        self.assertIn("minimax_model", signals)
+
+    def test_xai_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "xai.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "`x-grok-conv-id`",
+            "`usage.cached_prompt_text_tokens`",
+            "`reasoning_content`",
+            "including cached tokens",
+            "provider: xai",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/xai.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://api.x.ai/v1', default_headers={'x-grok-conv-id': conv})\nmodel = 'grok-4.6'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["xai"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("xai_api", signals)
+        self.assertIn("x-grok-conv-id", signals)
+        self.assertIn("grok_model", signals)
+
+    def test_mistral_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "mistral.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "`prompt_cache_key`",
+            "64 tokens",
+            "multiple of 64",
+            "10% of the input price",
+            "provider: mistral",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/mistral.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("from mistralai import Mistral\nclient = Mistral(server_url='https://api.mistral.ai')\nmodel = 'mistral-large-latest'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["mistral"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("mistralai", signals)
+        self.assertIn("mistral_api", signals)
+        self.assertIn("mistral_model", signals)
+
+    def test_tencent_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "tencent.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "`cached_token`",
+            "`prompt_tokens_details.cached_tokens`",
+            "provider: tencent",
+            "best-effort",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/tencent.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://tokenhub-intl.tencentcloudmaas.com/v1')\nmodel = 'hy4-preview'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["tencent"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("tokenhub_api", signals)
+        self.assertIn("hunyuan_model", signals)
+
+    def test_xiaomi_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "xiaomi.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "automatic",
+            "limited-time free",
+            "4096-token",
+            "provider: xiaomi",
+            "`cached_tokens` granularity",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/xiaomi.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://api.xiaomimimo.com/v1')\nmodel = 'mimo-v2.5-pro'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["xiaomi"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("mimo_api", signals)
+        self.assertIn("mimo_model", signals)
+
+    def test_extract_llm_calls_vendor_patterns_skip_common_false_positives(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "search.py").write_text(
+                "def minimax(node, depth):\n    return depth\n"
+                "version = 'hy3'\n"
+                "flag = 'hy4'\n"
+            )
+            output = module.find_matches(tmp_path)
+        self.assertNotIn("minimax", output["providers"])
+        self.assertNotIn("tencent", output["providers"])
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
@@ -5005,7 +5353,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         azure = (
             ROOT / "audit-prompt-caching" / "references" / "azure-openai.md"
         ).read_text()
-        self.assertIn("Last reviewed: 2026-08-11.", azure)
+        self.assertIn("Last reviewed: 2026-09-12.", azure)
         section = extract_markdown_section(azure, "Responses endpoint capability gate")
         normalized = " ".join(section.split())
         self.assertIn("Section reviewed: 2026-08-23.", normalized)
@@ -5135,7 +5483,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6676,
+            6761,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(

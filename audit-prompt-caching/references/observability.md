@@ -76,6 +76,7 @@ fingerprint records the isolation boundary and does not replace `cache_salt`.
 - `accounting_semantics` is `inclusive`, `additive`, or `ambiguous`.
 - `denominator_status` is `valid`, `ambiguous` (unresolved wrapper semantics, or no measured input), or `invalid` (an adapter invariant is contradicted, for example cached input above an inclusive input total). The aggregate takes the worst observed status: `invalid > ambiguous > valid`.
 - `warnings` carries the stable normalization warning codes; it is the only warning list.
+- Labeled OpenAI-compatible vendors (`provider` set to `moonshot`, `deepseek`, `qwen`, `minimax`, `xai`, `mistral`, `tencent`, `xiaomi`, `upstage`, `zai`, `yandex`, or their aliases) resolve to `inclusive` for OpenAI-shaped usage that carries a cached-token field (`cached_tokens`, `prompt_cache_hit_tokens`, `cached_token`, `cached_prompt_text_tokens`) and to `additive` when the record carries Anthropic-shaped `cache_read_input_tokens`/`cache_creation_input_tokens` without `prompt_tokens`. The label is the opt-in; unlabeled wrapper usage, and labeled usage with no cached-token field, stays `ambiguous`.
 
 Only a `valid` denominator supports a savings or hit-rate claim. Report `ambiguous` and `invalid` ratios as non-decision-grade evidence and fix accounting first.
 

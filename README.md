@@ -390,6 +390,12 @@ audit-prompt-caching/
     yandexgpt.md
     zai.md
     use-cases.md
+    moonshot.md
+    minimax.md
+    xai.md
+    mistral.md
+    tencent.md
+    xiaomi.md
   scripts/
     analyze_usage_logs.py
     analyze_routing_logs.py

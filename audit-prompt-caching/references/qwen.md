@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-08-11.
+Last reviewed: 2026-09-12.
 
 Verify before exact claims:
 - supported Qwen/DashScope models by region
@@ -19,6 +19,9 @@ Official sources:
 - Qwen vLLM deployment: https://qwen.readthedocs.io/en/stable/deployment/vllm.html
 - Responses API: https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses
 - Context cache: https://help.aliyun.com/en/model-studio/context-cache
+- Explicit cache best practice: https://help.aliyun.com/en/model-studio/explicit-cache-best-practice
+- Anthropic-compatible Messages API: https://www.alibabacloud.com/help/en/model-studio/anthropic-api-messages
+- Model pricing: https://help.aliyun.com/en/model-studio/model-pricing
 
 ## Stable Mechanics
 
@@ -30,9 +33,11 @@ Qwen can mean:
 
 Always identify which one is in use.
 
-DashScope docs describe both explicit and implicit context caching for supported models. Self-hosted Qwen follows the inference engine's cache behavior, so use the vLLM/SGLang reference for those deployments.
+DashScope docs describe both explicit and implicit context caching for supported models, and the two are mutually exclusive per request: a request carrying `cache_control` uses only explicit caching. Both need at least 1,024 cacheable tokens (explicit TTL 5 minutes, reset on hit; implicit TTL unspecified and implicit cannot be disabled). Snapshot models such as `qwen3.8-max-0902` and third-party models (DeepSeek, Kimi, GLM) are listed with explicit cache support per region. Self-hosted Qwen follows the inference engine's cache behavior, so use the vLLM/SGLang reference for those deployments.
 
-For the documented DashScope Responses flow, enable session cache with `x-dashscope-session-cache: enable` and continue with `previous_response_id`. This is distinct from a generic prefix hash: preserve the response lineage only within the intended conversation and do not log raw IDs. Inspect response cache-detail usage fields for the selected route; do not assume OpenAI field names are complete for Qwen.
+Explicit breakpoints on Qwen3.5+ are **message-level**: several `cache_control` markers inside one message's content array do not create separate breakpoints, multiple system messages merge into one segment, and `tools` are cached as part of the system message and cannot carry `cache_control`. Up to 4 markers per request. Older Qwen models support content-level breakpoints. A hit is also lost when the gap between the last content block and an existing cached block exceeds about 20 content blocks.
+
+For the documented DashScope Responses flow, enable session cache with `x-dashscope-session-cache: enable` (default `disable`) and continue with `previous_response_id`; a response `id` stays valid for 7 days and the cache engages once the cumulative context exceeds 1,024 tokens. Any character change in the system or user prompt, including whitespace, resets `cached_tokens` to 0. This is distinct from a generic prefix hash: preserve the response lineage only within the intended conversation and do not log raw IDs. Responses usage reports the total as `usage.input_tokens` and may expose both `input_tokens_details.cached_tokens` and `prompt_tokens_details.cached_tokens`, plus `prompt_tokens_details.cache_creation_input_tokens` with a nested `cache_creation.cache_type` fixed to `ephemeral`; do not assume OpenAI field names are complete for Qwen.
 
 ## Provider Checks
 
@@ -40,7 +45,11 @@ For the documented DashScope Responses flow, enable session cache with `x-dashsc
 
 Check whether the model and region support context caching. Verify whether the project uses explicit `cache_control` style caching or implicit caching.
 
-For OpenAI-compatible responses, inspect `usage.prompt_tokens_details.cached_tokens` when present. For explicit-cache examples, also inspect `cache_creation_input_tokens` so the audit can distinguish cache writes from cache reads.
+For OpenAI-compatible responses, inspect `usage.prompt_tokens_details.cached_tokens` when present. For explicit-cache examples, also inspect `cache_creation_input_tokens` so the audit can distinguish cache writes from cache reads. The FAQ says `input_tokens` may exceed `cached_tokens + cache_creation_input_tokens` by a few backend-appended tokens (typically 10 or fewer), so a ratio slightly below 1.0 on a full hit is normal, not a leak.
+
+Pricing is not uniform: the standard rates are explicit creation 125%, explicit hit 10%, implicit hit 20% of the input price, but qwen3.8-max, qwen3.8-flash, and qwen3.8-2.4t-a95b (and some third-party models) use different cached rates, and Singapore list prices differ from Beijing/US. Read the model's own pricing row before estimating savings.
+
+Regional OpenAI-compatible and Anthropic-compatible base URLs are now workspace-scoped (`https://{WorkspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1` and `/apps/anthropic`), with legacy `dashscope.aliyuncs.com`, `coding.dashscope.aliyuncs.com` (Coding Plan), and Token Plan hosts still documented. Caches are isolated per account and per model, so a host, workspace, or model switch is a cold start.
 
 ### Self-Hosted Qwen
 
@@ -75,7 +84,9 @@ cached = details.get("cached_tokens", 0)
 created = details.get("cache_creation_input_tokens", 0)
 ```
 
-For Anthropic-compatible routes, check `usage.cache_read_input_tokens` and `usage.cache_creation_input_tokens`.
+For Anthropic-compatible routes, check `usage.cache_read_input_tokens` and `usage.cache_creation_input_tokens`; they are reported separately from `input_tokens` (additive), and on streams the full set arrives in `message_delta`, not `message_start`. The Messages page says `cache_control` may sit on tool-use blocks while the best-practice page says markers cannot target tools; treat tool-level breakpoints as unverified until a wire capture shows a write.
+
+The bundled `analyze_usage_logs.py` reads `prompt_tokens_details.cache_creation_input_tokens` inside the OpenAI-shaped adapter as inclusive; label records `provider: qwen` (or `dashscope`) and the adapter applies inclusive semantics to the OpenAI shape and additive semantics when the Anthropic-shaped `cache_read_input_tokens`/`cache_creation_input_tokens` fields are present.
 
 If `created > 0` and `cached == 0` across repeated calls, the cache is being written but not reused; check prefix stability, TTL, route/model support, and region-specific response fields.
 

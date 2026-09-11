@@ -88,10 +88,12 @@ PROVIDER_PATTERNS = {
     ],
     "bedrock": [
         r"\bbedrock-runtime\b",
+        r"\bbedrock-mantle\b",
         r"\bBedrockRuntime\b",
         r"\bclient\.converse\b",
         r"\binvoke_model\b",
         r"\bcachePoint\b",
+        r"\bcacheDetails\b",
         r"\bCacheReadInputTokens\b",
         r"\bCacheWriteInputTokens\b",
     ],
@@ -145,6 +147,45 @@ PROVIDER_PATTERNS = {
         r"\bqwen\b",
         r"\bbailian\b",
     ],
+    "moonshot": [
+        r"\bmoonshot\b",
+        r"\bmoonshotai\b",
+        r"\bapi\.moonshot\.(?:ai|cn)\b",
+        r"\bplatform\.kimi\.(?:ai|com)\b",
+        r"\bkimi-k\d",
+        r"\bMOONSHOT_API_KEY\b",
+    ],
+    "minimax": [
+        r"\bminimax/",
+        r"\bapi\.minimax\.(?:io|chat)\b",
+        r"\bMiniMax-M\d",
+        r"\bMINIMAX_API_KEY\b",
+    ],
+    "xai": [
+        r"\bapi\.x\.ai\b",
+        r"\bx-grok-conv-id\b",
+        r"\bgrok-\d",
+        r"\bXAI_API_KEY\b",
+        r"\bcached_prompt_text_tokens\b",
+    ],
+    "mistral": [
+        r"\bmistralai\b",
+        r"\bapi\.mistral\.ai\b",
+        r"\bmistral-(?:large|medium|small|tiny)\b",
+        r"\bMISTRAL_API_KEY\b",
+    ],
+    "tencent": [
+        r"\bhunyuan\b",
+        r"\btokenhub(?:-intl)?\.tencentcloudmaas\.com\b",
+        r"\b(?:tencent/hy\d|hy[34]-preview)\b",
+        r"\bTENCENT_API_KEY\b",
+    ],
+    "xiaomi": [
+        r"\bxiaomimimo\b",
+        r"\bapi\.xiaomimimo\.com\b",
+        r"\bmimo-v\d",
+        r"\bMIMO_API_KEY\b",
+    ],
 }
 
 
@@ -167,10 +208,12 @@ SIGNAL_LABELS = {
     r"\bmid-conversation-output-config-\d{4}-\d{2}-\d{2}\b": "mid-conversation-output-config-beta",
     # Bedrock
     r"\bbedrock-runtime\b": "bedrock-runtime",
+    r"\bbedrock-mantle\b": "bedrock-mantle",
     r"\bBedrockRuntime\b": "BedrockRuntime",
     r"\bclient\.converse\b": "client_converse",
     r"\binvoke_model\b": "invoke_model",
     r"\bcachePoint\b": "cachePoint",
+    r"\bcacheDetails\b": "cacheDetails",
     r"\bCacheReadInputTokens\b": "CacheReadInputTokens",
     r"\bCacheWriteInputTokens\b": "CacheWriteInputTokens",
     # OpenRouter
@@ -215,6 +258,39 @@ SIGNAL_LABELS = {
     r"\bdashscope\b": "dashscope",
     r"\bqwen\b": "qwen",
     r"\bbailian\b": "bailian",
+    # Moonshot / Kimi
+    r"\bmoonshot\b": "moonshot",
+    r"\bmoonshotai\b": "moonshotai",
+    r"\bapi\.moonshot\.(?:ai|cn)\b": "moonshot_api",
+    r"\bplatform\.kimi\.(?:ai|com)\b": "kimi_platform",
+    r"\bkimi-k\d": "kimi_model",
+    r"\bMOONSHOT_API_KEY\b": "MOONSHOT_API_KEY",
+    # MiniMax
+    r"\bminimax/": "minimax_slug",
+    r"\bapi\.minimax\.(?:io|chat)\b": "minimax_api",
+    r"\bMiniMax-M\d": "minimax_model",
+    r"\bMINIMAX_API_KEY\b": "MINIMAX_API_KEY",
+    # xAI Grok
+    r"\bapi\.x\.ai\b": "xai_api",
+    r"\bx-grok-conv-id\b": "x-grok-conv-id",
+    r"\bgrok-\d": "grok_model",
+    r"\bXAI_API_KEY\b": "XAI_API_KEY",
+    r"\bcached_prompt_text_tokens\b": "cached_prompt_text_tokens",
+    # Mistral
+    r"\bmistralai\b": "mistralai",
+    r"\bapi\.mistral\.ai\b": "mistral_api",
+    r"\bmistral-(?:large|medium|small|tiny)\b": "mistral_model",
+    r"\bMISTRAL_API_KEY\b": "MISTRAL_API_KEY",
+    # Tencent Hunyuan
+    r"\bhunyuan\b": "hunyuan",
+    r"\btokenhub(?:-intl)?\.tencentcloudmaas\.com\b": "tokenhub_api",
+    r"\b(?:tencent/hy\d|hy[34]-preview)\b": "hunyuan_model",
+    r"\bTENCENT_API_KEY\b": "TENCENT_API_KEY",
+    # Xiaomi MiMo
+    r"\bxiaomimimo\b": "xiaomimimo",
+    r"\bapi\.xiaomimimo\.com\b": "mimo_api",
+    r"\bmimo-v\d": "mimo_model",
+    r"\bMIMO_API_KEY\b": "MIMO_API_KEY",
 }
 
 LEGACY_PATTERN_ALIASES = {

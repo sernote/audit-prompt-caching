@@ -180,6 +180,11 @@
       "id": 36,
       "prompt": "We put a configuration_update item into a gpt-5.6-terra Responses request and also send one on gpt-6-astra with reasoning.mode pro. Is the cache preserved?",
       "expected_output": "No on both. configuration_update is documented only for gpt-6-astra in standard mode; other models keep effort request-level, and pro mode rejects the item. Run layout_linter.py to surface AP-15 findings and verify cache-read telemetry instead of assuming preservation."
+    },
+    {
+      "id": 37,
+      "prompt": "Our agent calls Moonshot Kimi via the OpenAI SDK. usage.cached_tokens is nonzero on the direct API, but the Anthropic-compatible Messages route shows cache_creation_input_tokens=0 and OpenRouter shows cached_tokens=0. We also vary reasoning effort per step. Is the cache broken?",
+      "expected_output": "Treat the top-level cached_tokens as an inclusive subset of prompt_tokens and label records provider: moonshot; cache_creation_input_tokens=0 on the Messages route reflects implicit writes, not a missing cache. Check that the prior prompt exceeded 256 tokens, that effort changes are not splitting the prefix, and join OpenRouter usage with the served provider and sticky session before comparing. No cache_id or legacy /v1/caching port for kimi-k2 models."
     }
   ]
 }
