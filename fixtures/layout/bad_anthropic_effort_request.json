@@ -1,0 +1,11 @@
+{
+  "model": "claude-fable-5",
+  "max_tokens": 4096,
+  "output_config": {"effort": "high"},
+  "messages": [
+    {"role": "user", "content": "Plan a migration from SQLite to PostgreSQL in three short steps."},
+    {"role": "assistant", "content": "1. Export. 2. Create schema. 3. Import and verify."},
+    {"role": "system", "content": [], "output_config": {"effort": "low"}},
+    {"role": "user", "content": "Summarize the plan in one sentence."}
+  ]
+}

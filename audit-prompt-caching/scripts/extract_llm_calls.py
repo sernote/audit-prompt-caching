@@ -75,12 +75,16 @@ PROVIDER_PATTERNS = {
         r"\bchat\.completions\.create\s*\(",
         r"\bprompt_cache_key\b",
         r"\bprompt_cache_retention\b",
+        r"\bprompt_cache_options\b",
+        r"\bconfiguration_update\b",
     ],
     "anthropic": [
         r"\banthropic\b",
         r"\bAnthropic\s*\(",
         r"\bmessages\.create\s*\(",
         r"\bcache_control\b",
+        r"\boutput_config\b",
+        r"\bmid-conversation-output-config-\d{4}-\d{2}-\d{2}\b",
     ],
     "bedrock": [
         r"\bbedrock-runtime\b",
@@ -193,11 +197,15 @@ SIGNAL_LABELS = {
     r"\bchat\.completions\.create\s*\(": "chat_completions_create",
     r"\bprompt_cache_key\b": "prompt_cache_key",
     r"\bprompt_cache_retention\b": "prompt_cache_retention",
+    r"\bprompt_cache_options\b": "prompt_cache_options",
+    r"\bconfiguration_update\b": "configuration_update",
     # Anthropic
     r"\banthropic\b": "anthropic",
     r"\bAnthropic\s*\(": "Anthropic",
     r"\bmessages\.create\s*\(": "messages_create",
     r"\bcache_control\b": "cache_control",
+    r"\boutput_config\b": "output_config",
+    r"\bmid-conversation-output-config-\d{4}-\d{2}-\d{2}\b": "mid-conversation-output-config-beta",
     # Bedrock
     r"\bbedrock-runtime\b": "bedrock-runtime",
     r"\bbedrock-mantle\b": "bedrock-mantle",

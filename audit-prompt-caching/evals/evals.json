@@ -168,6 +168,21 @@
     },
     {
       "id": 34,
+      "prompt": "A coding agent on gpt-6-astra sets reasoning.effort=low for file reads and high for planning by changing the request-level field each step. cached_tokens is near zero on every step even though the system prompt and tools are constant. What is wrong?",
+      "expected_output": "Change needed: yes. Request-level reasoning.effort is rendered into the prefix, so each switch restarts the cache (AP-15). Keep request-level effort constant and append a configuration_update input item before the turn that needs a different level; standard single-agent mode only, rejected in pro mode. Validate with cached_tokens on the turn after the change; do not claim savings without current prices."
+    },
+    {
+      "id": 35,
+      "prompt": "Мы перешли на Claude Fable 5.1 и меняем output_config.effort между запросами одного диалога. cache_creation_input_tokens растёт каждый ход, cache_read_input_tokens почти ноль. Что проверить?",
+      "expected_output": "Ответ на русском. Смена top-level output_config.effort перерисовывает промпт и сбрасывает кэш сообщений (AP-15). На Fable 5.1, Mythos 5.1 и Opus 5 использовать per-message effort: role system с пустым content и output_config.effort плюс beta-заголовок mid-conversation-output-config-2026-07-01; на Claude API и Google Cloud, не на Bedrock. Проверить, что чтения кэша сохраняются на следующем ходу; учесть 0.025x цену чтения и 512-токенный минимум."
+    },
+    {
+      "id": 36,
+      "prompt": "We put a configuration_update item into a gpt-5.6-terra Responses request and also send one on gpt-6-astra with reasoning.mode pro. Is the cache preserved?",
+      "expected_output": "No on both. configuration_update is documented only for gpt-6-astra in standard mode; other models keep effort request-level, and pro mode rejects the item. Run layout_linter.py to surface AP-15 findings and verify cache-read telemetry instead of assuming preservation."
+    },
+    {
+      "id": 37,
       "prompt": "Our agent calls Moonshot Kimi via the OpenAI SDK. usage.cached_tokens is nonzero on the direct API, but the Anthropic-compatible Messages route shows cache_creation_input_tokens=0 and OpenRouter shows cached_tokens=0. We also vary reasoning effort per step. Is the cache broken?",
       "expected_output": "Treat the top-level cached_tokens as an inclusive subset of prompt_tokens and label records provider: moonshot; cache_creation_input_tokens=0 on the Messages route reflects implicit writes, not a missing cache. Check that the prior prompt exceeded 256 tokens, that effort changes are not splitting the prefix, and join OpenRouter usage with the served provider and sticky session before comparing. No cache_id or legacy /v1/caching port for kimi-k2 models."
     }

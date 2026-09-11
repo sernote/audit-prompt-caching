@@ -59,4 +59,4 @@ unverified in references (Anthropic-compatible routes of DeepSeek, xAI, z.ai,
 Xiaomi; Yandex Responses usage; Tencent field spelling; Moonshot legacy API)
 need a wire capture before exact claims.
 
-Remeasured ceilings: SKILL baseline 6478 tokens, deferred corpus 71756 tokens.
+Remeasured ceilings after merging origin/main (PR #24): SKILL baseline 6761 tokens, deferred corpus 77286 tokens.

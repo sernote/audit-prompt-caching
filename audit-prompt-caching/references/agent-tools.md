@@ -33,6 +33,7 @@ got smaller: validate stable `tools`/prefix hashes and provider usage per step.
 - Preserve a stable anchor: system/developer instructions, tools, schemas, first stable messages.
 - Compact bulky tool results before summarizing early history; preserve paths, IDs, URLs, and small structured facts.
 - Treat MCP registry changes as schema changes. Freeze or version tool definitions for a session.
+- Treat effort and reasoning configuration as prefix content. A per-step effort router (low for routine steps, high for hard ones) restarts the cache on every step unless it uses the provider's positional form: `configuration_update` input items on `gpt-6-astra` standard mode, or an effort-only `role: "system"` message with the `mid-conversation-output-config-2026-07-01` beta on Claude Fable 5.1, Mythos 5.1, and Opus 5. Log the effort level and change type per step next to the cache read fields.
 - Treat provider conversation and reasoning handles as cache-relevant state. Examples include Gemini `previous_interaction_id`, Qwen `previous_response_id`, and a provider's documented thinking/reasoning continuation. Preserve them only for the same intended conversation; an opaque handle may carry user context and must be logged as a keyed hash, not as a raw identifier.
 
 ## Fresh Ungrouped Restarts Reset an Auto-Generated Cache Key

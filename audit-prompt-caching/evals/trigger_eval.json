@@ -84,6 +84,14 @@
     "should_trigger": true
   },
   {
+    "query": "Our GPT-6 Astra agent lowers reasoning.effort for routine steps and cached_tokens dropped to zero after every switch",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude Fable 5.1: does a per-message output_config effort change keep cache_read_input_tokens, and which beta header is needed?",
+    "should_trigger": true
+  },
+  {
     "query": "Explain OpenRouter response cache behavior for an ordinary JSON API response",
     "should_trigger": false
   },
@@ -121,6 +129,10 @@
   },
   {
     "query": "Explain OpenRouter model routing basics for a beginner without prompt caching or costs",
+    "should_trigger": false
+  },
+  {
+    "query": "Which reasoning effort level gives the best answer quality on GPT-6 Astra for a one-off essay?",
     "should_trigger": false
   },
   {
