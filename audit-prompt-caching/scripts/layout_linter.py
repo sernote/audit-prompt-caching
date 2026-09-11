@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Lint JSON LLM request payloads for prompt-cache layout anti-patterns."""
+"""Lint JSON LLM request payloads for prompt-cache layout anti-patterns.
+
+Covers volatile prefixes, tool/schema drift, GPT-5.6/GPT-6 cache controls
+(AP-11), and mid-conversation effort continuity (AP-15): OpenAI
+`configuration_update` items and Claude per-message `output_config.effort`.
+Request headers are not visible in a payload, so the Claude beta header is
+reported as a requirement rather than validated.
+"""
 
 import argparse
 import json
@@ -32,6 +39,15 @@ STABLE_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 GPT56_MODELS = {"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+GPT6_MODELS = {"gpt-6", "gpt-6-astra"}
+EXPLICIT_CACHE_MODELS = GPT56_MODELS | GPT6_MODELS
+# Direct OpenAI models documented for the positional `configuration_update`
+# input item (standard, single-agent mode only). Verify current docs.
+CONFIGURATION_UPDATE_MODELS = {"gpt-6-astra"}
+# Claude models documented for per-message `output_config.effort` inside a
+# `role: "system"` message (beta). Verify current docs before extending.
+PER_MESSAGE_EFFORT_MODELS = {"claude-fable-5-1", "claude-mythos-5-1", "claude-opus-5"}
+PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
 SUPPORTED_CACHE_BLOCKS = {
     "chat": {"text", "image_url", "input_audio", "file", "refusal"},
     "responses": {"input_text", "input_image", "input_file"},
@@ -180,7 +196,16 @@ def lint_dynamic_schema(payload):
 
 def direct_gpt56(payload):
     model = payload.get("model")
-    return model in GPT56_MODELS
+    return model in EXPLICIT_CACHE_MODELS
+
+
+def explicit_cache_family(payload):
+    model = payload.get("model")
+    if model in GPT6_MODELS:
+        return "gpt-6"
+    if model in GPT56_MODELS:
+        return "gpt-5.6"
+    return "unknown"
 
 
 def api_surface(payload):
@@ -232,7 +257,7 @@ def cache_issue(message, path, fix, severity="high"):
 def lint_gpt56_cache_policy(payload):
     surface = api_surface(payload)
     policy = {
-        "model_support": "gpt-5.6" if direct_gpt56(payload) else "unknown",
+        "model_support": explicit_cache_family(payload),
         "api_surface": surface,
         "mode": None,
         "ttl": None,
@@ -349,10 +374,160 @@ def lint_gpt56_cache_policy(payload):
     return policy, findings
 
 
+def effort_issue(message, path, fix, severity="high"):
+    return finding(
+        "AP-15",
+        severity,
+        "effort-continuity",
+        message,
+        path,
+        fix,
+        "compare cache read fields on the turn after the effort change",
+    )
+
+
+def detect_provider(payload):
+    model = payload.get("model")
+    model_text = model if isinstance(model, str) else ""
+    if model_text.startswith("claude") or "anthropic" in model_text:
+        return "anthropic"
+    if "system" in payload and "messages" in payload and "input" not in payload:
+        return "anthropic"
+    if model_text or "messages" in payload or "input" in payload:
+        return "openai"
+    return None
+
+
+def request_effort(payload, provider):
+    if provider == "anthropic":
+        config = payload.get("output_config")
+        return config.get("effort") if isinstance(config, dict) else None
+    reasoning = payload.get("reasoning")
+    if isinstance(reasoning, dict) and "effort" in reasoning:
+        return reasoning.get("effort")
+    return payload.get("reasoning_effort")
+
+
+def lint_openai_configuration_updates(payload, policy):
+    findings = []
+    items = payload.get("input")
+    if not isinstance(items, list):
+        return findings
+    model = payload.get("model")
+    reasoning = payload.get("reasoning")
+    mode = reasoning.get("mode") if isinstance(reasoning, dict) else None
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or item.get("type") != "configuration_update":
+            continue
+        path = f"$.input[{index}]"
+        policy["per_message_effort_items"] += 1
+        if model not in CONFIGURATION_UPDATE_MODELS:
+            findings.append(
+                effort_issue(
+                    "configuration_update is documented only for gpt-6-astra; "
+                    "other models keep effort in the request-level reasoning field",
+                    path,
+                    "remove the item or move the route to gpt-6-astra before "
+                    "relying on cache-preserving effort changes",
+                )
+            )
+        if mode == "pro":
+            findings.append(
+                effort_issue(
+                    "configuration_update is rejected in reasoning.mode pro",
+                    path,
+                    "keep mid-conversation effort changes on standard mode",
+                )
+            )
+        update = item.get("reasoning")
+        extra_keys = set(item) - {"type", "id", "reasoning"}
+        update_keys = set(update) - {"effort"} if isinstance(update, dict) else set()
+        if extra_keys or update_keys or not isinstance(update, dict):
+            findings.append(
+                effort_issue(
+                    "configuration_update changes only reasoning.effort",
+                    path,
+                    "send {\"type\":\"configuration_update\","
+                    "\"reasoning\":{\"effort\":...}} and nothing else",
+                    severity="medium",
+                )
+            )
+    return findings
+
+
+def lint_anthropic_per_message_effort(payload, policy):
+    findings = []
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return findings
+    model = payload.get("model")
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict) or message.get("role") != "system":
+            continue
+        if "output_config" not in message:
+            continue
+        path = f"$.messages[{index}]"
+        policy["per_message_effort_items"] += 1
+        if model not in PER_MESSAGE_EFFORT_MODELS:
+            findings.append(
+                effort_issue(
+                    "per-message effort in a system message is documented only "
+                    "for Claude Fable 5.1, Claude Mythos 5.1, and Claude Opus 5; "
+                    "other models return 400 or restart the cache",
+                    path,
+                    "hold top-level output_config.effort constant for this model "
+                    "or move the route to a supported model",
+                )
+            )
+        config = message.get("output_config")
+        if not isinstance(config, dict) or set(config) != {"effort"}:
+            findings.append(
+                effort_issue(
+                    "per-message output_config carries only effort",
+                    path,
+                    "send output_config as {\"effort\": <level>}",
+                    severity="medium",
+                )
+            )
+    return findings
+
+
+def lint_effort_continuity(payload):
+    provider = detect_provider(payload)
+    policy = {
+        "provider": provider,
+        "request_effort": request_effort(payload, provider) if provider else None,
+        "per_message_effort_items": 0,
+        "per_message_effort_supported": False,
+        "beta_header": None,
+        "validated": False,
+        "valid": None,
+    }
+    if provider == "openai":
+        policy["per_message_effort_supported"] = (
+            payload.get("model") in CONFIGURATION_UPDATE_MODELS
+        )
+        findings = lint_openai_configuration_updates(payload, policy)
+    elif provider == "anthropic":
+        policy["per_message_effort_supported"] = (
+            payload.get("model") in PER_MESSAGE_EFFORT_MODELS
+        )
+        if policy["per_message_effort_supported"]:
+            policy["beta_header"] = PER_MESSAGE_EFFORT_BETA
+        findings = lint_anthropic_per_message_effort(payload, policy)
+    else:
+        return policy, []
+    if policy["per_message_effort_items"]:
+        policy["validated"] = True
+        policy["valid"] = not findings
+    return policy, findings
+
+
 def lint(payload):
     if not isinstance(payload, dict):
         raise ValueError("request payload must be a JSON object")
     cache_policy, cache_findings = lint_gpt56_cache_policy(payload)
+    effort_policy, effort_findings = lint_effort_continuity(payload)
     findings = [
         item
         for item in (
@@ -363,6 +538,7 @@ def lint(payload):
         if item
     ]
     findings.extend(cache_findings)
+    findings.extend(effort_findings)
     clean_checks = []
     found_rule_ids = {item["rule_id"] for item in findings}
     for rule_id in ("AP-1", "AP-2"):
@@ -370,11 +546,14 @@ def lint(payload):
             clean_checks.append(rule_id)
     if cache_policy["validated"] and cache_policy["valid"]:
         clean_checks.append("AP-11")
+    if effort_policy["validated"] and effort_policy["valid"]:
+        clean_checks.append("AP-15")
     return {
         "status": "findings" if findings else "ok",
         "findings": findings,
         "clean_checks": clean_checks,
         "cache_policy": cache_policy,
+        "effort_policy": effort_policy,
     }
 
 

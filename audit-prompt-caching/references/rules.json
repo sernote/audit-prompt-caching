@@ -150,6 +150,16 @@
       "fix": "Within an authorized sharing group, align algorithm, effective seed, serialization/runtime, and all cache-key inputs; retain a separate cache_salt boundary.",
       "avoid": "Logging raw seed, storing or transmitting a shared xxhash seed outside protected secret configuration, using a predictable non-crypto seed, using PYTHONHASHSEED as tenant isolation, or replacing cache_salt with a hash seed.",
       "validation": "For P2P, verify handshake and reject-on-mismatch plus config fingerprint/block length and a read; for FS/OBJ, independently verify config and a real cross-process read without exposing the seed."
+    },
+    {
+      "id": "AP-15",
+      "category": "effort-continuity",
+      "default_severity": "medium",
+      "summary": "Effort or reasoning configuration changes between requests of one cached conversation.",
+      "search": "reasoning.effort, reasoning_effort, output_config.effort, thinking budget_tokens, configuration_update, role system output_config, per-request effort routing.",
+      "fix": "Hold request-level effort/thinking constant inside a cached conversation; on gpt-6-astra append a configuration_update input item, on Claude Fable 5.1/Mythos 5.1/Opus 5 append an effort-only role system message with the mid-conversation-output-config beta header.",
+      "avoid": "Toggling top-level effort per step, using configuration_update in pro mode or on other models, sending per-message output_config to models without per-message effort, or calling an effort change free without cache-read telemetry.",
+      "validation": "Cache read fields hold on the turn after the change; usage buckets split by effort level and change type."
     }
   ]
 }

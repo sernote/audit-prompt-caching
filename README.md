@@ -110,7 +110,10 @@ python3 audit-prompt-caching/scripts/layout_linter.py \
 
 `layout_linter.py` accepts Chat-style `messages` payloads and Responses-style
 `input` payloads when checking for volatile early content, unstable tool order,
-and dynamic schema fields.
+dynamic schema fields, GPT-5.6/GPT-6 Astra cache controls, and mid-conversation
+effort changes (`configuration_update` items, Claude per-message
+`output_config.effort`). Fixtures for the effort checks live in
+`fixtures/layout/*effort_request.json`.
 
 ## Synthetic Fixture Signal
 
