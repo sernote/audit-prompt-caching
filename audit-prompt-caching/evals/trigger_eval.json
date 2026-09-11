@@ -122,5 +122,9 @@
   {
     "query": "Explain OpenRouter model routing basics for a beginner without prompt caching or costs",
     "should_trigger": false
+  },
+  {
+    "query": "Kimi K2.6 through api.moonshot.ai returns cached_tokens=0 on every call even though the 3k-token system prompt is identical",
+    "should_trigger": true
   }
 ]

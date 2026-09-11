@@ -386,6 +386,7 @@ audit-prompt-caching/
     qwen.md
     yandexgpt.md
     zai.md
+    moonshot.md
     use-cases.md
   scripts/
     analyze_usage_logs.py

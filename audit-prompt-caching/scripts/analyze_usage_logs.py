@@ -363,6 +363,42 @@ class OpenAIUsageAdapter(UsageSurfaceAdapter):
         return extract_openai(record)
 
 
+# OpenAI-compatible vendors whose official docs describe ``cached_tokens`` as a
+# subset of the prompt total (inclusive) and, where offered, an
+# Anthropic-compatible Messages route with additive cache_read/cache_creation
+# fields. A record must carry one of these labels in ``provider`` to opt in;
+# unlabeled wrapper usage stays ambiguous. Kept in sync with references/.
+OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS = frozenset(
+    {
+        "moonshot",
+        "moonshotai",
+        "kimi",
+        "minimax",
+        "xai",
+        "x-ai",
+        "grok",
+        "mistral",
+        "mistralai",
+        "tencent",
+        "hunyuan",
+        "xiaomi",
+        "mimo",
+        "upstage",
+        "zai",
+        "z-ai",
+        "zhipu",
+        "yandex",
+        "yandexgpt",
+    }
+)
+
+ANTHROPIC_SHAPE_FIELDS = ("cache_read_input_tokens", "cache_creation_input_tokens")
+
+
+def has_anthropic_shape(usage):
+    return has_any_field(usage, ANTHROPIC_SHAPE_FIELDS)
+
+
 class AnthropicUsageAdapter(UsageSurfaceAdapter):
     shape = "anthropic"
     provider = "anthropic-compatible"
@@ -370,16 +406,36 @@ class AnthropicUsageAdapter(UsageSurfaceAdapter):
 
     def matches(self, record):
         provider = provider_name(record)
-        if provider:
-            return provider == "anthropic"
         usage = usage_object(record)
-        return (
-            "cache_read_input_tokens" in usage
-            or "cache_creation_input_tokens" in usage
-        )
+        if provider:
+            return provider == "anthropic" or (
+                provider in OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS
+                and has_anthropic_shape(usage)
+            )
+        return has_anthropic_shape(usage)
 
     def extract(self, record):
         return extract_anthropic(record)
+
+
+class OpenAICompatibleUsageAdapter(UsageSurfaceAdapter):
+    """Labeled OpenAI-compatible vendor usage with documented inclusive cache fields."""
+
+    shape = "openai-compatible"
+    provider = "openai-compatible"
+    semantics = "inclusive"
+
+    def matches(self, record):
+        provider = provider_name(record)
+        if provider not in OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS:
+            return False
+        usage = usage_object(record)
+        if has_anthropic_shape(usage):
+            return False
+        return "prompt_tokens" in usage or "input_tokens" in usage
+
+    def extract(self, record):
+        return extract_openai(record)
 
 
 class BedrockUsageAdapter(UsageSurfaceAdapter):
@@ -450,6 +506,7 @@ class UnknownUsageAdapter(UsageSurfaceAdapter):
 USAGE_SURFACE_ADAPTERS = (
     OpenAIUsageAdapter(),
     AnthropicUsageAdapter(),
+    OpenAICompatibleUsageAdapter(),
     BedrockUsageAdapter(),
     GeminiInteractionsUsageAdapter(),
     GeminiGenerateContentUsageAdapter(),

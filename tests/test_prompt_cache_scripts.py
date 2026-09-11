@@ -24,11 +24,11 @@ FIXTURES = ROOT / "fixtures"
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # The optional normalized-routing helper hook adds 53 estimated tokens to the
 # 6341 baseline; provider guidance and the Routing Outcome Gate are preserved.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6394
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6431
 # Remeasured corpus after the September 2026 provider prefix-cache refresh.
 # Includes executable/eval source, not just references loaded by an agent.
 # See docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 65748
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 67706
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -770,6 +770,61 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "usage.prompt_tokens_details.cache_creation_input_tokens",
         )
         self.assertEqual(event["cache_creation_input_tokens"], 2156)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_treats_labeled_moonshot_chat_usage_as_inclusive(self):
+        # Moonshot/Kimi Chat Completions report cached_tokens at the usage top
+        # level and document it as a subset of prompt_tokens.
+        event = self.normalized_event(
+            {
+                "provider": "moonshot",
+                "model": "kimi-k2.6",
+                "usage": {
+                    "prompt_tokens": 3000,
+                    "cached_tokens": 2560,
+                    "completion_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["provider"], "moonshot")
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["source_fields"]["cached_tokens"], "usage.cached_tokens")
+        self.assertEqual(event["total_input_tokens"], 3000)
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_keeps_unlabeled_top_level_cached_tokens_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "prompt_tokens": 3000,
+                    "cached_tokens": 2560,
+                    "completion_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_routes_labeled_vendor_messages_usage_to_additive_adapter(self):
+        # The same vendor's Anthropic-compatible Messages route reports
+        # additive cache_read/cache_creation fields.
+        event = self.normalized_event(
+            {
+                "provider": "moonshot",
+                "usage": {
+                    "input_tokens": 400,
+                    "cache_read_input_tokens": 2560,
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["total_input_tokens"], 2960)
         self.assertEqual(event["denominator_status"], "valid")
 
     def test_analyze_usage_logs_reports_anthropic_usage_provenance(self):
@@ -4321,6 +4376,40 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertIsInstance(rule[key], str, rule["id"])
                 self.assertTrue(rule[key].strip(), rule["id"])
 
+    def test_moonshot_reference_and_detection_cover_kimi_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "moonshot.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "256 tokens",
+            "`usage.cached_tokens`",
+            "`cache_read_input_tokens`",
+            "reasoning effort",
+            "`prompt_cache_key`",
+            "/v1/caching",
+            "provider: moonshot",
+        ):
+            self.assertIn(required, reference)
+        skill = (root / "SKILL.md").read_text()
+        self.assertIn("`references/moonshot.md`", skill)
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "kimi.py").write_text(
+                "client = OpenAI(base_url='https://api.moonshot.ai/v1')\n"
+                "model = 'kimi-k2.6'\n"
+            )
+            output = module.find_matches(tmp_path)
+        self.assertEqual(output["providers"]["moonshot"], 2)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("moonshot_api", signals)
+        self.assertIn("kimi_model", signals)
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
@@ -4927,7 +5016,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6394,
+            6431,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(

@@ -143,6 +143,14 @@ PROVIDER_PATTERNS = {
         r"\bqwen\b",
         r"\bbailian\b",
     ],
+    "moonshot": [
+        r"\bmoonshot\b",
+        r"\bmoonshotai\b",
+        r"\bapi\.moonshot\.(?:ai|cn)\b",
+        r"\bplatform\.kimi\.(?:ai|com)\b",
+        r"\bkimi-k\d",
+        r"\bMOONSHOT_API_KEY\b",
+    ],
 }
 
 
@@ -211,6 +219,13 @@ SIGNAL_LABELS = {
     r"\bdashscope\b": "dashscope",
     r"\bqwen\b": "qwen",
     r"\bbailian\b": "bailian",
+    # Moonshot / Kimi
+    r"\bmoonshot\b": "moonshot",
+    r"\bmoonshotai\b": "moonshotai",
+    r"\bapi\.moonshot\.(?:ai|cn)\b": "moonshot_api",
+    r"\bplatform\.kimi\.(?:ai|com)\b": "kimi_platform",
+    r"\bkimi-k\d": "kimi_model",
+    r"\bMOONSHOT_API_KEY\b": "MOONSHOT_API_KEY",
 }
 
 LEGACY_PATTERN_ALIASES = {
