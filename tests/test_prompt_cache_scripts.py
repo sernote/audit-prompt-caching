@@ -25,10 +25,10 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # The optional normalized-routing helper hook adds 53 estimated tokens to the
 # 6341 baseline; provider guidance and the Routing Outcome Gate are preserved.
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6394
-# Remeasured corpus after the pinned router API-path correction and eval 33.
+# Remeasured corpus after the September 2026 provider prefix-cache refresh.
 # Includes executable/eval source, not just references loaded by an agent.
-# See docs/superpowers/plans/2026-09-06-simplify-first-audit.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 60163
+# See docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 60797
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
