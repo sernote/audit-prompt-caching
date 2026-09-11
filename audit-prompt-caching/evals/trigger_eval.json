@@ -126,5 +126,9 @@
   {
     "query": "Kimi K2.6 through api.moonshot.ai returns cached_tokens=0 on every call even though the 3k-token system prompt is identical",
     "should_trigger": true
+  },
+  {
+    "query": "MiniMax-M3 via api.minimax.io/anthropic: cache_creation_input_tokens grows every turn but cache_read_input_tokens stays 0 with four cache_control markers",
+    "should_trigger": true
   }
 ]

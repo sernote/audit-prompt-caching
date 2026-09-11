@@ -388,6 +388,7 @@ audit-prompt-caching/
     zai.md
     moonshot.md
     use-cases.md
+    minimax.md
   scripts/
     analyze_usage_logs.py
     analyze_routing_logs.py

@@ -151,6 +151,12 @@ PROVIDER_PATTERNS = {
         r"\bkimi-k\d",
         r"\bMOONSHOT_API_KEY\b",
     ],
+    "minimax": [
+        r"\bminimax\b",
+        r"\bapi\.minimax\.(?:io|chat)\b",
+        r"\bMiniMax-M\d",
+        r"\bMINIMAX_API_KEY\b",
+    ],
 }
 
 
@@ -226,6 +232,11 @@ SIGNAL_LABELS = {
     r"\bplatform\.kimi\.(?:ai|com)\b": "kimi_platform",
     r"\bkimi-k\d": "kimi_model",
     r"\bMOONSHOT_API_KEY\b": "MOONSHOT_API_KEY",
+    # MiniMax
+    r"\bminimax\b": "minimax",
+    r"\bapi\.minimax\.(?:io|chat)\b": "minimax_api",
+    r"\bMiniMax-M\d": "minimax_model",
+    r"\bMINIMAX_API_KEY\b": "MINIMAX_API_KEY",
 }
 
 LEGACY_PATTERN_ALIASES = {
