@@ -130,5 +130,9 @@
   {
     "query": "MiniMax-M3 via api.minimax.io/anthropic: cache_creation_input_tokens grows every turn but cache_read_input_tokens stays 0 with four cache_control markers",
     "should_trigger": true
+  },
+  {
+    "query": "grok-4.6 via api.x.ai shows cached_tokens dropping to zero whenever we omit reasoning_content from earlier turns and rotate x-grok-conv-id",
+    "should_trigger": true
   }
 ]

@@ -389,6 +389,7 @@ audit-prompt-caching/
     moonshot.md
     use-cases.md
     minimax.md
+    xai.md
   scripts/
     analyze_usage_logs.py
     analyze_routing_logs.py

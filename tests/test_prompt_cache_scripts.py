@@ -24,11 +24,11 @@ FIXTURES = ROOT / "fixtures"
 PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # The optional normalized-routing helper hook adds 53 estimated tokens to the
 # 6341 baseline; provider guidance and the Routing Outcome Gate are preserved.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6440
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6448
 # Remeasured corpus after the September 2026 provider prefix-cache refresh.
 # Includes executable/eval source, not just references loaded by an agent.
 # See docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 68596
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 69501
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -4438,6 +4438,35 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("minimax_api", signals)
         self.assertIn("minimax_model", signals)
 
+    def test_xai_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "xai.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "`x-grok-conv-id`",
+            "`usage.cached_prompt_text_tokens`",
+            "`reasoning_content`",
+            "including cached tokens",
+            "provider: xai",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/xai.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://api.x.ai/v1', default_headers={'x-grok-conv-id': conv})\nmodel = 'grok-4.6'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["xai"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("xai_api", signals)
+        self.assertIn("x-grok-conv-id", signals)
+        self.assertIn("grok_model", signals)
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
@@ -5044,7 +5073,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6440,
+            6448,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(

@@ -206,7 +206,7 @@ Search SDK imports, API base URLs, model names, deployment manifests, and engine
 - OpenRouter: `openrouter`, `openrouter.ai/api/v1`, `openrouter/auto` -> `references/openrouter.md`.
 - Wrappers first: `references/azure-openai.md`, `references/bedrock.md`, `references/qwen.md`, `references/vercel-ai-sdk.md`, `references/mastra.md`.
 - Direct: OpenAI -> `references/openai.md`; Anthropic -> `references/anthropic.md`; DeepSeek -> `references/deepseek.md`; Gemini -> `references/gemini.md`; YandexGPT -> `references/yandexgpt.md`; z.ai -> `references/zai.md`.
-- OpenAI-compatible vendors (label usage records with the vendor so inclusive/additive semantics resolve): Moonshot/Kimi -> `references/moonshot.md`; MiniMax -> `references/minimax.md`.
+- OpenAI-compatible vendors (label usage records with the vendor so inclusive/additive semantics resolve): Moonshot/Kimi -> `references/moonshot.md`; MiniMax -> `references/minimax.md`; xAI Grok -> `references/xai.md`.
 - Self-hosted: `vllm`, `vllm bench serve`, `prefix_repetition`, `benchmark_prefix_caching.py`, KV-cache events, or KV transfer connectors -> `references/vllm.md`; SGLang/RadixAttention/HiCache/PD disaggregation -> `references/sglang.md`.
 
 If detection is ambiguous, ask which provider/engine is in use.

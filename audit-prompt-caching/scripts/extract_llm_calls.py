@@ -157,6 +157,13 @@ PROVIDER_PATTERNS = {
         r"\bMiniMax-M\d",
         r"\bMINIMAX_API_KEY\b",
     ],
+    "xai": [
+        r"\bapi\.x\.ai\b",
+        r"\bx-grok-conv-id\b",
+        r"\bgrok-\d",
+        r"\bXAI_API_KEY\b",
+        r"\bcached_prompt_text_tokens\b",
+    ],
 }
 
 
@@ -237,6 +244,12 @@ SIGNAL_LABELS = {
     r"\bapi\.minimax\.(?:io|chat)\b": "minimax_api",
     r"\bMiniMax-M\d": "minimax_model",
     r"\bMINIMAX_API_KEY\b": "MINIMAX_API_KEY",
+    # xAI Grok
+    r"\bapi\.x\.ai\b": "xai_api",
+    r"\bx-grok-conv-id\b": "x-grok-conv-id",
+    r"\bgrok-\d": "grok_model",
+    r"\bXAI_API_KEY\b": "XAI_API_KEY",
+    r"\bcached_prompt_text_tokens\b": "cached_prompt_text_tokens",
 }
 
 LEGACY_PATTERN_ALIASES = {
