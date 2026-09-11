@@ -65,7 +65,14 @@ router-published and can differ from the vendor's own price list):
 
 MiniMax, Mistral, Tencent, Xiaomi, and Upstage are absent from the table even
 though their endpoint listings carry `input_cache_read` prices; treat their
-router-level cache behavior as unverified and read the vendor reference.
+router-level cache behavior as unverified and read the vendor reference
+(`references/minimax.md`, `references/mistral.md`, `references/tencent.md`,
+`references/xiaomi.md`; Moonshot and Grok in `references/moonshot.md` and
+`references/xai.md`). Upstage documents `prompt_cache_key` as a distinct key
+per conversational context (the opposite of OpenAI's shared-prefix grouping)
+with `prompt_tokens_details.cached_tokens` at about 0.2x; NVIDIA publishes no
+vendor-side prompt caching, so Nemotron cache reads on the router belong to
+the hosting provider, not NVIDIA.
 The same slug can fan out to many hosts with different cache-read prices, so
 join `cached_tokens` with the served provider before any savings claim.
 

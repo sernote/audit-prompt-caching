@@ -18,22 +18,22 @@ rather than compressing established guidance.
 
 ## Steps
 
-- [ ] z.ai: model list, preserved-thinking (`clear_thinking`) cache coupling,
+- [x] z.ai: model list, preserved-thinking (`clear_thinking`) cache coupling,
   endpoint defaults, Coding Plan routing/credits, cached-input pricing shape.
-- [ ] Azure OpenAI: GPT-5.6+ `prompt_cache_options`/`prompt_cache_breakpoint`,
+- [x] Azure OpenAI: GPT-5.6+ `prompt_cache_options`/`prompt_cache_breakpoint`,
   `cache_write_tokens`, paid writes, `prompt_cache_retention` for pre-5.6,
   `prompt_cache_key` rate cap, PTU-M limits, canonical Foundry URLs.
-- [ ] Bedrock: implicit vs explicit taxonomy, `cacheDetails`, cumulative
+- [x] Bedrock: implicit vs explicit taxonomy, `cacheDetails`, cumulative
   tools->system->messages minimum, 512-token Claude 5.x tier, Nova limits,
   OpenAI Responses inclusive accounting on `bedrock-runtime`/`bedrock-mantle`.
-- [ ] Qwen/DashScope: message-level breakpoints for Qwen3.5+, explicit/implicit
+- [x] Qwen/DashScope: message-level breakpoints for Qwen3.5+, explicit/implicit
   exclusivity, 20-content-block gap miss, Responses `input_tokens_details`
   and `cache_type`, non-standard Qwen3.8 pricing, regional workspace URLs.
-- [ ] DeepSeek, Gemini, YandexGPT: apply verified deltas or record "no change".
-- [ ] OpenRouter: apply verified deltas and refresh per-provider caching table.
-- [ ] New vendors from OpenRouter usage rankings: reference, detection signals,
+- [x] DeepSeek, Gemini, YandexGPT: apply verified deltas or record "no change".
+- [x] OpenRouter: apply verified deltas and refresh per-provider caching table.
+- [x] New vendors from OpenRouter usage rankings: reference, detection signals,
   usage adapter where the wire shape is new, evals, tests.
-- [ ] Remeasure `PLUGIN_EVAL_DEFERRED_TOKEN_CEILING` and SKILL baseline; run
+- [x] Remeasure `PLUGIN_EVAL_DEFERRED_TOKEN_CEILING` and SKILL baseline; run
   the full verification commands from `AGENTS.md`.
 
 ## Acceptance
@@ -41,3 +41,22 @@ rather than compressing established guidance.
 Every touched reference has `Last reviewed: 2026-09-12`, cites the official
 source used, and marks unverified facts as such. Tests, package validation, and
 trigger eval pass after each commit.
+
+## Result (2026-09-12)
+
+Each provider landed as its own commit on `claude/prefix-cache-providers-167fb1`:
+z.ai, Azure OpenAI, Bedrock, Qwen/DashScope (adapter now reads DashScope
+`prompt_tokens_details.cache_creation_input_tokens`), DeepSeek, Gemini,
+YandexGPT (AI Studio implicit caching replaces the "no caching" position),
+OpenRouter, then new vendors Moonshot/Kimi (with the labeled
+OpenAI-compatible usage adapter), MiniMax, xAI Grok, Mistral, Tencent
+Hunyuan, and Xiaomi MiMo. Upstage and NVIDIA are covered by notes in the
+OpenRouter reference rather than files.
+
+Vendor ranking came from third-party scrapes of the OpenRouter rankings page
+(the page itself is JS-rendered); shares are approximate. Facts marked
+unverified in references (Anthropic-compatible routes of DeepSeek, xAI, z.ai,
+Xiaomi; Yandex Responses usage; Tencent field spelling; Moonshot legacy API)
+need a wire capture before exact claims.
+
+Remeasured ceilings: SKILL baseline 6478 tokens, deferred corpus 71756 tokens.
