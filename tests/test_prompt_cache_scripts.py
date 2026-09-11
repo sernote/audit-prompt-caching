@@ -28,7 +28,7 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6394
 # Remeasured corpus after the September 2026 provider prefix-cache refresh.
 # Includes executable/eval source, not just references loaded by an agent.
 # See docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 60797
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 61587
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -4772,7 +4772,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         azure = (
             ROOT / "audit-prompt-caching" / "references" / "azure-openai.md"
         ).read_text()
-        self.assertIn("Last reviewed: 2026-08-11.", azure)
+        self.assertIn("Last reviewed: 2026-09-12.", azure)
         section = extract_markdown_section(azure, "Responses endpoint capability gate")
         normalized = " ".join(section.split())
         self.assertIn("Section reviewed: 2026-08-23.", normalized)
