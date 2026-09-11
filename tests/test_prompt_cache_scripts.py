@@ -33,7 +33,7 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
 # docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
 # references and the labeled OpenAI-compatible usage adapter).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 77286
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 77677
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -754,7 +754,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
     def test_analyze_usage_logs_reads_dashscope_openai_compatible_cache_creation(self):
         # DashScope/Qwen reports explicit-cache writes inside the OpenAI-shaped
-        # prompt_tokens_details object; the total stays inclusive.
+        # prompt_tokens_details object; the total stays inclusive. The record is
+        # deliberately unlabeled, so the generic OpenAI-shape adapter (reported
+        # as provider "openai") handles it; labeled records are covered below.
         event = self.normalized_event(
             {
                 "usage": {
@@ -831,6 +833,82 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(event["accounting_semantics"], "additive")
         self.assertEqual(event["total_input_tokens"], 2960)
         self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_labeled_vendor_mixed_shape_keeps_openai_counts(self):
+        # Some proxies emit top-level Anthropic fields next to prompt_tokens;
+        # the OpenAI-shaped counts must win for a labeled vendor.
+        event = self.normalized_event(
+            {
+                "provider": "minimax",
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "prompt_tokens_details": {"cached_tokens": 800},
+                    "cache_creation_input_tokens": 0,
+                    "completion_tokens": 10,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["input_tokens"], 1000)
+        self.assertEqual(event["cached_tokens"], 800)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reads_vendor_cached_token_spellings(self):
+        for provider, usage, path in (
+            ("tencent", {"prompt_tokens": 900, "cached_token": 512}, "usage.cached_token"),
+            (
+                "xai",
+                {"prompt_tokens": 900, "cached_prompt_text_tokens": 512},
+                "usage.cached_prompt_text_tokens",
+            ),
+            (
+                "deepseek",
+                {"prompt_tokens": 900, "prompt_cache_hit_tokens": 512},
+                "usage.prompt_cache_hit_tokens",
+            ),
+            (
+                "qwen",
+                {
+                    "prompt_tokens": 900,
+                    "prompt_tokens_details": {"cached_tokens": 512},
+                },
+                "usage.prompt_tokens_details.cached_tokens",
+            ),
+        ):
+            with self.subTest(provider=provider):
+                event = self.normalized_event({"provider": provider, "usage": usage})
+                self.assertEqual(event["accounting_semantics"], "inclusive")
+                self.assertEqual(event["cached_tokens"], 512)
+                self.assertEqual(event["source_fields"]["cached_tokens"], path)
+                self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_labeled_vendor_without_cache_field_stays_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "provider": "yandex",
+                "usage": {"prompt_tokens": 900, "completion_tokens": 20},
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_labeled_qwen_messages_usage_is_additive(self):
+        event = self.normalized_event(
+            {
+                "provider": "qwen",
+                "usage": {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 2000,
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 20,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["total_input_tokens"], 2100)
 
     def test_analyze_usage_logs_reports_anthropic_usage_provenance(self):
         event = self.normalized_event(
@@ -4785,6 +4863,19 @@ class PromptCacheScriptsTest(unittest.TestCase):
         }
         self.assertIn("mimo_api", signals)
         self.assertIn("mimo_model", signals)
+
+    def test_extract_llm_calls_vendor_patterns_skip_common_false_positives(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "search.py").write_text(
+                "def minimax(node, depth):\n    return depth\n"
+                "version = 'hy3'\n"
+                "flag = 'hy4'\n"
+            )
+            output = module.find_matches(tmp_path)
+        self.assertNotIn("minimax", output["providers"])
+        self.assertNotIn("tencent", output["providers"])
 
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
         reference = (

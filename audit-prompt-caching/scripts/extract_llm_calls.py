@@ -156,7 +156,7 @@ PROVIDER_PATTERNS = {
         r"\bMOONSHOT_API_KEY\b",
     ],
     "minimax": [
-        r"\bminimax\b",
+        r"\bminimax/",
         r"\bapi\.minimax\.(?:io|chat)\b",
         r"\bMiniMax-M\d",
         r"\bMINIMAX_API_KEY\b",
@@ -177,7 +177,7 @@ PROVIDER_PATTERNS = {
     "tencent": [
         r"\bhunyuan\b",
         r"\btokenhub(?:-intl)?\.tencentcloudmaas\.com\b",
-        r"\bhy[34](?:-preview)?\b",
+        r"\b(?:tencent/hy\d|hy[34]-preview)\b",
         r"\bTENCENT_API_KEY\b",
     ],
     "xiaomi": [
@@ -266,7 +266,7 @@ SIGNAL_LABELS = {
     r"\bkimi-k\d": "kimi_model",
     r"\bMOONSHOT_API_KEY\b": "MOONSHOT_API_KEY",
     # MiniMax
-    r"\bminimax\b": "minimax",
+    r"\bminimax/": "minimax_slug",
     r"\bapi\.minimax\.(?:io|chat)\b": "minimax_api",
     r"\bMiniMax-M\d": "minimax_model",
     r"\bMINIMAX_API_KEY\b": "MINIMAX_API_KEY",
@@ -284,7 +284,7 @@ SIGNAL_LABELS = {
     # Tencent Hunyuan
     r"\bhunyuan\b": "hunyuan",
     r"\btokenhub(?:-intl)?\.tencentcloudmaas\.com\b": "tokenhub_api",
-    r"\bhy[34](?:-preview)?\b": "hunyuan_model",
+    r"\b(?:tencent/hy\d|hy[34]-preview)\b": "hunyuan_model",
     r"\bTENCENT_API_KEY\b": "TENCENT_API_KEY",
     # Xiaomi MiMo
     r"\bxiaomimimo\b": "xiaomimimo",

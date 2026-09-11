@@ -25,7 +25,7 @@ Routing affinity is explicit: header `x-grok-conv-id` on Chat Completions (gRPC 
 
 ## Provider Checks
 
-- Fields: Chat Completions `usage.prompt_tokens_details.cached_tokens`; Responses `usage.input_tokens_details.cached_tokens`; gRPC `usage.cached_prompt_text_tokens`. All are inclusive subsets of the prompt total; label records `provider: xai` for `analyze_usage_logs.py`.
+- Fields: Chat Completions `usage.prompt_tokens_details.cached_tokens`; Responses `usage.input_tokens_details.cached_tokens`; gRPC `usage.cached_prompt_text_tokens`. All are inclusive subsets of the prompt total; label records `provider: xai` and `analyze_usage_logs.py` reads any of the three spellings. A labeled record with none of them stays ambiguous.
 - Reasoning models: the multi-turn guide names omitting prior `reasoning_content` as the top cause of cache misses. Audit reasoning round-tripping with the prefix.
 - Long context doubles every rate, including cached input, once total prompt tokens **including cached tokens** cross the model's threshold (200k at the last review). A hit does not protect against the tier switch.
 - Cached-input multipliers are model-specific (about 0.16x-0.25x of input at the last review); OpenRouter publishes a flat 0.25x for Grok and Bedrock-hosted Grok lists `input_cache_write: 0`. Use the vendor row.

@@ -25,7 +25,7 @@ MiniMax documents two mechanisms on separate pages, and the OpenAI-compatible ch
 ## Provider Checks
 
 - Label usage records `provider: minimax` so `analyze_usage_logs.py` applies inclusive semantics to the OpenAI shape and additive semantics to the Anthropic shape.
-- Do not gate cache handling on `"claude" in model`: MiniMax accepts Anthropic `cache_control` and is silently excluded by such checks in several agent frameworks.
+- Do not gate cache handling on `"claude" in model`: MiniMax accepts Anthropic `cache_control`, and community issue reports at the last review showed such checks silently excluding it in at least one agent framework.
 - Pricing tiers matter: at the last review M3 cost $0.30 input / $0.06 cache read per MTok up to 512k context and double above it (cache reads included), a Priority tier at 1.5x, and M2.7 listed explicit writes at 1.25x; M3 had no published write price. Read the model row before estimating.
 - Through OpenRouter, `minimax/*` endpoints publish `input_cache_read` but OpenRouter's caching table omits MiniMax; router probes have shown hits surviving, but treat router-level behavior as unverified per host.
 

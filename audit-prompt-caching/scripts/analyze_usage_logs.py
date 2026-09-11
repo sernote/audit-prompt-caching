@@ -22,6 +22,8 @@ FIELD_ALIASES = {
         "cached_tokens",
         "prompt_cache_hit_tokens",
         "total_cached_tokens",
+        "cached_token",
+        "cached_prompt_text_tokens",
     ),
     "cache_read_input_tokens": (
         "cache_read_input_tokens",
@@ -229,6 +231,16 @@ def gemini_generate_content_usage_envelope(record):
     )
 
 
+# OpenAI-shaped cached-token spellings: OpenAI/most vendors, DeepSeek Chat,
+# TokenHub's singular key, and xAI gRPC usage.
+OPENAI_COMPATIBLE_CACHED_NAMES = (
+    "cached_tokens",
+    "prompt_cache_hit_tokens",
+    "cached_token",
+    "cached_prompt_text_tokens",
+)
+
+
 def openai_breakdown_value(usage, usage_prefix, details, details_prefix, names):
     value, path = extracted_value(details, names, details_prefix)
     if path:
@@ -250,7 +262,7 @@ def extract_openai(record):
     return extraction(
         input_tokens=extracted_value(usage, input_names, prefix),
         cached_tokens=openai_breakdown_value(
-            usage, prefix, details, details_prefix, ("cached_tokens",)
+            usage, prefix, details, details_prefix, OPENAI_COMPATIBLE_CACHED_NAMES
         ),
         cache_write_tokens=openai_breakdown_value(
             usage, prefix, details, details_prefix, ("cache_write_tokens",)
@@ -373,6 +385,10 @@ OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS = frozenset(
         "moonshot",
         "moonshotai",
         "kimi",
+        "deepseek",
+        "qwen",
+        "dashscope",
+        "alibaba",
         "minimax",
         "xai",
         "x-ai",
@@ -411,6 +427,7 @@ class AnthropicUsageAdapter(UsageSurfaceAdapter):
             return provider == "anthropic" or (
                 provider in OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS
                 and has_anthropic_shape(usage)
+                and "prompt_tokens" not in usage
             )
         return has_anthropic_shape(usage)
 
@@ -430,9 +447,16 @@ class OpenAICompatibleUsageAdapter(UsageSurfaceAdapter):
         if provider not in OPENAI_COMPATIBLE_INCLUSIVE_PROVIDERS:
             return False
         usage = usage_object(record)
-        if has_anthropic_shape(usage):
+        if has_anthropic_shape(usage) and "prompt_tokens" not in usage:
             return False
-        return "prompt_tokens" in usage or "input_tokens" in usage
+        if not ("prompt_tokens" in usage or "input_tokens" in usage):
+            return False
+        # A labeled vendor record without any cached-token field is "not
+        # observed", not a measured zero; leave it ambiguous.
+        details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
+        return has_any_field(usage, OPENAI_COMPATIBLE_CACHED_NAMES) or has_any_field(
+            details, OPENAI_COMPATIBLE_CACHED_NAMES
+        )
 
     def extract(self, record):
         return extract_openai(record)

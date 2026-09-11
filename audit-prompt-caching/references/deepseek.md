@@ -78,7 +78,7 @@ total = hit + miss
 ratio = hit / total if total else 0
 ```
 
-If fields are missing, check SDK version, API mode (Chat vs Responses vs Anthropic-compatible), streaming usage options, and current DeepSeek API docs. Do not add `cached_tokens` to `prompt_cache_hit_tokens`; they are the same count.
+If fields are missing, check SDK version, API mode (Chat vs Responses vs Anthropic-compatible), streaming usage options, and current DeepSeek API docs. Do not add `cached_tokens` to `prompt_cache_hit_tokens`; they are the same count. Label records `provider: deepseek` so `analyze_usage_logs.py` reads either spelling as inclusive.
 
 ## Monitoring
 

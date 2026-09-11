@@ -18,11 +18,11 @@ Official sources:
 
 Tencent's Hunyuan models are served through TokenHub (`https://tokenhub-intl.tencentcloudmaas.com/v1`, OpenAI- and Anthropic-protocol compatible). Usage exposes cached tokens as `prompt_tokens_details.cached_tokens`, but at least one TokenHub example shows a singular `cached_token` key; read both spellings before declaring a route "no telemetry". The FAQ says a cache hit must not be assumed, and the docs give no minimum, TTL, or explicit marker, so treat caching as implicit and best-effort.
 
-Tencent is among the highest-volume vendors on OpenRouter (Hy4-preview and Hy3) while OpenRouter's caching table does not list it; the single Tencent endpoint publishes an `input_cache_read` price, so router-level behavior is unverified beyond pricing.
+Third-party snapshots of OpenRouter rankings at the last review placed Tencent (Hy4-preview and Hy3) among the highest-volume vendors, while OpenRouter's caching table does not list it; the single Tencent endpoint publishes an `input_cache_read` price, so router-level behavior is unverified beyond pricing.
 
 ## Provider Checks
 
-- Label records `provider: tencent` (or `hunyuan`) for inclusive semantics in `analyze_usage_logs.py`; if only `cached_token` appears, the adapter will not read it, so map it to `cached_tokens` in your export and record the rename in `source_fields` notes.
+- Label records `provider: tencent` (or `hunyuan`) for inclusive semantics in `analyze_usage_logs.py`; the adapter reads both `cached_tokens` and the singular `cached_token`, and `source_fields` shows which spelling was present. A record with neither stays ambiguous.
 - The cache-hit price is a small fraction of input, so uneconomic hits are unlikely; a high `cached_tokens` share with no cost drop points to output/tool dominance or the wrong model row.
 - Region matters (Singapore vs mainland hosts) for both price and cache locality.
 

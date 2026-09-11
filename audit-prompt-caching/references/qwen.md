@@ -86,7 +86,7 @@ created = details.get("cache_creation_input_tokens", 0)
 
 For Anthropic-compatible routes, check `usage.cache_read_input_tokens` and `usage.cache_creation_input_tokens`; they are reported separately from `input_tokens` (additive), and on streams the full set arrives in `message_delta`, not `message_start`. The Messages page says `cache_control` may sit on tool-use blocks while the best-practice page says markers cannot target tools; treat tool-level breakpoints as unverified until a wire capture shows a write.
 
-The bundled `analyze_usage_logs.py` reads `prompt_tokens_details.cache_creation_input_tokens` inside the OpenAI-shaped adapter as inclusive; label the record `provider: anthropic` when the Anthropic-compatible route is used so the additive adapter applies.
+The bundled `analyze_usage_logs.py` reads `prompt_tokens_details.cache_creation_input_tokens` inside the OpenAI-shaped adapter as inclusive; label records `provider: qwen` (or `dashscope`) and the adapter applies inclusive semantics to the OpenAI shape and additive semantics when the Anthropic-shaped `cache_read_input_tokens`/`cache_creation_input_tokens` fields are present.
 
 If `created > 0` and `cached == 0` across repeated calls, the cache is being written but not reused; check prefix stability, TTL, route/model support, and region-specific response fields.
 

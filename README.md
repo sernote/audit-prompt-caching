@@ -389,8 +389,8 @@ audit-prompt-caching/
     qwen.md
     yandexgpt.md
     zai.md
-    moonshot.md
     use-cases.md
+    moonshot.md
     minimax.md
     xai.md
     mistral.md
