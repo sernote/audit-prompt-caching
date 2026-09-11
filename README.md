@@ -391,6 +391,7 @@ audit-prompt-caching/
     minimax.md
     xai.md
     mistral.md
+    tencent.md
   scripts/
     analyze_usage_logs.py
     analyze_routing_logs.py

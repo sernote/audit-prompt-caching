@@ -170,6 +170,12 @@ PROVIDER_PATTERNS = {
         r"\bmistral-(?:large|medium|small|tiny)\b",
         r"\bMISTRAL_API_KEY\b",
     ],
+    "tencent": [
+        r"\bhunyuan\b",
+        r"\btokenhub(?:-intl)?\.tencentcloudmaas\.com\b",
+        r"\bhy[34](?:-preview)?\b",
+        r"\bTENCENT_API_KEY\b",
+    ],
 }
 
 
@@ -261,6 +267,11 @@ SIGNAL_LABELS = {
     r"\bapi\.mistral\.ai\b": "mistral_api",
     r"\bmistral-(?:large|medium|small|tiny)\b": "mistral_model",
     r"\bMISTRAL_API_KEY\b": "MISTRAL_API_KEY",
+    # Tencent Hunyuan
+    r"\bhunyuan\b": "hunyuan",
+    r"\btokenhub(?:-intl)?\.tencentcloudmaas\.com\b": "tokenhub_api",
+    r"\bhy[34](?:-preview)?\b": "hunyuan_model",
+    r"\bTENCENT_API_KEY\b": "TENCENT_API_KEY",
 }
 
 LEGACY_PATTERN_ALIASES = {

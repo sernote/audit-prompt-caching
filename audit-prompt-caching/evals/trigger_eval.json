@@ -138,5 +138,9 @@
   {
     "query": "mistral-large via api.mistral.ai never reports cached_tokens above zero even with prompt_cache_key set; is a 40-token system prompt the reason",
     "should_trigger": true
+  },
+  {
+    "query": "Hunyuan hy4-preview via tokenhub-intl.tencentcloudmaas.com shows cached_token in usage but our dashboard reads cached_tokens and reports 0",
+    "should_trigger": true
   }
 ]
