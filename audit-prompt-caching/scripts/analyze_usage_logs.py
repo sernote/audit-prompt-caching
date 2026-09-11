@@ -255,6 +255,11 @@ def extract_openai(record):
         cache_write_tokens=openai_breakdown_value(
             usage, prefix, details, details_prefix, ("cache_write_tokens",)
         ),
+        # DashScope/Qwen OpenAI-compatible responses report explicit-cache
+        # writes inside the details object; the total stays inclusive.
+        cache_creation_input_tokens=extracted_value(
+            details, ("cache_creation_input_tokens",), details_prefix
+        ),
         output_tokens=extracted_value(usage, output_names, prefix),
     )
 

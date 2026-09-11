@@ -28,7 +28,7 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6394
 # Remeasured corpus after the September 2026 provider prefix-cache refresh.
 # Includes executable/eval source, not just references loaded by an agent.
 # See docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 62317
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 63185
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -745,6 +745,31 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 "output_tokens": "usage.completion_tokens",
             },
         )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reads_dashscope_openai_compatible_cache_creation(self):
+        # DashScope/Qwen reports explicit-cache writes inside the OpenAI-shaped
+        # prompt_tokens_details object; the total stays inclusive.
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "prompt_tokens": 2200,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 0,
+                        "cache_creation_input_tokens": 2156,
+                    },
+                    "completion_tokens": 40,
+                },
+            }
+        )
+
+        self.assertEqual(event["provider"], "openai")
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(
+            event["source_fields"]["cache_creation_input_tokens"],
+            "usage.prompt_tokens_details.cache_creation_input_tokens",
+        )
+        self.assertEqual(event["cache_creation_input_tokens"], 2156)
         self.assertEqual(event["denominator_status"], "valid")
 
     def test_analyze_usage_logs_reports_anthropic_usage_provenance(self):
