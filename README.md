@@ -390,6 +390,7 @@ audit-prompt-caching/
     use-cases.md
     minimax.md
     xai.md
+    mistral.md
   scripts/
     analyze_usage_logs.py
     analyze_routing_logs.py

@@ -134,5 +134,9 @@
   {
     "query": "grok-4.6 via api.x.ai shows cached_tokens dropping to zero whenever we omit reasoning_content from earlier turns and rotate x-grok-conv-id",
     "should_trigger": true
+  },
+  {
+    "query": "mistral-large via api.mistral.ai never reports cached_tokens above zero even with prompt_cache_key set; is a 40-token system prompt the reason",
+    "should_trigger": true
   }
 ]

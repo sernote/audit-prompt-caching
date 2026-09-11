@@ -164,6 +164,12 @@ PROVIDER_PATTERNS = {
         r"\bXAI_API_KEY\b",
         r"\bcached_prompt_text_tokens\b",
     ],
+    "mistral": [
+        r"\bmistralai\b",
+        r"\bapi\.mistral\.ai\b",
+        r"\bmistral-(?:large|medium|small|tiny)\b",
+        r"\bMISTRAL_API_KEY\b",
+    ],
 }
 
 
@@ -250,6 +256,11 @@ SIGNAL_LABELS = {
     r"\bgrok-\d": "grok_model",
     r"\bXAI_API_KEY\b": "XAI_API_KEY",
     r"\bcached_prompt_text_tokens\b": "cached_prompt_text_tokens",
+    # Mistral
+    r"\bmistralai\b": "mistralai",
+    r"\bapi\.mistral\.ai\b": "mistral_api",
+    r"\bmistral-(?:large|medium|small|tiny)\b": "mistral_model",
+    r"\bMISTRAL_API_KEY\b": "MISTRAL_API_KEY",
 }
 
 LEGACY_PATTERN_ALIASES = {
