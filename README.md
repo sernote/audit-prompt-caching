@@ -13,6 +13,10 @@ cache misses through your request code, provider settings, and routing.
 Start with code and configuration. Get findings with evidence and a verification
 step; add exported payloads or telemetry when available.
 
+Read more about cache and routing design on
+[notevskii.tech](https://notevskii.tech/projects/audit-prompt-caching/) and follow
+[engineering notes on Telegram](https://t.me/sergeinotevskii) (both in Russian).
+
 [Get started](#quick-start) · [See an example](#see-a-prefix-fix) ·
 [What it audits](#what-it-audits) · [Commands and scenarios](docs/usage.md)
 
@@ -214,9 +218,6 @@ keep credentials and private project contents out of public issues.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers tests, package validation and change
 guidelines. The [validation notes](docs/usage.md#validation) distinguish script
 tests, trigger-dataset checks and agent behavior evaluations.
-
-Project background and longer explanations: [notevskii.tech](https://notevskii.tech/projects/audit-prompt-caching/).
-Updates and engineering field notes: [Telegram](https://t.me/sergeinotevskii).
 
 ## License
 

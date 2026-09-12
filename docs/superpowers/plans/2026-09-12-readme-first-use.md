@@ -19,6 +19,9 @@ The main checkout contains unrelated changes, so work in a separate worktree.
 
 ## Implementation
 
+- [x] Follow-up: move the site and Telegram links below the introduction,
+  describe the related reading and its language, and check the first screen
+  on desktop and mobile before updating the existing PR.
 - [x] Read the current README, skill entry point, existing guides and installer.
   Preserve project-first auditing, precise evidence limits, provider coverage,
   script semantics, example prompts, public project/channel links and MIT/CI.
@@ -47,7 +50,7 @@ as a GitHub document without a custom website or new runtime dependencies.
 
 ## Verification record
 
-- README reduced from 463 to 223 lines. One compact diff illustrates the
+- README reduced from 463 to 224 lines. One compact diff illustrates the
   existing prefix example; its adjacent table retains the measured values.
 - Baseline: all 235 tests passed in 32.929 seconds before documentation edits.
   The first PR check then found five documentation assertions still targeting
@@ -69,3 +72,7 @@ as a GitHub document without a custom website or new runtime dependencies.
 - Independent review found no blocking issue or material content loss. Fixed
   its minor clarification: usage accounting can derive warning/fail even when
   its status was omitted. Preview files remain outside the repository.
+- Site and Telegram links now appear below the introduction as related reading,
+  with Russian-language content marked. Both destinations were checked; the
+  updated first screen was inspected at 1280px and 390px without overflow.
+  All 235 tests passed again in 23.688 seconds after this follow-up.
