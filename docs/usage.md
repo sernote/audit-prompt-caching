@@ -30,10 +30,11 @@ Locate potential LLM calls in your project:
 python3 audit-prompt-caching/scripts/extract_llm_calls.py path/to/project
 ```
 
-This is a lexical locator. It always elides snippets, but preserves paths.
-Matches may come from comments, dead code or overridden configuration. Open
-each reported `path:line` and verify the active request path and effective
-configuration; the helper does not resolve precedence or runtime values.
+This is a lexical locator only: snippets are always elided, but paths remain
+visible. Matches may come from comments, dead code, or overridden configuration.
+It never resolves active/effective values or source precedence. Open each
+reported `path:line`, follow the active request path, and verify the resolved
+runtime configuration.
 
 Check a rendered payload or compare two requests:
 
@@ -99,7 +100,8 @@ derives `warning` or `fail` for usage accounting when its denominator is
 ambiguous or invalid. The report emits no aggregate score.
 
 If normalized usage has an `ambiguous` or `invalid` denominator, the hit ratio
-and cost conclusions are marked as unsuitable for a savings decision.
+and cost conclusions are marked as unsuitable for a savings decision
+(`non-decision-grade`).
 `--accounting-mode inclusive|additive`, supported by both the usage analyzer
 and renderer, resolves wrapper semantics known from external evidence. It
 cannot repair contradictory input: an `invalid` denominator still rejects

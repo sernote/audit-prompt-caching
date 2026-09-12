@@ -2648,7 +2648,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         )
         documents = (
             module.__doc__,
-            (ROOT / "README.md").read_text(),
+            (ROOT / "docs" / "usage.md").read_text(),
             (ROOT / "audit-prompt-caching" / "SKILL.md").read_text(),
         )
         for document in documents:
@@ -3969,40 +3969,41 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertNotIn("Manual Install", readme)
         self.assertNotIn("raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh", readme)
 
-    def test_readme_demo_uses_successful_linter_command(self):
-        readme = (ROOT / "README.md").read_text()
+    def test_usage_guide_demo_uses_successful_linter_command(self):
+        guide = (ROOT / "docs" / "usage.md").read_text()
 
-        self.assertIn("fixtures/layout/good_openai_request.json", readme)
-        self.assertIn("fixtures/layout/good_openai_responses_request.json", readme)
-        self.assertIn("Responses-style", readme)
+        self.assertIn("fixtures/layout/good_openai_request.json", guide)
+        self.assertIn("fixtures/layout/good_openai_responses_request.json", guide)
+        self.assertIn("Responses-style", guide)
         self.assertNotIn(
             "python3 audit-prompt-caching/scripts/layout_linter.py \\\n"
             "  fixtures/layout/bad_openai_request.json",
-            readme,
+            guide,
         )
 
     def test_readme_front_door_has_adoption_assets(self):
         readme = (ROOT / "README.md").read_text()
+        guide = (ROOT / "docs" / "usage.md").read_text()
 
         for required in [
             "[![CI]",
             "LLM Cache Audit Skill",
-            "Why This Exists",
             "Quick Start",
-            "Audit Hero Shot",
-            "LLM CACHE AUDIT",
-            "Fixture Signal",
-            "Cache Flow",
-            "Positioning",
-            "59.62%",
-            "$34.60 -> $23.10",
+            "docs/first-audit.md",
+            "examples/first-audit/README.md",
+            "docs/usage.md#bundled-scripts",
+            "docs/usage.md#synthetic-usage-and-roi",
+            "docs/usage.md#example-prompts",
+            "docs/routing-capture.md",
             "git clone --depth 1",
         ]:
             self.assertIn(required, readme)
+        self.assertIn("59.62%", guide)
+        self.assertIn("$34.60 -> $23.10", guide)
         self.assertNotIn("Prompt Cache Doctor", readme)
 
-    def test_readme_examples_cover_non_obvious_audit_scenarios(self):
-        readme = (ROOT / "README.md").read_text()
+    def test_usage_guide_examples_cover_non_obvious_audit_scenarios(self):
+        guide = (ROOT / "docs" / "usage.md").read_text()
 
         for required in [
             "OpenAI-compatible wrapper ambiguity",
@@ -4012,7 +4013,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "vLLM/SGLang multi-replica KV",
             "High cached tokens, low savings",
         ]:
-            self.assertIn(required, readme)
+            self.assertIn(required, guide)
 
     def test_skill_description_has_stronger_trigger_surface(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -5658,8 +5659,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, template)
 
-    def test_readme_documents_cache_plane_and_clinic_flags(self):
-        readme = (ROOT / "README.md").read_text()
+    def test_usage_guide_documents_cache_plane_and_clinic_flags(self):
+        guide = (ROOT / "docs" / "usage.md").read_text()
 
         for required in [
             "--cache-plane gateway_response",
@@ -5669,7 +5670,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "non-decision-grade",
             "no aggregate score",
         ]:
-            self.assertIn(required, readme)
+            self.assertIn(required, guide)
 
     def test_evals_cover_plane_denominator_and_unknown_dimension_pressure(self):
         evals = json.loads(

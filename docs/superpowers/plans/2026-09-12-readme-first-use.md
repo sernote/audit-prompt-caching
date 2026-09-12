@@ -29,6 +29,10 @@ The main checkout contains unrelated changes, so work in a separate worktree.
 - [x] Add `docs/usage.md` for executable script examples, synthetic usage/ROI,
   advanced routing requirements and the six existing diagnostic prompts.
   Keep command prerequisites and expected nonzero diff exits explicit.
+- [x] Update the existing documentation checks to follow material moved to
+  `docs/usage.md`, while retaining README links to the first audit and examples.
+  Preserve the locator and accounting contracts; rerun the full suite after
+  documentation changes.
 - [x] Verify the displayed fixture numbers and run the documented install into
   an isolated temporary directory. Check internal links, heading anchors,
   rendered desktop/mobile layout, package validation and repository checks.
@@ -45,7 +49,12 @@ as a GitHub document without a custom website or new runtime dependencies.
 
 - README reduced from 463 to 223 lines. One compact diff illustrates the
   existing prefix example; its adjacent table retains the measured values.
-- All 235 script tests passed in 32.929 seconds on the unchanged implementation.
+- Baseline: all 235 tests passed in 32.929 seconds before documentation edits.
+  The first PR check then found five documentation assertions still targeting
+  the old README. All five failures were reproduced locally before correction.
+- Final local run: all 235 tests passed in 33.482 seconds after adapting those
+  assertions to the linked usage guide. Follow-up review confirmed that the
+  locator, accounting, linter-example and scenario contracts remain covered.
 - Eleven command checks passed: prefix comparisons (expected exit 1, 43/254
   bytes), usage and normalized usage, ROI, two clean layouts, report, routing,
   package validation and the 40-record trigger dataset check.
