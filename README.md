@@ -15,7 +15,7 @@ step; add exported payloads or telemetry when available.
 
 Read more about cache and routing design on
 [notevskii.tech](https://notevskii.tech/projects/audit-prompt-caching/) and follow
-[engineering notes on Telegram](https://t.me/sergeinotevskii) (both in Russian).
+[engineering notes on Telegram](https://t.me/sergeinotevskii).
 
 [Get started](#quick-start) · [See an example](#see-a-prefix-fix) ·
 [What it audits](#what-it-audits) · [Commands and scenarios](docs/usage.md)
