@@ -23,15 +23,22 @@ def estimate(args):
     output_tokens = args.output_tokens * requests
     cached_static_tokens = static_tokens * hit_rate
     uncached_static_tokens = static_tokens - cached_static_tokens
+    uncached_input_tokens = uncached_static_tokens + dynamic_tokens
+    cache_write_tokens = args.cache_write_tokens
 
     input_baseline_cost = (
         (static_tokens + dynamic_tokens) * args.input_price_per_mtok / 1_000_000
     )
+    cache_write_price = (
+        args.cache_write_price_per_mtok
+        if args.cache_write_price_per_mtok is not None
+        else args.input_price_per_mtok
+    )
     input_with_cache_cost = (
-        (uncached_static_tokens + dynamic_tokens)
-        * args.input_price_per_mtok
-        / 1_000_000
-    ) + (cached_static_tokens * args.cached_input_price_per_mtok / 1_000_000)
+        (uncached_input_tokens - cache_write_tokens) * args.input_price_per_mtok
+        + cache_write_tokens * cache_write_price
+        + cached_static_tokens * args.cached_input_price_per_mtok
+    ) / 1_000_000
     output_cost = output_tokens * args.output_price_per_mtok / 1_000_000
     total_baseline_cost = input_baseline_cost + output_cost
     total_with_cache_cost = input_with_cache_cost + output_cost
@@ -41,6 +48,7 @@ def estimate(args):
     return {
         "requests": requests,
         "hit_rate": hit_rate,
+        "cache_write_tokens": cache_write_tokens,
         "input_baseline_cost": money(input_baseline_cost),
         "input_with_cache_cost": money(input_with_cache_cost),
         "output_cost": money(output_cost),
@@ -71,8 +79,19 @@ def main(argv=None):
     parser.add_argument("--hit-rate", type=float, required=True)
     parser.add_argument("--input-price-per-mtok", type=float, required=True)
     parser.add_argument("--cached-input-price-per-mtok", type=float, required=True)
+    parser.add_argument("--cache-write-tokens", type=float, default=0)
+    parser.add_argument("--cache-write-price-per-mtok", type=float)
     parser.add_argument("--output-price-per-mtok", type=float, required=True)
     args = parser.parse_args(argv)
+
+    uncached_input = (
+        args.static_tokens * args.requests * (1 - max(0.0, min(1.0, args.hit_rate)))
+        + args.dynamic_tokens * args.requests
+    )
+    if args.cache_write_tokens < 0 or args.cache_write_tokens > uncached_input:
+        parser.error("cache-write-tokens cannot exceed uncached input or be negative")
+    if args.cache_write_tokens and args.cache_write_price_per_mtok is None:
+        parser.error("cache-write-price-per-mtok is required when cache-write-tokens is set")
 
     print(json.dumps(estimate(args), ensure_ascii=False, indent=2))
     return 0

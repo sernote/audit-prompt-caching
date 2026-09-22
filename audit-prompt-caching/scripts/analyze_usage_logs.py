@@ -27,9 +27,9 @@ FIELD_ALIASES = {
     "cache_creation_input_tokens": (
         "cache_creation_input_tokens",
         "cache_write_input_tokens",
-        "cache_write_tokens",
         "CacheWriteInputTokens",
     ),
+    "cache_write_tokens": ("cache_write_tokens",),
     "output_tokens": (
         "output_tokens",
         "completion_tokens",
@@ -98,7 +98,7 @@ def infer_provider(record):
         return "anthropic-compatible"
     if "prompt_cache_hit_tokens" in text:
         return "deepseek-compatible"
-    if "cached_tokens" in text:
+    if "cached_tokens" in text or "cache_write_tokens" in text:
         return "openai-compatible"
     return "unknown"
 
@@ -125,6 +125,7 @@ def normalize_event(record, index):
         "cached_tokens": row["cached_tokens"],
         "cache_read_input_tokens": row["cache_read_input_tokens"],
         "cache_creation_input_tokens": row["cache_creation_input_tokens"],
+        "cache_write_tokens": row["cache_write_tokens"],
         "cache_benefit_tokens": (
             row["cached_tokens"] + row["cache_read_input_tokens"]
         ),
@@ -176,6 +177,7 @@ def summarize(records):
         "cache_creation_input_tokens": sum(
             row["cache_creation_input_tokens"] for row in normalized
         ),
+        "cache_write_tokens": sum(row["cache_write_tokens"] for row in normalized),
         "total_input_tokens": sum(row["total_input_tokens"] for row in normalized),
         "output_tokens": sum(row["output_tokens"] for row in normalized),
     }
@@ -187,13 +189,10 @@ def summarize(records):
         if totals["total_input_tokens"]
         else 0
     )
+    read_tokens = totals["cached_tokens"] + totals["cache_read_input_tokens"]
+    write_tokens = totals["cache_write_tokens"] + totals["cache_creation_input_tokens"]
     totals["cache_write_read_ratio"] = (
-        round(
-            totals["cache_creation_input_tokens"] / totals["cache_read_input_tokens"],
-            4,
-        )
-        if totals["cache_read_input_tokens"]
-        else None
+        round(write_tokens / read_tokens, 4) if read_tokens else None
     )
     totals["output_share"] = (
         round(

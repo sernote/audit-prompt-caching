@@ -3,6 +3,7 @@ name: audit-prompt-caching
 description: >
   Use whenever the user mentions LLM prompt/prefix cache misses, cached_tokens=0,
   cache_read_input_tokens/cache_creation_input_tokens, prompt_cache_key,
+  prompt_cache_options/prompt_cache_breakpoint,
   cache_control/cachePoint, TTFT/prefill latency, KV reuse, LLM cost or speed
   regressed on repeated long prompts, or speeding up agents through cache
   stability. Use for LLM request shape changes: prompt text/order/builders,
@@ -27,7 +28,7 @@ Use this skill for LLM calls where repeated prompt prefixes may affect cost,
 TTFT, prefill latency, or self-hosted KV reuse.
 
 Typical triggers:
-- `cached_tokens=0`, `cache_read_input_tokens=0`, cache writes without reads, or unclear provider usage fields.
+- `cached_tokens=0`, `cache_read_input_tokens=0`, cache writes without reads, write premiums, or unclear provider usage fields.
 - Cache hit rate, TTFT, prefill latency, or input-token cost changed.
 - LLM cost or speed regressed around repeated long prompts, shared static context, long-context agents, or tool-heavy loops.
 - LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter.
@@ -171,8 +172,8 @@ Use scripts when deterministic evidence is better than prose:
 
 - `scripts/prefix_stability_check.py`: compare two rendered prompts or JSON request payloads as raw bytes; use `--canonical-json` only when sorted-key normalization is intentional.
 - `scripts/layout_linter.py`: inspect JSON request payload layout for volatile early content, unsorted tools, and dynamic schema fields.
-- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage logs across OpenAI, Anthropic-compatible, Bedrock-style, and OpenAI-compatible cache fields.
-- `scripts/estimate_cache_roi.py`: estimate input-only and total-cost impact from static/dynamic/output tokens, hit rate, request count, and explicit pricing.
+- `scripts/analyze_usage_logs.py`: summarize JSON/JSONL/CSV usage logs across OpenAI, Anthropic-compatible, Bedrock-style, and OpenAI-compatible cache fields; keep OpenAI `cache_write_tokens` inside its inclusive input total.
+- `scripts/estimate_cache_roi.py`: estimate input-only and total-cost impact from static/dynamic/output tokens, hit rate, request count, and explicit pricing; pass measured cache-write tokens and price when writes have a premium.
 - `scripts/extract_llm_calls.py`: scan a repository for provider calls, cache-control fields, routing signals, and self-hosted engine hints.
 - `scripts/render_audit_report.py`: combine usage summaries and findings into Markdown or JSON.
 - `scripts/validate_skill_package.py`: validate frontmatter, referenced files, eval JSON, and Python helper syntax.
@@ -224,7 +225,8 @@ If detection is ambiguous, ask which provider/engine is in use.
 
 Use these starts after provider detection and Freshness Gate:
 
-- **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, Responses vs Chat usage fields, `prompt_cache_key`, `prompt_cache_retention`, output-token dominance, and wrapper ambiguity.
+- **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, Responses vs Chat usage fields, breakpoint mode/placement, model-specific `prompt_cache_options` vs legacy `prompt_cache_retention`, output-token dominance, and wrapper ambiguity. For GPT-5.6+, `prompt_cache_key` is optional accounting separation, not the first routing fix.
+- **Cache writes outweigh reads**: distinguish OpenAI's inclusive `input_tokens` from Anthropic's additive usage fields; price ordinary input, cache writes, and reads separately. For GPT-5.6+ and Claude, compare measured read share with the provider-specific write break-even in `references/economics.md` before claiming savings.
 - **Claude/Bedrock/OpenRouter writes without reads**: distinguish write/create fields from read/hit fields, then inspect breakpoint placement, dynamic content before breakpoint, TTL/retention, model/region/API support, fallback routing, and actual routed provider/model.
 - **Dynamic tools in long agent loops**: compare `tools_count`, sorted tool-name hash, `prefix_hash`, mode state, and cache fields per step. Prefer stable route-level tool bundles, sorted schemas, provider-supported allowed tools/tool search/deferred loading, or self-hosted masking after checking current docs.
 - **High hit rate but no savings**: separate input savings from total cost and final latency. Check output-token share, decode time, external tool time, TPM/rate limits, and cache read/write pricing assumptions.

@@ -230,6 +230,60 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["total_input_tokens"], 1000)
             self.assertEqual(output["cache_hit_ratio"], 0.3)
 
+    def test_analyze_usage_logs_keeps_openai_cache_writes_inside_input_total(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "openai.jsonl"
+            log_path.write_text(json.dumps({
+                "provider": "openai",
+                "model": "gpt-6-sol",
+                "usage": {
+                    "input_tokens": 1000,
+                    "input_tokens_details": {
+                        "cached_tokens": 400,
+                        "cache_write_tokens": 300,
+                    },
+                    "output_tokens": 100,
+                },
+            }))
+
+            summary = run_script("analyze_usage_logs.py", log_path)
+            events = run_script("analyze_usage_logs.py", "--jsonl-normalized", log_path)
+
+            self.assertEqual(summary.returncode, 0, summary.stderr)
+            self.assertEqual(events.returncode, 0, events.stderr)
+            totals = json.loads(summary.stdout)
+            event = json.loads(events.stdout)
+            self.assertEqual(totals["total_input_tokens"], 1000)
+            self.assertEqual(totals["cached_tokens"], 400)
+            self.assertEqual(totals["cache_write_tokens"], 300)
+            self.assertEqual(totals["cache_creation_input_tokens"], 0)
+            self.assertEqual(totals["cache_hit_ratio"], 0.4)
+            self.assertEqual(totals["cache_write_read_ratio"], 0.75)
+            self.assertEqual(event["cache_write_tokens"], 300)
+            self.assertEqual(event["total_input_tokens"], 1000)
+
+    def test_analyze_usage_logs_does_not_double_count_cold_openai_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "cold-openai.jsonl"
+            log_path.write_text(json.dumps({
+                "provider": "openai",
+                "usage": {
+                    "input_tokens": 1000,
+                    "input_tokens_details": {
+                        "cached_tokens": 0,
+                        "cache_write_tokens": 1000,
+                    },
+                },
+            }))
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            totals = json.loads(result.stdout)
+            self.assertEqual(totals["total_input_tokens"], 1000)
+            self.assertEqual(totals["cache_write_tokens"], 1000)
+            self.assertEqual(totals["cache_creation_input_tokens"], 0)
+
     def test_analyze_usage_logs_reads_csv_usage_columns(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -318,6 +372,45 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["total_with_cache_cost"], 2.164)
         self.assertEqual(output["input_savings"], 1.296)
         self.assertEqual(output["total_savings_pct"], 37.46)
+
+    def test_estimate_cache_roi_prices_cache_writes_separately(self):
+        result = run_script(
+            "estimate_cache_roi.py",
+            "--static-tokens", "9000",
+            "--dynamic-tokens", "300",
+            "--output-tokens", "2000",
+            "--requests", "100",
+            "--hit-rate", "0.8",
+            "--input-price-per-mtok", "2.0",
+            "--cached-input-price-per-mtok", "0.2",
+            "--cache-write-tokens", "180000",
+            "--cache-write-price-per-mtok", "2.5",
+            "--output-price-per-mtok", "8.0",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cache_write_tokens"], 180000)
+        self.assertEqual(output["input_with_cache_cost"], 0.654)
+        self.assertEqual(output["total_with_cache_cost"], 2.254)
+
+    def test_estimate_cache_roi_rejects_write_tokens_above_uncached_input(self):
+        result = run_script(
+            "estimate_cache_roi.py",
+            "--static-tokens", "1000",
+            "--dynamic-tokens", "0",
+            "--output-tokens", "0",
+            "--requests", "1",
+            "--hit-rate", "0.5",
+            "--input-price-per-mtok", "2.0",
+            "--cached-input-price-per-mtok", "0.2",
+            "--cache-write-tokens", "600",
+            "--cache-write-price-per-mtok", "2.5",
+            "--output-price-per-mtok", "8.0",
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exceed uncached input", result.stderr)
 
     def test_render_audit_report_outputs_markdown_from_usage_fixture(self):
         result = run_script(
@@ -492,6 +585,31 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["files_scanned"], 1)
             self.assertEqual(output["providers"]["openai"], 1)
             self.assertEqual(output["findings"][0]["path"], "llm-config.json")
+
+    def test_extract_llm_calls_detects_new_openai_cache_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "llm-config.json"
+            config.write_text(json.dumps({
+                "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
+                "input": [{"prompt_cache_breakpoint": {"mode": "explicit"}}],
+            }, indent=2))
+
+            result = run_script("extract_llm_calls.py", tmp)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            output = json.loads(result.stdout)
+            self.assertGreaterEqual(output["providers"]["openai"], 2)
+
+    def test_extract_llm_calls_detects_bedrock_mantle_surface(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "llm-config.json"
+            config.write_text('{"base_url": "https://bedrock-mantle.us-east-2.api.aws/openai/v1"}')
+
+            result = run_script("extract_llm_calls.py", tmp)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            output = json.loads(result.stdout)
+            self.assertEqual(output["providers"]["bedrock"], 1)
 
     def test_extract_llm_calls_scans_dockerfile_for_vllm_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1201,6 +1319,8 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertTrue(rule[key].strip(), rule["id"])
 
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
+        # Provider guide and Opus 5.5 model page, reviewed 2026-09-22.
+        # https://platform.claude.com/docs/en/build-with-claude/prompt-caching
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
         ).read_text()
@@ -1215,10 +1335,15 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "longer TTL",
             "thinking blocks",
             "workspace-level isolation",
+            "claude-opus-5-5",
+            "0.05×",
+            "512 tokens",
         ]:
             self.assertIn(required, reference)
 
     def test_openai_reference_covers_current_prompt_cache_semantics(self):
+        # Provider guide, reviewed 2026-09-22. Legacy fields remain for mixed fleets.
+        # https://developers.openai.com/api/docs/guides/prompt-caching
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "openai.md"
         ).read_text()
@@ -1235,6 +1360,11 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "Regional Inference",
             "TPM rate limits",
             "GPU-local storage",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "cache_write_tokens",
+            "configuration_update",
+            "30m",
         ]:
             self.assertIn(required, reference)
 

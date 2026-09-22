@@ -61,6 +61,10 @@ PROVIDER_PATTERNS = {
         r"\bchat\.completions\.create\s*\(",
         r"\bprompt_cache_key\b",
         r"\bprompt_cache_retention\b",
+        r"\bprompt_cache_options\b",
+        r"\bprompt_cache_breakpoint\b",
+        r"\bconfiguration_update\b",
+        r"\badditional_tools\b",
     ],
     "anthropic": [
         r"\banthropic\b",
@@ -70,6 +74,7 @@ PROVIDER_PATTERNS = {
     ],
     "bedrock": [
         r"\bbedrock-runtime\b",
+        r"\bbedrock-mantle\b",
         r"\bBedrockRuntime\b",
         r"\bclient\.converse\b",
         r"\binvoke_model\b",
