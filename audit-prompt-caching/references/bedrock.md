@@ -6,6 +6,7 @@ Official sources: https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-ca
 https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_TokenUsage.html ;
 https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_CachePointBlock.html ;
 model cards under https://docs.aws.amazon.com/bedrock/latest/userguide/ (per-model caching rows).
+Current OpenAI model list: https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards-openai.html .
 
 ## Mechanics
 
@@ -16,7 +17,7 @@ The native Converse response uses lower-camel usage fields: `inputTokens`, `cach
 Model contracts differ:
 - Anthropic Claude: `cachePoint: {"type": "default", "ttl": "5m" | "1h"}` in `tools`, `system`, and `messages`; up to 4 checkpoints; longer-TTL points must precede shorter ones. The minimum is evaluated on cumulative tokens across `tools` -> `system` -> `messages`, and changing `tools` invalidates the later sections. Minimums are model-tiered (512 for the Claude 5 Opus/Fable/Mythos tier, 1,024 or 4,096 for others at the last review); Bedrock also looks back about 20 content blocks from a breakpoint for a hit. 1h TTL is unavailable on the oldest supported Claude models.
 - Amazon Nova: implicit caching for all text prompts plus explicit `cachePoint` in `system` and `messages` only (no `tools`), 5m TTL, about 1K minimum, 4 checkpoints, and a documented 20K-token cap on cacheable content.
-- OpenAI GPT-5.6 and later (including GPT-6): caching only via the Responses API, on both `bedrock-runtime` (`/openai/v1`, cross-region `us.`/`global.` profiles only) and `bedrock-mantle`. `prompt_cache_breakpoint`/`prompt_cache_options` follow the OpenAI contract with a 30m TTL, 1,024 minimum, 4 checkpoints, and paid writes (about 1.25x input) with reads at about 0.1x; the usage object is OpenAI-shaped (`usage.input_tokens_details.cached_tokens` and `cache_write_tokens`) and **inclusive**, so do not apply the Converse additive rule there. GPT-5.5 and older are implicit-only with free writes; GPT-OSS models list no caching.
+- Listed OpenAI GPT-5.6 models and GPT-6 Astra: caching only via the Responses API, on both `bedrock-runtime` (`/openai/v1`, cross-region `us.`/`global.` profiles only) and `bedrock-mantle`. `prompt_cache_breakpoint`/`prompt_cache_options` follow the OpenAI contract with a 30m TTL, 1,024 minimum, 4 checkpoints, and paid writes (about 1.25x input) with reads at about 0.1x; the usage object is OpenAI-shaped (`usage.input_tokens_details.cached_tokens` and `cache_write_tokens`) and **inclusive**, so do not apply the Converse additive rule there. GPT-5.5 and older are implicit-only with free writes; GPT-OSS models list no caching. As of 2026-09-22, AWS's model cards list GPT-6 Astra but not GPT-6 Sol; verify the exact model ID before applying this contract to a new GPT-6 route.
 
 AWS now recommends `bedrock-runtime` for new OpenAI- and Anthropic-compatible workloads (`/anthropic` and `/openai/v1` routes); `bedrock-mantle` remains supported. Identify the model family and endpoint before prescribing request syntax.
 

@@ -1,9 +1,12 @@
 # OpenAI Prefix Cache Reference
 
-Last reviewed: 2026-09-11 (GPT-6 Astra section; developers.openai.com was unreachable from the review environment, so Astra facts come from the GPT-6 Astra guide text vendored in the openai/codex repository and from `openai-python` SDK types). Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, `configuration_update`, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
+Last reviewed: 2026-09-22 against the live provider guides. Verify official docs before exact claims about model support, prices, thresholds, `prompt_cache_key`, cache controls, `configuration_update`, usage fields, ZDR, Data Residency, Regional Inference, tools, images, or structured outputs.
 
 Official sources:
 - Prompt caching: https://developers.openai.com/api/docs/guides/prompt-caching
+- Cache diagnostics: https://developers.openai.com/api/docs/guides/prompt-caching/diagnostics
+- GPT-6 Sol model and current prices: https://developers.openai.com/api/docs/models/gpt-6-sol
+- GPT-6 Sol launch and caching note: https://openai.com/index/introducing-gpt-6-sol-and-luna/
 - GPT-5.6 guidance: https://developers.openai.com/api/docs/guides/latest-model
 - GPT-6 Astra guide: https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md
 - Reasoning guide (change reasoning mid-conversation): https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation
@@ -24,8 +27,8 @@ OpenAI prompt caching is automatic on supported recent models. Cache hits need e
 
 Important current behaviors to verify:
 - The initial prefix hash participates in routing. OpenAI documents first-prefix affinity; this reference keeps the phrase prefix hash for audits.
-- `prompt_cache_key` is a routing-locality hint, not a privacy boundary or prefix-stability fix.
-- Very hot key traffic can overflow locality; current docs discussed an approximate 15 requests per minute envelope, counted as total traffic across all prefixes for each `prompt_cache_key`. Above it the docs describe traffic for that key being spread across more than one machine, which partitions the cache.
+- On models before GPT-5.6, `prompt_cache_key` helps cache routing; on GPT-5.6+ it is optional for separate cache accounting and cross-user hit-probing isolation, not a prefix-stability fix.
+- Very hot key traffic can overflow locality on earlier models; the guide discusses an approximate 15 requests per minute envelope across all prefixes for each `prompt_cache_key`. Cache state lives on individual machines, so model, region, load, and expiry matter too.
 - `prompt_cache_retention` values include `in_memory` and `"24h"` on supported surfaces.
 - For `gpt-5.5` and `gpt-5.5-pro`, current docs make `"24h"` the default and do not support `in_memory`; GPT-5.6 uses the separate contract below.
 - Cached prompt tokens still count toward TPM rate limits.
@@ -38,22 +41,23 @@ Direct GPT-5.6 models add paid writes and optional explicit cache boundaries:
 
 - `prompt_cache_options.mode` is `implicit` (the default) or `explicit`; the only currently documented TTL is `"30m"`.
 - An explicit boundary is attached to a supported input content block as `"prompt_cache_breakpoint": {"mode": "explicit"}`. In implicit mode OpenAI also considers the latest message; explicit mode writes only marked prefixes. Explicit mode with no marker is cache-disabled rather than an API syntax error, but the linter reports it because it is commonly accidental.
-- **`prompt_cache_key` is required for improved breakpoint matching.** Current docs: on GPT-5.6 and later model families you *must* set it to get the more reliable matching, for both implicit and explicit caching. The same section says requests without a key may still receive automatic hits, so absence degrades matching rather than disabling the cache. Report it in the provider-correctness category, and set severity from applicability and telemetry: high on a 5.6 route that depends on breakpoint reuse and reports low `cached_tokens`, lower where hits are already healthy. This is a manual audit check — `layout_linter.py` validates only `prompt_cache_options` and breakpoint placement, so it still reports `AP-11` clean when the key is absent. Scope keys to a prompt family or session; a single global constant concentrates all of a route's traffic on one key, and past the approximate 15 requests-per-minute envelope in Mechanics that key's traffic is spread across machines and the cache partitions.
-- **No fallback to the longest matching unmarked prefix.** This is the migration trap. Earlier models fall back; GPT-5.6 does not. The implicit breakpoint sits on the latest user or tool message, so if changing content — timestamps, tool-call history, fresh user input — is inside that breakpoint, the full prefix at the breakpoint differs between requests. `cached_tokens` can be `0` while thousands of identical tokens are shared, and the changing prefix is written to cache repeatedly. When a 5.5-era route reports a hit-rate collapse straight after a 5.6 migration with no prompt change, check this before prefix drift.
-- OpenAI creates at most four new writes per request. Implicit mode spends one slot on the latest-message breakpoint, leaving the latest three explicit breakpoints writable; explicit mode makes all four available. Do not turn that write budget into a hard read-lookback limit: earlier markers remain read candidates, and when several match the service reads from the longest matching prefix. The official read-lookback count is currently in conflict — the prompt-caching guide says the latest 50 breakpoints, while the Responses and Chat Completions create references say the latest 80 and state no content-block lookback limit — so re-check the surface you target instead of hardcoding either number.
+- **`prompt_cache_key` is optional on GPT-5.6+.** Use it for separate customer/user accounting or hit-probing isolation. OpenAI routes automatically; diagnose low `cached_tokens` from prefix, breakpoint, region, and cadence first. The 15 requests-per-minute key guidance is for earlier models.
+- **Implicit mode can reuse earlier message boundaries.** The guide checks the implicit point, up to 20 earlier eligible message endings, and the initial developer-message block. Explicit-only mode checks marked points. A volatile suffix can still cause low-value writes; measure before switching modes.
+- Each request creates at most four writes; implicit mode consumes one slot. The cache guide says the first 2 and latest 50 explicit markers are read candidates, while create references mention 80. Check the target API before relying on a lookback count.
 - `prompt_cache_retention` is the older automatic-cache contract and is deprecated for GPT-5.6; `ttl: "30m"` is a minimum reuse lifetime, not a maximum retention guarantee.
 - Cache writes are billed separately; at review time the model guide states 1.25x the uncached input rate. Supply current prices to the ROI helper rather than copying that multiplier into code.
 
 ## GPT-6 Astra Contract Snapshot
 
-`gpt-6-astra` (family alias `gpt-6`; verify alias routing before use) inherits the GPT-5.6 cache contract above: `prompt_cache_options` (`mode`, `ttl: "30m"`), `prompt_cache_breakpoint`, paid writes, `prompt_cache_key` for improved matching, and no fallback to an unmarked prefix. The Astra migration guide says to replace `prompt_cache_retention` with `prompt_cache_options.ttl: "30m"` when coming from GPT-5.5 or earlier. What is new for cache audits:
+`gpt-6-astra` (family alias `gpt-6`; verify routing) uses the GPT-5.6+ cache contract, including optional keys, `prompt_cache_options`, explicit markers, and paid writes. Replace legacy `prompt_cache_retention` with `prompt_cache_options.ttl: "30m"`. The official model page lists $10/$1/$12.50/$50 per MTok (ordinary/read/write/output) below 272K input tokens; a long-context tier applies above it.
 
-- **Effort changes without losing the prefix.** Request-level `reasoning.effort` shapes the rendered prompt, so changing it between responses of one conversation restarts the cache on every OpenAI model. On GPT-6 Astra, keep request-level `reasoning.effort` constant and append a positional input item instead: `{"type": "configuration_update", "reasoning": {"effort": "<level>"}}` directly before the user turn that needs a different level. It applies to that response and later ones until another `configuration_update` replaces it; everything before it is unchanged, so the cached prefix still matches. The SDK type allows only `type`, optional `id`, and `reasoning.effort`.
-- **Compatibility limits.** `configuration_update` is documented for `gpt-6-astra` in standard, single-agent mode only. With `reasoning.mode: "pro"` the API rejects it (`The 'configuration_update' item type is not supported with pro or tournament models`). Other models keep effort in the request-level field. `layout_linter.py` reports these as `AP-15` and exposes an `effort_policy` block.
-- **Effort levels.** GPT-6 Astra does not support `none`; the migration guide says to start `none`/`minimal` routes at `low`. Preserve the old effective effort explicitly when migrating instead of relying on defaults. `reasoning.context` (`auto`, `current_turn`, `all_turns`; `gpt-5.6` family defaults to `all_turns`) decides which reasoning items are rendered back, so a change there is also prefix drift.
-- **Lookback statement.** The current SDK docstring for `prompt_cache_options` says matching considers up to the latest 80 breakpoints in the conversation with no content-block lookback limit, and each request writes up to four breakpoints. This matches the create references cited in the GPT-5.6 section; treat the older 50-breakpoint figure as superseded unless the guide still shows it.
-- **Cache diagnostics.** `prompt_cache_options.comparison_response_id` requests prompt-cache diagnostics against an earlier response when the feature is enabled for the organization. Use it to locate the first divergent element; usage fields stay the production source of ratios.
-- **Pricing (unverified).** Third-party pages report $10/$1/$12.50/$50 per MTok (input/cached input/cache write/output) up to 272K input tokens and a long-context tier above that. These figures were not confirmed on openai.com during this review; pass current prices to `estimate_cache_roi.py` explicitly and mark them as assumptions in reports.
+For GPT-6 standard single-agent conversations, keep request-level `reasoning.effort` constant and insert `{"type":"configuration_update","reasoning":{"effort":"high"}}` before the next user turn. It preserves earlier context; pro mode rejects it. `reasoning.context` changes can also alter the prefix. GPT-6 Astra does not support effort `none`; check the effective effort when migrating. `layout_linter.py` reports incompatible updates as AP-15. Use `prompt_cache_options.comparison_response_id` for diagnostics, then usage fields for actual reads.
+
+## GPT-6 Sol Snapshot
+
+`gpt-6-sol` uses the GPT-5.6+ contract. Current prices per MTok: $2 ordinary input, $0.20 read, $2.50 write, $10 output. Its minimum is 1,024 visible tokens; `cached_tokens` reports the exact eligible boundary. `"30m"` is the only documented TTL and refreshes on reuse.
+
+In standard single-agent Responses, keep request-level effort constant and append `configuration_update` for changes. Keep tools stable; use supported `allowed_tools`, `tool_choice: "none"`, deferred search, or append-only `additional_tools` (no explicit marker there). `prompt_cache_options.prewarm: true` prepares a prefix without output but bills a write; verify the later read.
 
 For Responses, read `cached_tokens` and `cache_write_tokens` under `usage.input_tokens_details`; for Chat Completions, use `usage.prompt_tokens_details`. Both are breakdowns of the reported input total, so do not add them to `input_tokens` or `prompt_tokens`.
 
@@ -63,8 +67,8 @@ Keep data-control layers separate. Cache entries are organization-scoped. ZDR, r
 
 - Detect Responses vs Chat Completions and wrapper layers before choosing usage fields.
 - Apply GPT-5.6 controls only to confirmed direct OpenAI routes; an OpenAI-compatible wrapper is not proof of support.
-- Keep `prompt_cache_key` stable at route or prompt-family granularity; avoid per-request keys and over-broad hot keys.
-- Check whether `reasoning.effort` (or Chat `reasoning_effort`) varies between requests of one conversation; on `gpt-6-astra` standard mode expect `configuration_update` items instead, elsewhere expect a constant level (AP-15).
+- On pre-GPT-5.6 models, keep `prompt_cache_key` stable at route or prompt-family granularity; avoid per-request keys and over-broad hot keys. On GPT-5.6+, use keys for accounting or isolation only when needed.
+- Check whether `reasoning.effort` (or Chat `reasoning_effort`) varies between requests of one conversation; on GPT-6 standard single-agent mode expect `configuration_update` items instead, elsewhere expect a constant level (AP-15).
 - Remove request IDs, timestamps, tenant IDs, and per-request constants from tools, JSON schema, and `response_format`.
 - Sort tools and schema serialization where app code controls order.
 - Keep image representation and `detail` stable.
@@ -88,60 +92,31 @@ written = completion.usage.prompt_tokens_details.cache_write_tokens
 total = completion.usage.prompt_tokens
 ```
 
-If `cached_tokens == 0`, check prefix drift, prompt length, tools/schema drift, image drift, inconsistent key/retention, a request-level `reasoning.effort` or `reasoning.context` change, wrapper routing, model/API changes, or a hot prefix/key. If cached tokens are high but savings are low, check output-token share, decode/final latency, TPM rate limits, and traffic cadence.
+For GPT-5.6+ supported Responses requests, `prompt_cache_options.comparison_response_id` requests a comparison with an earlier completed response from the same organization; it does not load that conversation or force a cache hit. Use the diagnostic reason to locate a changed component, then `usage` to confirm actual read/write tokens. If `cached_tokens == 0`, check prefix drift, prompt length, tools/schema drift, image drift, breakpoint mode/placement, region, cadence, a request-level `reasoning.effort` or `reasoning.context` change, wrapper routing, or model/API changes. On earlier models, also check key/retention and hot-key routing. If cached tokens are high but savings are low, check output-token share, decode/final latency, TPM rate limits, and traffic cadence.
 
 ## Prompt Caching dashboard and aggregate evidence
 
-OpenAI's 2026-08-20 changelog entry describes a Prompt Caching dashboard with
-cache hit rate over time, cache reads per write, a breakdown of
-cache-read/cache-write/uncached tokens, and filters by model and service tier.
-The Dashboard UI is a `provider_dashboard_aggregate`: its ratios are useful
-trend corroboration, but the public description does not define the formula,
-denominator, weighting, request scope, or route attribution. Keep those fields
-`unknown` unless a current provider document says otherwise. For Dashboard UI,
-record `evidence_definition_status=unknown`,
+The Dashboard UI shows cache-hit trends and reads per write. It is a
+`provider_dashboard_aggregate`, useful for corroboration but not causal proof:
+its public formula, denominator, weighting, and route scope are unspecified.
+Record `evidence_definition_status=unknown`,
 `evidence_denominator_status=unknown`, and
-`evidence_accounting_semantics=unknown` unless the provider documents each one. Dashboard
-UI metrics are not request-level evidence and are not causal proof of prompt
-drift, routing misses, or an SDK regression.
+`evidence_accounting_semantics=unknown` for this UI.
 
-The documented OpenAI Organization Usage API is a separate `provider_usage_api_aggregate`. Record
-its time buckets, filters, grouping, and bucket boundaries. Its documented
-completion token decomposition is:
+The documented OpenAI Organization Usage API is a separate
+`provider_usage_api_aggregate`. Record bucket boundaries, filters, and groups.
+`input_tokens` is inclusive of cache reads and writes; `input_cached_tokens`
+counts reads; `input_cache_write_tokens` counts writes; `input_uncached_tokens`
+is uncached input excluding cache-write tokens, neither cache reads nor writes.
+The OpenAI prompt-caching guide documents a request-level read/write/neither partition;
+do not add breakdowns onto inclusive `input_tokens`, or infer a residual from
+missing fields or mismatched bucket/group/filter scope.
 
-- `input_tokens` is inclusive of cached and cache-write tokens;
-- `input_cached_tokens` aggregates cache reads;
-- `input_cache_write_tokens` aggregates cache writes;
-- `input_uncached_tokens` is uncached input excluding cache-write tokens; it is
-  neither cache reads nor writes.
-
-The OpenAI prompt-caching guide documents a request-level read/write/neither partition.
-Do not add breakdowns onto inclusive `input_tokens` or manufacture a
-denominator/residual from missing optional fields or mismatched
-bucket/group/filter scope.
-
-For documented OpenAI Organization Usage API fields, record
-`evidence_definition_status=provider_documented`,
-`evidence_denominator_status=unknown` unless the provider documents the
-denominator, and
-`evidence_accounting_semantics=provider_defined`. The latter means a documented
-mixed decomposition: field-level `input_tokens` is inclusive, and the fields
-must not be naively summed; this is not permission to sum fields. Optional or
-missing fields remain absent/unknown;
-never replace them with zero or fabricate a bucket denominator.
-
-An auditor-defined ratio is not provider-documented or decision-grade aggregate
-evidence without scope proof.
-
-These are Usage API accounting semantics, not a formula to apply to Dashboard
-UI ratios. Do not compare a dashboard hit rate with a per-request ratio as one
-series without proving the same scope, filters, denominator, and accounting
-semantics. No same formula is assumed across these sources; the Dashboard
-denominator is not inferred from Usage API fields. Do not normalize its
-displayed ratio automatically without matching provider documentation.
-
-For a causal finding, retain request-level `cached_tokens`/
-`cache_write_tokens`, rendered prefix/tool/schema hashes, SDK/deploy version,
-and actual route/replica evidence. Dashboard and Usage API aggregates may
-corroborate a trend, but they do not replace request-level or route-level
-correlation.
+For the documented OpenAI Organization Usage API, set `evidence_definition_status=provider_documented`,
+`evidence_denominator_status=unknown` unless the provider documents the denominator,
+and `evidence_accounting_semantics=provider_defined`. This documented mixed decomposition
+is not permission to sum fields. Optional or missing fields stay absent/unknown;
+never replace them with zero. An auditor-defined ratio needs scope proof.
+No same formula is assumed across Dashboard and Usage API; the Dashboard
+denominator is not inferred from Usage API fields. Keep request-level
+`cached_tokens`/`cache_write_tokens`, prefix hashes, and route evidence for a causal finding.

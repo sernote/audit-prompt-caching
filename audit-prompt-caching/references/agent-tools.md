@@ -27,6 +27,8 @@ got smaller: validate stable `tools`/prefix hashes and provider usage per step.
 
 - Log per step: cache read fields, `cached_tokens`, `prefix_hash`, `tools_count`, sorted tool-name hash, output tokens, first/final token timing, actual routed provider/model.
 - Compare cache drops with tool-list changes, mode changes, compaction, memory injection, or provider fallback.
+- On GPT-6 standard single-agent Responses routes, append `configuration_update` for effort changes and preserve it in replayed history. Keep top-level tools stable; use supported `allowed_tools`, `tool_choice: "none"`, or append-only `additional_tools`.
+- On Claude Opus 5.5, use supported per-message effort and `inline-tools-2026-09-15` `tool_addition` for changes after the cached prefix. Keep top-level `tools` unchanged. Check beta and platform support; measure reads and writes on both providers.
 - Keep route-level tool bundles stable and sorted when possible.
 - Use provider-supported allowed tools, tool search, or deferred loading only after checking the endpoint, current docs, and reuse economics.
 - For self-hosted inference, consider masking/constrained decoding instead of changing `tools`.

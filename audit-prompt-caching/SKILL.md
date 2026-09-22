@@ -17,8 +17,8 @@ until the applicability, telemetry, and trust-boundary checks justify them.
 Use this skill for LLM calls where repeated prompt prefixes may affect cost,
 TTFT, prefill latency, or self-hosted KV reuse. Typical triggers:
 
-- `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, writes without reads, or unclear usage fields; GPT-5.6/GPT-6 Astra `prompt_cache_options`/`prompt_cache_breakpoint`; or migration from `prompt_cache_retention`.
-- Effort or reasoning changes inside a cached conversation: per-step `reasoning.effort`, GPT-6 Astra `configuration_update`, Claude per-message `output_config.effort`, thinking toggles.
+- `cached_tokens=0`, `cache_read_input_tokens=0`, `cache_write_tokens`, writes without reads, or unclear usage fields; GPT-5.6+ `prompt_cache_options`/`prompt_cache_breakpoint`; or migration from `prompt_cache_retention`.
+- Effort or reasoning changes inside a cached conversation: per-step `reasoning.effort`, GPT-6 `configuration_update`, Claude per-message `output_config.effort`, thinking toggles.
 - Cache hit rate, TTFT, prefill latency, or input-token cost changed; LLM cost or speed regressed around repeated long prompts, shared context, long agents, or tool loops, or a reported hit rate is not trusted.
 - LLM request shape changed where repeated long prompts, TTFT, cached-token telemetry, or LLM cost matter: inspect prompt text, message order, request builders, tools, schemas, `response_format`, provider API surface, model/router settings, agent loops, or context compaction.
 - Long system prompts, tool catalogs, schemas, static documents, few-shot/RAG context, provider cache APIs, or vLLM/SGLang multi-replica KV deployments with KV pressure, tokenizer/chat-template drift, cache salts, or APC benchmarks such as `vllm bench serve`, `prefix_repetition`, and `benchmark_prefix_caching.py`.
@@ -230,9 +230,9 @@ JSONL, CSV usage logs and request payloads.
 
 Use these starts after provider detection and Freshness Gate:
 
-- **OpenAI cached_tokens=0**: check prompt length/threshold, first-prefix drift, Responses vs Chat usage fields, `prompt_cache_key`, model cache controls, output-token dominance, and wrapper ambiguity.
+- **OpenAI cached_tokens=0**: check length, prefix drift, API usage fields, breakpoints, output share, and wrappers. Check `prompt_cache_key` routing before GPT-5.6; on newer models it is optional for accounting.
 - **GPT-5.6 paid writes**: validate `prompt_cache_options` and marked blocks, separate inclusive `cached_tokens`/`cache_write_tokens` from input totals, and require current pricing before claiming savings. Prefer explicit mode when implicit writes churn on a volatile suffix.
-- **Effort change mid-conversation**: a changed `reasoning.effort`, `output_config.effort`, or thinking configuration between requests of one conversation is prefix drift (AP-15); check it before prompt text. Cache-preserving forms: `gpt-6-astra` standard mode `configuration_update` items (rejected in pro mode) and an effort-only `role: "system"` message on Claude Fable 5.1, Mythos 5.1, and Opus 5 with the `mid-conversation-output-config-2026-07-01` beta. Elsewhere hold effort constant; validate with cache-read fields on the next turn and re-run ROI with the Fable 5.1 0.025x read price.
+- **Effort change mid-conversation**: request-level effort or thinking changes can rewrite the prefix (AP-15). Use `configuration_update` on GPT-6 standard single-agent routes, or per-message `output_config.effort` on supported Claude models including Opus 5.5. Check model, beta, and surface support in provider references; confirm reads on the next turn.
 - **Claude/Bedrock/OpenRouter writes without reads**: distinguish write/create from read/hit fields, then inspect breakpoint placement, dynamic content before it, TTL/retention, model/region/API support, fallback routing, and the routed provider/model.
 - **Gemini Interactions or managed session cache**: distinguish an explicit cache object from an opaque continuation handle (`previous_interaction_id`, `previous_response_id`), keep it inside the intended conversation, and normalize `total_cached_tokens` as inclusive before comparing routes.
 - **KV events, HiCache, or PD disaggregation**: separate prefix mismatch from eviction, tier transfer/offload, event delivery, and decode-side KV reuse. Compare TTFT/prefill and worker/tier metrics first.

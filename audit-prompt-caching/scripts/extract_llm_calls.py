@@ -76,7 +76,9 @@ PROVIDER_PATTERNS = {
         r"\bprompt_cache_key\b",
         r"\bprompt_cache_retention\b",
         r"\bprompt_cache_options\b",
+        r"\bprompt_cache_breakpoint\b",
         r"\bconfiguration_update\b",
+        r"\badditional_tools\b",
     ],
     "anthropic": [
         r"\banthropic\b",
@@ -198,7 +200,9 @@ SIGNAL_LABELS = {
     r"\bprompt_cache_key\b": "prompt_cache_key",
     r"\bprompt_cache_retention\b": "prompt_cache_retention",
     r"\bprompt_cache_options\b": "prompt_cache_options",
+    r"\bprompt_cache_breakpoint\b": "prompt_cache_breakpoint",
     r"\bconfiguration_update\b": "configuration_update",
+    r"\badditional_tools\b": "additional_tools",
     # Anthropic
     r"\banthropic\b": "anthropic",
     r"\bAnthropic\s*\(": "Anthropic",

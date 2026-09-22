@@ -2675,6 +2675,18 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 1)
             self.assertEqual(output["findings"][0]["path"], "llm-config.json")
 
+    def test_extract_llm_calls_detects_explicit_breakpoint_without_other_openai_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "prompt.json"
+            config.write_text('{"prompt_cache_breakpoint": {"mode": "explicit"}}')
+
+            result = run_script("extract_llm_calls.py", tmp)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["providers"]["openai"], 1)
+        self.assertIn("prompt_cache_breakpoint", output["findings"][0]["signals"])
+
     def test_extract_llm_calls_scans_dockerfile_for_vllm_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -3633,7 +3645,29 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["effort_policy"]["per_message_effort_items"], 1)
         self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
 
-    def test_layout_linter_flags_configuration_update_outside_astra(self):
+    def test_layout_linter_accepts_gpt6_sol_configuration_update(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(json.dumps({
+                "model": "gpt-6-sol",
+                "reasoning": {"effort": "medium"},
+                "input": [
+                    {"role": "developer", "content": "Stable policy"},
+                    {"type": "configuration_update", "reasoning": {"effort": "high"}},
+                    {"role": "user", "content": "Hard follow-up"},
+                ],
+                "prompt_cache_options": {"mode": "implicit", "ttl": "30m"},
+            }))
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cache_policy"]["model_support"], "gpt-6")
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_flags_configuration_update_outside_gpt6(self):
         with tempfile.TemporaryDirectory() as tmp:
             request_path = Path(tmp) / "request.json"
             request_path.write_text(
@@ -3660,7 +3694,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             item for item in output["findings"] if item["rule_id"] == "AP-15"
         )
         self.assertEqual(finding["category"], "effort-continuity")
-        self.assertIn("gpt-6-astra", finding["issue"])
+        self.assertIn("GPT-6", finding["issue"])
         self.assertEqual(finding["evidence"], "$.input[1]")
         self.assertFalse(output["effort_policy"]["per_message_effort_supported"])
         self.assertNotIn("AP-15", output["clean_checks"])
@@ -3740,6 +3774,26 @@ class PromptCacheScriptsTest(unittest.TestCase):
             output["effort_policy"]["beta_header"],
             "mid-conversation-output-config-2026-07-01",
         )
+
+    def test_layout_linter_accepts_opus_5_5_per_message_effort(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(json.dumps({
+                "model": "claude-opus-5-5",
+                "output_config": {"effort": "medium"},
+                "messages": [
+                    {"role": "user", "content": "Plan."},
+                    {"role": "system", "content": [], "output_config": {"effort": "high"}},
+                    {"role": "user", "content": "Review."},
+                ],
+            }))
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertIn("AP-15", output["clean_checks"])
 
     def test_layout_linter_flags_anthropic_per_message_effort_on_unsupported_model(
         self,
@@ -4893,6 +4947,9 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "longer TTL",
             "thinking blocks",
             "workspace-level isolation",
+            "claude-opus-5-5",
+            "0.05x",
+            "512-token",
         ]:
             self.assertIn(required, reference)
 
@@ -4923,8 +4980,12 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "breakdowns of the reported input total",
             "minimum reuse lifetime",
             "not a Regional processing guarantee",
+            "gpt-6-sol",
+            "optional on GPT-5.6+",
+            "Implicit mode can reuse earlier message boundaries",
         ]:
             self.assertIn(required, reference)
+        self.assertNotIn("prompt_cache_key` is required", reference)
 
     def test_vercel_allowed_tools_contract_is_responses_only_and_version_aware(self):
         reference = (

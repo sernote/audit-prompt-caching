@@ -39,14 +39,19 @@ STABLE_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 GPT56_MODELS = {"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
-GPT6_MODELS = {"gpt-6", "gpt-6-astra"}
+GPT6_MODELS = {"gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}
 EXPLICIT_CACHE_MODELS = GPT56_MODELS | GPT6_MODELS
 # Direct OpenAI models documented for the positional `configuration_update`
 # input item (standard, single-agent mode only). Verify current docs.
-CONFIGURATION_UPDATE_MODELS = {"gpt-6-astra"}
+CONFIGURATION_UPDATE_MODELS = GPT6_MODELS
 # Claude models documented for per-message `output_config.effort` inside a
 # `role: "system"` message (beta). Verify current docs before extending.
-PER_MESSAGE_EFFORT_MODELS = {"claude-fable-5-1", "claude-mythos-5-1", "claude-opus-5"}
+PER_MESSAGE_EFFORT_MODELS = {
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+    "claude-opus-5-5",
+    "claude-opus-5",
+}
 PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
 SUPPORTED_CACHE_BLOCKS = {
     "chat": {"text", "image_url", "input_audio", "file", "refusal"},
@@ -424,10 +429,10 @@ def lint_openai_configuration_updates(payload, policy):
         if model not in CONFIGURATION_UPDATE_MODELS:
             findings.append(
                 effort_issue(
-                    "configuration_update is documented only for gpt-6-astra; "
+                    "configuration_update is documented only for GPT-6 models; "
                     "other models keep effort in the request-level reasoning field",
                     path,
-                    "remove the item or move the route to gpt-6-astra before "
+                    "remove the item or move the route to a GPT-6 model before "
                     "relying on cache-preserving effort changes",
                 )
             )
@@ -472,7 +477,7 @@ def lint_anthropic_per_message_effort(payload, policy):
             findings.append(
                 effort_issue(
                     "per-message effort in a system message is documented only "
-                    "for Claude Fable 5.1, Claude Mythos 5.1, and Claude Opus 5; "
+                    "for Claude Fable 5.1, Claude Mythos 5.1, Opus 5.5, and Opus 5; "
                     "other models return 400 or restart the cache",
                     path,
                     "hold top-level output_config.effort constant for this model "
