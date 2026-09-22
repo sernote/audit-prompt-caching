@@ -12,7 +12,7 @@ Official sources:
 - Cache Diagnostics beta: https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics
 - API reference: https://docs.anthropic.com/en/api/messages
 - Pricing: https://www.anthropic.com/pricing
-- Claude Opus 5.5 model: https://platform.claude.com/docs/en/models/opus-5-5/overview
+- Opus 5.5: https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5
 
 ## Mechanics
 
@@ -48,6 +48,8 @@ The thinking configuration and the resolved effort level are rendered into the p
 `claude-opus-5-5` has a 512-token cache minimum and 5-minute default TTL. Current prices per million tokens: $4 ordinary input, $5 for a 5-minute write, $8 for a 1-hour write, $0.20 for a read, and $20 output. Its 0.05x read price is 60% lower than Opus 5's $0.50/MTok read price, but actual task savings depend on write/read counts and output. `usage.input_tokens` is uncached input only; add `cache_read_input_tokens` and `cache_creation_input_tokens` for the full input denominator.
 
 Opus 5.5 defaults to `medium` effort, and setting that value explicitly is cache-equivalent to omitting it. Adaptive thinking is always on; preserve returned thinking blocks unchanged in agent loops. The `inline-tools-2026-09-15` beta lets a `tool_addition` block in a mid-conversation system message add or change a tool while keeping top-level `tools` unchanged. If the initial `tools` array has no non-deferred tool, defining the first one this way costs one full cache miss. Check beta and platform support before using this path.
+
+Opus 5.5 binds thinking blocks to the prefix. Replaying after prefix edits returns 400 by default for accounts created from 2026-08-31. Model switches can drop unreadable blocks, breaking cache reuse.
 
 Audit rule AP-15: a per-step effort router on a cached conversation is a repeated write-without-read pattern unless it uses per-message effort on a supported model and surface. `layout_linter.py` reports `effort_policy` and validates the message shape and model; it cannot see request headers, so confirm the beta header in the SDK call or gateway config.
 
