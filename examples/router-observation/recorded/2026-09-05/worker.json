@@ -1,0 +1,116 @@
+[
+  {
+    "path": "/v1/chat/completions",
+    "request_id_received": "lab-8acef11848f2483596889c04727271c5",
+    "lab_mode": "complete",
+    "request_headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "host",
+        "127.0.0.1:49681"
+      ],
+      [
+        "accept-encoding",
+        "identity"
+      ],
+      [
+        "x-request-id",
+        "lab-8acef11848f2483596889c04727271c5"
+      ],
+      [
+        "x-lab-mode",
+        "complete"
+      ],
+      [
+        "accept",
+        "*/*"
+      ],
+      [
+        "content-length",
+        "881"
+      ]
+    ],
+    "request_body": "{\"model\":\"mock-model\",\"messages\":[{\"role\":\"user\",\"content\":\"A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. \"}],\"stream\":true,\"max_tokens\":2,\"logprobs\":false,\"no_stop_trim\":false,\"ignore_eos\":false,\"add_generation_prompt\":true,\"continue_final_message\":false,\"skip_special_tokens\":true,\"separate_reasoning\":true,\"stream_reasoning\":true,\"return_hidden_states\":false,\"include_reasoning\":true}",
+    "worker_kind": "synthetic_http_mock",
+    "usage": null
+  },
+  {
+    "path": "/v1/chat/completions",
+    "request_id_received": "lab-f8654da545c24925a1491be80281d605",
+    "lab_mode": "complete",
+    "request_headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "host",
+        "127.0.0.1:49681"
+      ],
+      [
+        "accept-encoding",
+        "identity"
+      ],
+      [
+        "x-request-id",
+        "lab-f8654da545c24925a1491be80281d605"
+      ],
+      [
+        "x-lab-mode",
+        "complete"
+      ],
+      [
+        "accept",
+        "*/*"
+      ],
+      [
+        "content-length",
+        "881"
+      ]
+    ],
+    "request_body": "{\"model\":\"mock-model\",\"messages\":[{\"role\":\"user\",\"content\":\"A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. \"}],\"stream\":true,\"max_tokens\":2,\"logprobs\":false,\"no_stop_trim\":false,\"ignore_eos\":false,\"add_generation_prompt\":true,\"continue_final_message\":false,\"skip_special_tokens\":true,\"separate_reasoning\":true,\"stream_reasoning\":true,\"return_hidden_states\":false,\"include_reasoning\":true}",
+    "worker_kind": "synthetic_http_mock",
+    "usage": null
+  },
+  {
+    "path": "/v1/chat/completions",
+    "request_id_received": "lab-3a28806ba51745edb1187d3c0dea683d",
+    "lab_mode": "truncated",
+    "request_headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "host",
+        "127.0.0.1:49681"
+      ],
+      [
+        "accept-encoding",
+        "identity"
+      ],
+      [
+        "x-request-id",
+        "lab-3a28806ba51745edb1187d3c0dea683d"
+      ],
+      [
+        "x-lab-mode",
+        "truncated"
+      ],
+      [
+        "accept",
+        "*/*"
+      ],
+      [
+        "content-length",
+        "881"
+      ]
+    ],
+    "request_body": "{\"model\":\"mock-model\",\"messages\":[{\"role\":\"user\",\"content\":\"A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. \"}],\"stream\":true,\"max_tokens\":2,\"logprobs\":false,\"no_stop_trim\":false,\"ignore_eos\":false,\"add_generation_prompt\":true,\"continue_final_message\":false,\"skip_special_tokens\":true,\"separate_reasoning\":true,\"stream_reasoning\":true,\"return_hidden_states\":false,\"include_reasoning\":true}",
+    "worker_kind": "synthetic_http_mock",
+    "usage": null
+  }
+]

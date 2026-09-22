@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Lint JSON LLM request payloads for prompt-cache layout anti-patterns."""
+"""Lint JSON LLM request payloads for prompt-cache layout anti-patterns.
+
+Covers volatile prefixes, tool/schema drift, GPT-5.6/GPT-6 cache controls
+(AP-11), and mid-conversation effort continuity (AP-15): OpenAI
+`configuration_update` items and Claude per-message `output_config.effort`.
+Request headers are not visible in a payload, so the Claude beta header is
+reported as a requirement rather than validated.
+"""
 
 import argparse
 import json
@@ -31,6 +38,25 @@ STABLE_HINT_RE = re.compile(
     r"(stable|reusable|policy|few-shot|examples|shared|static)",
     re.IGNORECASE,
 )
+GPT56_MODELS = {"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+GPT6_MODELS = {"gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}
+EXPLICIT_CACHE_MODELS = GPT56_MODELS | GPT6_MODELS
+# Direct OpenAI models documented for the positional `configuration_update`
+# input item (standard, single-agent mode only). Verify current docs.
+CONFIGURATION_UPDATE_MODELS = GPT6_MODELS
+# Claude models documented for per-message `output_config.effort` inside a
+# `role: "system"` message (beta). Verify current docs before extending.
+PER_MESSAGE_EFFORT_MODELS = {
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+    "claude-opus-5-5",
+    "claude-opus-5",
+}
+PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
+SUPPORTED_CACHE_BLOCKS = {
+    "chat": {"text", "image_url", "input_audio", "file", "refusal"},
+    "responses": {"input_text", "input_image", "input_file"},
+}
 
 
 def finding(rule_id, severity, category, issue, evidence, fix, validation):
@@ -173,7 +199,340 @@ def lint_dynamic_schema(payload):
     return None
 
 
+def direct_gpt56(payload):
+    model = payload.get("model")
+    return model in EXPLICIT_CACHE_MODELS
+
+
+def explicit_cache_family(payload):
+    model = payload.get("model")
+    if model in GPT6_MODELS:
+        return "gpt-6"
+    if model in GPT56_MODELS:
+        return "gpt-5.6"
+    return "unknown"
+
+
+def api_surface(payload):
+    has_messages = "messages" in payload
+    has_input = "input" in payload
+    if has_messages == has_input:
+        return "ambiguous"
+    return "chat" if has_messages else "responses"
+
+
+def marker_locations(value, path="$"):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            if key == "prompt_cache_breakpoint":
+                yield child_path, child
+            yield from marker_locations(child, child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from marker_locations(child, f"{path}[{index}]")
+
+
+def supported_content_blocks(payload, surface):
+    root = "messages" if surface == "chat" else "input"
+    items = payload.get(root)
+    if not isinstance(items, list):
+        return
+    for item_index, item in enumerate(items):
+        if not isinstance(item, dict) or not isinstance(item.get("content"), list):
+            continue
+        for content_index, block in enumerate(item["content"]):
+            if isinstance(block, dict):
+                path = f"$.{root}[{item_index}].content[{content_index}]"
+                yield path, block
+
+
+def cache_issue(message, path, fix, severity="high"):
+    return finding(
+        "AP-11",
+        severity,
+        "explicit-cache-policy",
+        message,
+        path,
+        fix,
+        "re-run the linter and then verify cache read/write telemetry",
+    )
+
+
+def lint_gpt56_cache_policy(payload):
+    surface = api_surface(payload)
+    policy = {
+        "model_support": explicit_cache_family(payload),
+        "api_surface": surface,
+        "mode": None,
+        "ttl": None,
+        "explicit_breakpoints": 0,
+        "validated": False,
+        "valid": None,
+    }
+    if not direct_gpt56(payload):
+        return policy, []
+
+    policy["validated"] = True
+    findings = []
+    if surface == "ambiguous":
+        findings.append(
+            cache_issue(
+                "GPT-5.6 request must contain exactly one of messages or input",
+                "$",
+                "use one supported OpenAI API prompt surface",
+            )
+        )
+
+    options = payload.get("prompt_cache_options", {})
+    if not isinstance(options, dict):
+        findings.append(
+            cache_issue(
+                "prompt_cache_options must be an object",
+                "prompt_cache_options",
+                "send an object with optional mode and ttl fields",
+            )
+        )
+    else:
+        mode = options.get("mode", "implicit")
+        ttl = options.get("ttl", "30m")
+        policy["mode"] = mode
+        policy["ttl"] = ttl
+        if mode not in ("implicit", "explicit"):
+            findings.append(
+                cache_issue(
+                    "prompt_cache_options.mode must be implicit or explicit",
+                    "prompt_cache_options.mode",
+                    "set mode to implicit or explicit",
+                )
+            )
+        if ttl != "30m":
+            findings.append(
+                cache_issue(
+                    "prompt_cache_options.ttl must be 30m",
+                    "prompt_cache_options.ttl",
+                    "set ttl to 30m for this GPT-5.6 contract snapshot",
+                )
+            )
+
+    if "prompt_cache_retention" in payload:
+        findings.append(
+            cache_issue(
+                "prompt_cache_retention is deprecated for GPT-5.6",
+                "prompt_cache_retention",
+                "use prompt_cache_options instead",
+                severity="medium",
+            )
+        )
+
+    markers = list(marker_locations(payload))
+    block_by_marker_path = {}
+    if surface in SUPPORTED_CACHE_BLOCKS:
+        for block_path, block in supported_content_blocks(payload, surface):
+            if "prompt_cache_breakpoint" in block:
+                block_by_marker_path[f"{block_path}.prompt_cache_breakpoint"] = block
+
+    valid_markers = 0
+    for path, value in markers:
+        block = block_by_marker_path.get(path)
+        if block is None:
+            findings.append(
+                cache_issue(
+                    "prompt_cache_breakpoint must be on a supported content block",
+                    path,
+                    "move the marker onto a Chat or Responses content block",
+                )
+            )
+            continue
+        if block.get("type") not in SUPPORTED_CACHE_BLOCKS[surface]:
+            findings.append(
+                cache_issue(
+                    "prompt_cache_breakpoint uses an unsupported content block type",
+                    path,
+                    "attach the marker to a supported prompt input block",
+                )
+            )
+            continue
+        if value != {"mode": "explicit"}:
+            findings.append(
+                cache_issue(
+                    'prompt_cache_breakpoint must be exactly {"mode":"explicit"}',
+                    path,
+                    "use the documented explicit marker value",
+                )
+            )
+            continue
+        valid_markers += 1
+
+    if policy["mode"] == "explicit" and not markers:
+        findings.append(
+            cache_issue(
+                "explicit mode has no valid prompt_cache_breakpoint, so cache writes are disabled",
+                "prompt_cache_options.mode",
+                "add a breakpoint or use implicit mode when automatic writes are intended",
+                severity="medium",
+            )
+        )
+
+    policy["explicit_breakpoints"] = valid_markers
+    policy["valid"] = not findings
+    return policy, findings
+
+
+def effort_issue(message, path, fix, severity="high"):
+    return finding(
+        "AP-15",
+        severity,
+        "effort-continuity",
+        message,
+        path,
+        fix,
+        "compare cache read fields on the turn after the effort change",
+    )
+
+
+def detect_provider(payload):
+    model = payload.get("model")
+    model_text = model if isinstance(model, str) else ""
+    if model_text.startswith("claude") or "anthropic" in model_text:
+        return "anthropic"
+    if "system" in payload and "messages" in payload and "input" not in payload:
+        return "anthropic"
+    if model_text or "messages" in payload or "input" in payload:
+        return "openai"
+    return None
+
+
+def request_effort(payload, provider):
+    if provider == "anthropic":
+        config = payload.get("output_config")
+        return config.get("effort") if isinstance(config, dict) else None
+    reasoning = payload.get("reasoning")
+    if isinstance(reasoning, dict) and "effort" in reasoning:
+        return reasoning.get("effort")
+    return payload.get("reasoning_effort")
+
+
+def lint_openai_configuration_updates(payload, policy):
+    findings = []
+    items = payload.get("input")
+    if not isinstance(items, list):
+        return findings
+    model = payload.get("model")
+    reasoning = payload.get("reasoning")
+    mode = reasoning.get("mode") if isinstance(reasoning, dict) else None
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or item.get("type") != "configuration_update":
+            continue
+        path = f"$.input[{index}]"
+        policy["per_message_effort_items"] += 1
+        if model not in CONFIGURATION_UPDATE_MODELS:
+            findings.append(
+                effort_issue(
+                    "configuration_update is documented only for GPT-6 models; "
+                    "other models keep effort in the request-level reasoning field",
+                    path,
+                    "remove the item or move the route to a GPT-6 model before "
+                    "relying on cache-preserving effort changes",
+                )
+            )
+        if mode == "pro":
+            findings.append(
+                effort_issue(
+                    "configuration_update is rejected in reasoning.mode pro",
+                    path,
+                    "keep mid-conversation effort changes on standard mode",
+                )
+            )
+        update = item.get("reasoning")
+        extra_keys = set(item) - {"type", "id", "reasoning"}
+        update_keys = set(update) - {"effort"} if isinstance(update, dict) else set()
+        if extra_keys or update_keys or not isinstance(update, dict):
+            findings.append(
+                effort_issue(
+                    "configuration_update changes only reasoning.effort",
+                    path,
+                    "send {\"type\":\"configuration_update\","
+                    "\"reasoning\":{\"effort\":...}} and nothing else",
+                    severity="medium",
+                )
+            )
+    return findings
+
+
+def lint_anthropic_per_message_effort(payload, policy):
+    findings = []
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return findings
+    model = payload.get("model")
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict) or message.get("role") != "system":
+            continue
+        if "output_config" not in message:
+            continue
+        path = f"$.messages[{index}]"
+        policy["per_message_effort_items"] += 1
+        if model not in PER_MESSAGE_EFFORT_MODELS:
+            findings.append(
+                effort_issue(
+                    "per-message effort in a system message is documented only "
+                    "for Claude Fable 5.1, Claude Mythos 5.1, Opus 5.5, and Opus 5; "
+                    "other models return 400 or restart the cache",
+                    path,
+                    "hold top-level output_config.effort constant for this model "
+                    "or move the route to a supported model",
+                )
+            )
+        config = message.get("output_config")
+        if not isinstance(config, dict) or set(config) != {"effort"}:
+            findings.append(
+                effort_issue(
+                    "per-message output_config carries only effort",
+                    path,
+                    "send output_config as {\"effort\": <level>}",
+                    severity="medium",
+                )
+            )
+    return findings
+
+
+def lint_effort_continuity(payload):
+    provider = detect_provider(payload)
+    policy = {
+        "provider": provider,
+        "request_effort": request_effort(payload, provider) if provider else None,
+        "per_message_effort_items": 0,
+        "per_message_effort_supported": False,
+        "beta_header": None,
+        "validated": False,
+        "valid": None,
+    }
+    if provider == "openai":
+        policy["per_message_effort_supported"] = (
+            payload.get("model") in CONFIGURATION_UPDATE_MODELS
+        )
+        findings = lint_openai_configuration_updates(payload, policy)
+    elif provider == "anthropic":
+        policy["per_message_effort_supported"] = (
+            payload.get("model") in PER_MESSAGE_EFFORT_MODELS
+        )
+        if policy["per_message_effort_supported"]:
+            policy["beta_header"] = PER_MESSAGE_EFFORT_BETA
+        findings = lint_anthropic_per_message_effort(payload, policy)
+    else:
+        return policy, []
+    if policy["per_message_effort_items"]:
+        policy["validated"] = True
+        policy["valid"] = not findings
+    return policy, findings
+
+
 def lint(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("request payload must be a JSON object")
+    cache_policy, cache_findings = lint_gpt56_cache_policy(payload)
+    effort_policy, effort_findings = lint_effort_continuity(payload)
     findings = [
         item
         for item in (
@@ -183,15 +542,23 @@ def lint(payload):
         )
         if item
     ]
+    findings.extend(cache_findings)
+    findings.extend(effort_findings)
     clean_checks = []
     found_rule_ids = {item["rule_id"] for item in findings}
     for rule_id in ("AP-1", "AP-2"):
         if rule_id not in found_rule_ids:
             clean_checks.append(rule_id)
+    if cache_policy["validated"] and cache_policy["valid"]:
+        clean_checks.append("AP-11")
+    if effort_policy["validated"] and effort_policy["valid"]:
+        clean_checks.append("AP-15")
     return {
         "status": "findings" if findings else "ok",
         "findings": findings,
         "clean_checks": clean_checks,
+        "cache_policy": cache_policy,
+        "effort_policy": effort_policy,
     }
 
 
@@ -201,7 +568,14 @@ def main(argv=None):
     )
     parser.add_argument("path", help="JSON request payload")
     args = parser.parse_args(argv)
-    payload = json.loads(Path(args.path).read_text())
+    try:
+        payload = json.loads(Path(args.path).read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        print(f"invalid request JSON: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(payload, dict):
+        print("invalid request JSON: root must be an object", file=sys.stderr)
+        return 2
     result = lint(payload)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 1 if result["findings"] else 0

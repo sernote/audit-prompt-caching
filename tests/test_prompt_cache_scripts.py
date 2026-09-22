@@ -1,8 +1,12 @@
 import csv
+import importlib.util
 import json
+import math
+import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -10,6 +14,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "audit-prompt-caching" / "scripts"
 FIXTURES = ROOT / "fixtures"
+
+# plugin-eval 0.1.2 reports static token estimates as len(text) / 4. Mirroring
+# that arithmetic keeps the budget guardrails in-suite without shelling out to
+# plugin-eval, which is not a repository test dependency.
+# plugin-eval measures the parsed description value, not its YAML source slice.
+# The former 0.85 character heuristic was retired: the required complete
+# provider/vLLM trigger surface plus lexical separators cannot fit that ratio.
+PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
+# The optional normalized-routing helper hook added 53 estimated tokens to the
+# 6341 baseline; the AP-15 effort-continuity trigger, playbook, and linter
+# description add 282 more. Provider guidance and the Routing Outcome Gate are
+# preserved. See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
+# Remeasured corpus after the Claude 5 family / GPT-6 Astra effort-continuity
+# references, AP-15 rule, linter branch, and evals 34-36.
+# Includes executable/eval source, not just references loaded by an agent.
+# See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
+# docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
+# references and the labeled OpenAI-compatible usage adapter).
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 77677
+# Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
+BASELINE_DESCRIPTION_CHARS = 679
+
+
+def estimated_plugin_eval_tokens(text):
+    return math.ceil(len(text) / 4)
 
 
 def run_script(script_name, *args):
@@ -24,6 +54,51 @@ def run_script(script_name, *args):
 
 def load_jsonl(path):
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def load_script_module(script_name):
+    """Import a script for module-level assertions without writing bytecode."""
+    path = SCRIPTS / script_name
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+    return module
+
+
+def parse_markdown_table(text, header):
+    """Parse one pipe table by its exact header using only the stdlib."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != header:
+            continue
+        headers = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        rows = []
+        for row_line in lines[index + 2 :]:
+            if not row_line.strip().startswith("|"):
+                break
+            values = [cell.strip() for cell in row_line.strip().strip("|").split("|")]
+            if len(values) != len(headers):
+                break
+            rows.append(dict(zip(headers, values)))
+        return rows
+    raise AssertionError(f"missing Markdown table header: {header}")
+
+
+def extract_markdown_section(text, heading):
+    """Return one level-two Markdown section without unrelated sections."""
+    pattern = rf"^## {re.escape(heading)}\s*$"
+    match = re.search(pattern, text, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"missing Markdown section: {heading}")
+    body_start = match.end()
+    next_heading = re.search(r"^## (?!#)", text[body_start:], re.MULTILINE)
+    body_end = body_start + next_heading.start() if next_heading else len(text)
+    return text[body_start:body_end]
 
 
 class PromptCacheScriptsTest(unittest.TestCase):
@@ -207,6 +282,19 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(events[1]["cache_benefit_tokens"], 4600)
         self.assertEqual(events[1]["total_input_tokens"], 5200)
         self.assertEqual(events[2]["output_tokens"], 405)
+        self.assertEqual(events[0]["schema_version"], 1)
+        self.assertEqual(
+            events[0]["source_fields"],
+            {
+                "input_tokens": "usage.input_tokens",
+                "cached_tokens": "usage.input_tokens_details.cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "usage.output_tokens",
+            },
+        )
+        self.assertEqual(events[0]["denominator_status"], "valid")
 
     def test_analyze_usage_logs_uses_full_anthropic_denominator(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -229,60 +317,6 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["input_tokens"], 500)
             self.assertEqual(output["total_input_tokens"], 1000)
             self.assertEqual(output["cache_hit_ratio"], 0.3)
-
-    def test_analyze_usage_logs_keeps_openai_cache_writes_inside_input_total(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            log_path = Path(tmp) / "openai.jsonl"
-            log_path.write_text(json.dumps({
-                "provider": "openai",
-                "model": "gpt-6-sol",
-                "usage": {
-                    "input_tokens": 1000,
-                    "input_tokens_details": {
-                        "cached_tokens": 400,
-                        "cache_write_tokens": 300,
-                    },
-                    "output_tokens": 100,
-                },
-            }))
-
-            summary = run_script("analyze_usage_logs.py", log_path)
-            events = run_script("analyze_usage_logs.py", "--jsonl-normalized", log_path)
-
-            self.assertEqual(summary.returncode, 0, summary.stderr)
-            self.assertEqual(events.returncode, 0, events.stderr)
-            totals = json.loads(summary.stdout)
-            event = json.loads(events.stdout)
-            self.assertEqual(totals["total_input_tokens"], 1000)
-            self.assertEqual(totals["cached_tokens"], 400)
-            self.assertEqual(totals["cache_write_tokens"], 300)
-            self.assertEqual(totals["cache_creation_input_tokens"], 0)
-            self.assertEqual(totals["cache_hit_ratio"], 0.4)
-            self.assertEqual(totals["cache_write_read_ratio"], 0.75)
-            self.assertEqual(event["cache_write_tokens"], 300)
-            self.assertEqual(event["total_input_tokens"], 1000)
-
-    def test_analyze_usage_logs_does_not_double_count_cold_openai_write(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            log_path = Path(tmp) / "cold-openai.jsonl"
-            log_path.write_text(json.dumps({
-                "provider": "openai",
-                "usage": {
-                    "input_tokens": 1000,
-                    "input_tokens_details": {
-                        "cached_tokens": 0,
-                        "cache_write_tokens": 1000,
-                    },
-                },
-            }))
-
-            result = run_script("analyze_usage_logs.py", log_path)
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            totals = json.loads(result.stdout)
-            self.assertEqual(totals["total_input_tokens"], 1000)
-            self.assertEqual(totals["cache_write_tokens"], 1000)
-            self.assertEqual(totals["cache_creation_input_tokens"], 0)
 
     def test_analyze_usage_logs_reads_csv_usage_columns(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -341,6 +375,1083 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["total_input_tokens"], 1600)
             self.assertEqual(output["cache_hit_ratio"], 0.25)
 
+    def test_analyze_usage_logs_reads_bedrock_converse_lower_camel_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "bedrock-converse.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "bedrock",
+                        "metrics": {"latencyMs": 42},
+                        "usage": {
+                            "inputTokens": 1000,
+                            "cacheReadInputTokens": 400,
+                            "cacheWriteInputTokens": 200,
+                            "outputTokens": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cache_read_input_tokens"], 400)
+        self.assertEqual(output["cache_creation_input_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1600)
+        self.assertEqual(output["accounting_semantics"], "additive")
+
+    def test_analyze_usage_logs_inferrs_unlabeled_bedrock_converse_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "bedrock-converse-raw.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "usage": {
+                            "inputTokens": 1000,
+                            "cacheReadInputTokens": 400,
+                            "cacheWriteInputTokens": 200,
+                            "outputTokens": 100,
+                        }
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cache_read_input_tokens"], 400)
+        self.assertEqual(output["cache_creation_input_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1600)
+        self.assertEqual(output["accounting_semantics"], "additive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_gemini_interactions_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-interactions.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "usage": {
+                            "total_cached_tokens": 600,
+                            "total_input_tokens": 1000,
+                            "total_output_tokens": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_accepts_gemini_interactions_cache_miss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-interactions-miss.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "object": "interaction",
+                        "usage": {
+                            "total_cached_tokens": 0,
+                            "total_input_tokens": 1000,
+                            "total_output_tokens": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 0)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_gemini_interactions_stream_total_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-interactions-stream.jsonl"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "event_type": "step.stop",
+                        "metadata": {
+                            "total_usage": {
+                                "total_cached_tokens": 600,
+                                "total_input_tokens": 1000,
+                                "total_output_tokens": 100,
+                            }
+                        },
+                    }
+                )
+            )
+
+            result = run_script(
+                "analyze_usage_logs.py", "--jsonl-normalized", log_path
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        event = json.loads(result.stdout)
+        self.assertEqual(event["provider"], "gemini")
+        self.assertEqual(event["input_tokens"], 1000)
+        self.assertEqual(event["cached_tokens"], 600)
+        self.assertEqual(event["output_tokens"], 100)
+        self.assertEqual(event["total_input_tokens"], 1000)
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_preserves_gemini_generate_content_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-generate-content.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "gemini",
+                        "usageMetadata": {
+                            "promptTokenCount": 1000,
+                            "cachedContentTokenCount": 600,
+                            "candidatesTokenCount": 100,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_flat_gemini_generate_content_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "gemini-generate-content-flat.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "gemini",
+                        "prompt_token_count": 1000,
+                        "cached_content_token_count": 600,
+                        "candidates_token_count": 100,
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1000)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["output_tokens"], 100)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_counts_openai_cache_writes_as_inclusive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "input_tokens_details": {
+                                "cached_tokens": 600,
+                                "cache_write_tokens": 200,
+                            },
+                            "output_tokens": 50,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["cache_benefit_tokens"], 600)
+        self.assertEqual(output["cache_write_tokens"], 200)
+        self.assertEqual(output["cache_write_total_tokens"], 200)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+        self.assertEqual(output["warnings"], [])
+
+    def test_analyze_usage_logs_reads_openai_chat_usage_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "prompt_tokens": 1200,
+                            "prompt_tokens_details": {
+                                "cached_tokens": 700,
+                                "cache_write_tokens": 300,
+                            },
+                            "completion_tokens": 80,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["input_tokens"], 1200)
+        self.assertEqual(output["cached_tokens"], 700)
+        self.assertEqual(output["cache_write_tokens"], 300)
+        self.assertEqual(output["output_tokens"], 80)
+        self.assertEqual(output["total_input_tokens"], 1200)
+
+    def test_analyze_usage_logs_reads_flat_openai_cache_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "input_tokens": 1000,
+                        "cached_tokens": 600,
+                        "cache_write_tokens": 200,
+                        "output_tokens": 50,
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cached_tokens"], 600)
+        self.assertEqual(output["cache_write_tokens"], 200)
+        self.assertEqual(output["total_input_tokens"], 1000)
+        self.assertEqual(output["accounting_semantics"], "inclusive")
+
+    def test_analyze_usage_logs_marks_wrapper_accounting_ambiguous(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openrouter",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "cached_tokens": 600,
+                            "cache_write_tokens": 200,
+                            "output_tokens": 50,
+                        },
+                    }
+                )
+            )
+
+            default = run_script("analyze_usage_logs.py", log_path)
+            additive = run_script(
+                "analyze_usage_logs.py",
+                "--accounting-mode",
+                "additive",
+                log_path,
+            )
+
+        self.assertEqual(default.returncode, 0, default.stderr)
+        default_output = json.loads(default.stdout)
+        self.assertEqual(default_output["total_input_tokens"], 1000)
+        self.assertEqual(default_output["accounting_semantics"], "ambiguous")
+        self.assertEqual(
+            default_output["warnings"][0]["code"],
+            "AMBIGUOUS_ACCOUNTING_SEMANTICS",
+        )
+        self.assertEqual(additive.returncode, 0, additive.stderr)
+        additive_output = json.loads(additive.stdout)
+        self.assertEqual(additive_output["total_input_tokens"], 1800)
+        self.assertEqual(additive_output["accounting_semantics"], "additive")
+
+    def test_analyze_usage_logs_warns_when_openai_breakdown_exceeds_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 100,
+                            "input_tokens_details": {"cache_write_tokens": 120},
+                        },
+                    }
+                )
+            )
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["total_input_tokens"], 100)
+        self.assertEqual(
+            output["warnings"][0]["code"],
+            "OPENAI_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(output["denominator_status"], "invalid")
+        self.assertNotIn("schema_version", output)
+
+    def normalized_event(self, record, *args, name="usage.json"):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / name
+            log_path.write_text(json.dumps(record))
+            result = run_script(
+                "analyze_usage_logs.py", "--jsonl-normalized", *args, log_path
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_analyze_usage_logs_reports_openai_chat_usage_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "usage": {
+                    "prompt_tokens": 1200,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 700,
+                        "cache_write_tokens": 300,
+                    },
+                    "completion_tokens": 80,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.prompt_tokens",
+                "cached_tokens": "usage.prompt_tokens_details.cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": "usage.prompt_tokens_details.cache_write_tokens",
+                "output_tokens": "usage.completion_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reads_dashscope_openai_compatible_cache_creation(self):
+        # DashScope/Qwen reports explicit-cache writes inside the OpenAI-shaped
+        # prompt_tokens_details object; the total stays inclusive. The record is
+        # deliberately unlabeled, so the generic OpenAI-shape adapter (reported
+        # as provider "openai") handles it; labeled records are covered below.
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "prompt_tokens": 2200,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 0,
+                        "cache_creation_input_tokens": 2156,
+                    },
+                    "completion_tokens": 40,
+                },
+            }
+        )
+
+        self.assertEqual(event["provider"], "openai")
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(
+            event["source_fields"]["cache_creation_input_tokens"],
+            "usage.prompt_tokens_details.cache_creation_input_tokens",
+        )
+        self.assertEqual(event["cache_creation_input_tokens"], 2156)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_treats_labeled_moonshot_chat_usage_as_inclusive(self):
+        # Moonshot/Kimi Chat Completions report cached_tokens at the usage top
+        # level and document it as a subset of prompt_tokens.
+        event = self.normalized_event(
+            {
+                "provider": "moonshot",
+                "model": "kimi-k2.6",
+                "usage": {
+                    "prompt_tokens": 3000,
+                    "cached_tokens": 2560,
+                    "completion_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["provider"], "moonshot")
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["source_fields"]["cached_tokens"], "usage.cached_tokens")
+        self.assertEqual(event["total_input_tokens"], 3000)
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_keeps_unlabeled_top_level_cached_tokens_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "prompt_tokens": 3000,
+                    "cached_tokens": 2560,
+                    "completion_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_routes_labeled_vendor_messages_usage_to_additive_adapter(self):
+        # The same vendor's Anthropic-compatible Messages route reports
+        # additive cache_read/cache_creation fields.
+        event = self.normalized_event(
+            {
+                "provider": "moonshot",
+                "usage": {
+                    "input_tokens": 400,
+                    "cache_read_input_tokens": 2560,
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["total_input_tokens"], 2960)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_labeled_vendor_mixed_shape_keeps_openai_counts(self):
+        # Some proxies emit top-level Anthropic fields next to prompt_tokens;
+        # the OpenAI-shaped counts must win for a labeled vendor.
+        event = self.normalized_event(
+            {
+                "provider": "minimax",
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "prompt_tokens_details": {"cached_tokens": 800},
+                    "cache_creation_input_tokens": 0,
+                    "completion_tokens": 10,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["input_tokens"], 1000)
+        self.assertEqual(event["cached_tokens"], 800)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reads_vendor_cached_token_spellings(self):
+        for provider, usage, path in (
+            ("tencent", {"prompt_tokens": 900, "cached_token": 512}, "usage.cached_token"),
+            (
+                "xai",
+                {"prompt_tokens": 900, "cached_prompt_text_tokens": 512},
+                "usage.cached_prompt_text_tokens",
+            ),
+            (
+                "deepseek",
+                {"prompt_tokens": 900, "prompt_cache_hit_tokens": 512},
+                "usage.prompt_cache_hit_tokens",
+            ),
+            (
+                "qwen",
+                {
+                    "prompt_tokens": 900,
+                    "prompt_tokens_details": {"cached_tokens": 512},
+                },
+                "usage.prompt_tokens_details.cached_tokens",
+            ),
+        ):
+            with self.subTest(provider=provider):
+                event = self.normalized_event({"provider": provider, "usage": usage})
+                self.assertEqual(event["accounting_semantics"], "inclusive")
+                self.assertEqual(event["cached_tokens"], 512)
+                self.assertEqual(event["source_fields"]["cached_tokens"], path)
+                self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_labeled_vendor_without_cache_field_stays_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "provider": "yandex",
+                "usage": {"prompt_tokens": 900, "completion_tokens": 20},
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_labeled_qwen_messages_usage_is_additive(self):
+        event = self.normalized_event(
+            {
+                "provider": "qwen",
+                "usage": {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 2000,
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 20,
+                },
+            }
+        )
+
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["total_input_tokens"], 2100)
+
+    def test_analyze_usage_logs_reports_anthropic_usage_provenance(self):
+        event = self.normalized_event(
+            {
+                "usage": {
+                    "input_tokens": 500,
+                    "cache_read_input_tokens": 300,
+                    "cache_creation_input_tokens": 200,
+                    "output_tokens": 50,
+                }
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.input_tokens",
+                "cached_tokens": None,
+                "cache_read_input_tokens": "usage.cache_read_input_tokens",
+                "cache_creation_input_tokens": "usage.cache_creation_input_tokens",
+                "cache_write_tokens": None,
+                "output_tokens": "usage.output_tokens",
+            },
+        )
+        self.assertEqual(event["accounting_semantics"], "additive")
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_bedrock_metrics_provenance(self):
+        event = self.normalized_event(
+            {
+                "metrics": {
+                    "InputTokens": 1000,
+                    "CacheReadInputTokens": 400,
+                    "CacheWriteInputTokens": 200,
+                    "OutputTokens": 100,
+                }
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "metrics.InputTokens",
+                "cached_tokens": None,
+                "cache_read_input_tokens": "metrics.CacheReadInputTokens",
+                "cache_creation_input_tokens": "metrics.CacheWriteInputTokens",
+                "cache_write_tokens": None,
+                "output_tokens": "metrics.OutputTokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_bedrock_converse_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "bedrock",
+                "metrics": {"latencyMs": 42},
+                "usage": {
+                    "inputTokens": 1000,
+                    "cacheReadInputTokens": 400,
+                    "cacheWriteInputTokens": 200,
+                    "outputTokens": 100,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.inputTokens",
+                "cached_tokens": None,
+                "cache_read_input_tokens": "usage.cacheReadInputTokens",
+                "cache_creation_input_tokens": "usage.cacheWriteInputTokens",
+                "cache_write_tokens": None,
+                "output_tokens": "usage.outputTokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_gemini_interactions_provenance(self):
+        event = self.normalized_event(
+            {
+                "event_type": "step.stop",
+                "metadata": {
+                    "total_usage": {
+                        "total_cached_tokens": 600,
+                        "total_input_tokens": 1000,
+                        "total_output_tokens": 100,
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "metadata.total_usage.total_input_tokens",
+                "cached_tokens": "metadata.total_usage.total_cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "metadata.total_usage.total_output_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_gemini_generate_content_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usageMetadata": {
+                    "promptTokenCount": 1000,
+                    "cachedContentTokenCount": 600,
+                    "candidatesTokenCount": 100,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usageMetadata.promptTokenCount",
+                "cached_tokens": "usageMetadata.cachedContentTokenCount",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "usageMetadata.candidatesTokenCount",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_nested_wrapper_provenance(self):
+        record = {
+            "provider": "openrouter",
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "completion_tokens": 50,
+                }
+            },
+        }
+
+        event = self.normalized_event(record)
+        overridden = self.normalized_event(record, "--accounting-mode", "inclusive")
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "data.usage.prompt_tokens",
+                "cached_tokens": "data.usage.cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "data.usage.completion_tokens",
+            },
+        )
+        self.assertEqual(event["accounting_semantics"], "ambiguous")
+        self.assertEqual(event["denominator_status"], "ambiguous")
+        self.assertEqual(overridden["accounting_semantics"], "inclusive")
+        self.assertEqual(overridden["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_marks_inclusive_contradiction_invalid(self):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usageMetadata": {
+                    "promptTokenCount": 1000,
+                    "cachedContentTokenCount": 1200,
+                    "candidatesTokenCount": 100,
+                },
+            }
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cached_tokens")
+
+    def test_analyze_usage_logs_aggregates_worst_denominator_status(self):
+        valid_record = {
+            "provider": "openai",
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": {"cached_tokens": 600},
+                "output_tokens": 50,
+            },
+        }
+        ambiguous_record = {
+            "provider": "openrouter",
+            "usage": {"input_tokens": 1000, "cached_tokens": 600},
+        }
+        invalid_record = {
+            "provider": "gemini",
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "cachedContentTokenCount": 900,
+            },
+        }
+
+        def summarize(*records):
+            with tempfile.TemporaryDirectory() as tmp:
+                log_path = Path(tmp) / "usage.jsonl"
+                log_path.write_text(
+                    "\n".join(json.dumps(record) for record in records)
+                )
+                result = run_script("analyze_usage_logs.py", log_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)
+
+        self.assertEqual(summarize(valid_record)["denominator_status"], "valid")
+        self.assertEqual(
+            summarize(valid_record, ambiguous_record)["denominator_status"],
+            "ambiguous",
+        )
+        self.assertEqual(
+            summarize(valid_record, ambiguous_record, invalid_record)[
+                "denominator_status"
+            ],
+            "invalid",
+        )
+
+    def test_analyze_usage_logs_reports_ambiguous_denominator_without_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "empty.jsonl"
+            log_path.write_text("")
+
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["records"], 0)
+        self.assertEqual(output["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_marks_evidence_free_record_ambiguous(self):
+        evidence_free_record = {
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "route": "responses-api",
+        }
+        valid_record = {
+            "provider": "openai",
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": {"cached_tokens": 600},
+                "output_tokens": 50,
+            },
+        }
+
+        event = self.normalized_event(evidence_free_record)
+
+        self.assertEqual(event["denominator_status"], "ambiguous")
+        self.assertEqual(set(event["source_fields"].values()), {None})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.jsonl"
+            log_path.write_text(
+                "\n".join(
+                    json.dumps(record)
+                    for record in (valid_record, evidence_free_record)
+                )
+            )
+            result = run_script("analyze_usage_logs.py", log_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout)["denominator_status"], "ambiguous"
+        )
+
+    def test_analyze_usage_logs_keeps_additive_denominator_without_uncached_input(self):
+        event = self.normalized_event(
+            {
+                "provider": "anthropic",
+                "usage": {
+                    "input_tokens": 0,
+                    "cache_read_input_tokens": 800,
+                    "output_tokens": 40,
+                },
+            }
+        )
+
+        self.assertEqual(event["total_input_tokens"], 800)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_marks_zero_denominator_ambiguous(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "usage": {"input_tokens": 0, "output_tokens": 40},
+            }
+        )
+
+        self.assertEqual(event["total_input_tokens"], 0)
+        self.assertEqual(event["denominator_status"], "ambiguous")
+
+    def test_analyze_usage_logs_keeps_inclusive_contradiction_over_zero_input(self):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usageMetadata": {
+                    "promptTokenCount": 0,
+                    "cachedContentTokenCount": 900,
+                },
+            }
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+
+    def test_analyze_usage_logs_keeps_zero_valued_wrapper_alias_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "openrouter",
+                "usage": {
+                    "input_tokens": 1000,
+                    "cached_tokens": 0,
+                    "prompt_cache_hit_tokens": 0,
+                    "output_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["cached_tokens"], 0)
+        self.assertEqual(event["source_fields"]["cached_tokens"], "usage.cached_tokens")
+
+    def test_analyze_usage_logs_flags_inclusive_override_contradiction(self):
+        event = self.normalized_event(
+            {
+                "provider": "openrouter",
+                "usage": {
+                    "input_tokens": 100,
+                    "cached_tokens": 400,
+                    "output_tokens": 50,
+                },
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cached_tokens")
+
+    def test_analyze_usage_logs_flags_inclusive_read_aliases_exceeding_input(self):
+        record = {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "cache_read_tokens": 700,
+                    "completion_tokens": 50,
+                }
+            }
+        }
+
+        event = self.normalized_event(record, "--accounting-mode", "inclusive")
+
+        self.assertEqual(event["cached_tokens"], 600)
+        self.assertEqual(event["cache_read_input_tokens"], 700)
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cache_benefit_tokens")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = self.write_usage_log(tmp, (record,))
+            result = run_script(
+                "analyze_usage_logs.py", "--accounting-mode", "inclusive", log_path
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        totals = json.loads(result.stdout)
+        self.assertEqual(totals["denominator_status"], "invalid")
+        self.assertEqual(totals["cache_hit_ratio"], 1.3)
+
+    def test_analyze_usage_logs_keeps_exact_inclusive_split_valid(self):
+        event = self.normalized_event(
+            {
+                "data": {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "cached_tokens": 400,
+                        "cache_read_tokens": 600,
+                        "completion_tokens": 50,
+                    }
+                }
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["cache_benefit_tokens"], 1000)
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_flags_inclusive_write_total_exceeding_input(self):
+        event = self.normalized_event(
+            {
+                "data": {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "cache_write_tokens": 600,
+                        "cache_creation_input_tokens": 700,
+                        "completion_tokens": 50,
+                    }
+                }
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cache_write_total_tokens")
+
+    def test_analyze_usage_logs_flags_inclusive_read_write_split_exceeding_input(self):
+        event = self.normalized_event(
+            {
+                "data": {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "cached_tokens": 600,
+                        "cache_write_tokens": 600,
+                        "completion_tokens": 50,
+                    }
+                }
+            },
+            "--accounting-mode",
+            "inclusive",
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "INCLUSIVE_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(
+            event["warnings"][0]["field"], "cache_accounted_input_tokens"
+        )
+
+    def test_analyze_usage_logs_prefers_individual_openai_breakdown_violation(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "usage": {
+                    "input_tokens": 100,
+                    "input_tokens_details": {
+                        "cached_tokens": 120,
+                        "cache_write_tokens": 90,
+                    },
+                    "output_tokens": 50,
+                },
+            }
+        )
+
+        self.assertEqual(event["denominator_status"], "invalid")
+        self.assertEqual(len(event["warnings"]), 1)
+        self.assertEqual(
+            event["warnings"][0]["code"],
+            "OPENAI_CACHE_BREAKDOWN_EXCEEDS_INPUT",
+        )
+        self.assertEqual(event["warnings"][0]["field"], "cached_tokens")
+
+    def test_analyze_usage_logs_reports_flat_openai_provenance(self):
+        event = self.normalized_event(
+            {
+                "provider": "openai",
+                "input_tokens": 1000,
+                "cached_tokens": 600,
+                "cache_write_tokens": 200,
+                "output_tokens": 50,
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "input_tokens",
+                "cached_tokens": "cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": "cache_write_tokens",
+                "output_tokens": "output_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reports_gemini_interactions_usage_envelope_provenance(
+        self,
+    ):
+        event = self.normalized_event(
+            {
+                "provider": "gemini",
+                "usage": {
+                    "total_input_tokens": 1000,
+                    "total_cached_tokens": 600,
+                    "total_output_tokens": 100,
+                },
+            }
+        )
+
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.total_input_tokens",
+                "cached_tokens": "usage.total_cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": None,
+                "cache_write_tokens": None,
+                "output_tokens": "usage.total_output_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_rejects_non_canonical_extraction_fields(self):
+        analyzer = load_script_module("analyze_usage_logs.py")
+
+        with self.assertRaises(ValueError):
+            analyzer.extraction(cached_token=(600, "usage.cached_token"))
+
+        _, source_fields = analyzer.extraction(
+            cached_tokens=(600, "usage.cached_tokens")
+        )
+        self.assertEqual(
+            tuple(source_fields), tuple(analyzer.CANONICAL_USAGE_FIELDS)
+        )
+
     def test_estimate_cache_roi_outputs_cost_delta_json(self):
         result = run_script(
             "estimate_cache_roi.py",
@@ -373,44 +1484,82 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["input_savings"], 1.296)
         self.assertEqual(output["total_savings_pct"], 37.46)
 
-    def test_estimate_cache_roi_prices_cache_writes_separately(self):
+    def test_estimate_cache_roi_prices_cache_writes(self):
         result = run_script(
             "estimate_cache_roi.py",
-            "--static-tokens", "9000",
-            "--dynamic-tokens", "300",
-            "--output-tokens", "2000",
-            "--requests", "100",
-            "--hit-rate", "0.8",
-            "--input-price-per-mtok", "2.0",
-            "--cached-input-price-per-mtok", "0.2",
-            "--cache-write-tokens", "180000",
-            "--cache-write-price-per-mtok", "2.5",
-            "--output-price-per-mtok", "8.0",
+            "--static-tokens",
+            "1000",
+            "--dynamic-tokens",
+            "100",
+            "--output-tokens",
+            "0",
+            "--requests",
+            "10",
+            "--hit-rate",
+            "0.5",
+            "--cache-write-rate",
+            "0.4",
+            "--input-price-per-mtok",
+            "1",
+            "--cached-input-price-per-mtok",
+            "0.1",
+            "--cache-write-input-price-per-mtok",
+            "3",
+            "--output-price-per-mtok",
+            "0",
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
-        self.assertEqual(output["cache_write_tokens"], 180000)
-        self.assertEqual(output["input_with_cache_cost"], 0.654)
-        self.assertEqual(output["total_with_cache_cost"], 2.254)
+        self.assertEqual(output["producer"], "estimate_cache_roi.py")
+        self.assertEqual(output["cache_read_input_tokens"], 5000)
+        self.assertEqual(output["cache_write_input_tokens"], 4000)
+        self.assertEqual(output["ordinary_input_tokens"], 2000)
+        self.assertEqual(output["cache_write_input_cost"], 0.012)
+        self.assertEqual(output["total_baseline_cost"], 0.011)
+        self.assertEqual(output["total_with_cache_cost"], 0.0145)
+        self.assertEqual(output["total_savings"], -0.0035)
 
-    def test_estimate_cache_roi_rejects_write_tokens_above_uncached_input(self):
-        result = run_script(
+    def test_estimate_cache_roi_rejects_invalid_write_assumptions(self):
+        common = (
+            "--static-tokens",
+            "1000",
+            "--dynamic-tokens",
+            "0",
+            "--output-tokens",
+            "0",
+            "--requests",
+            "10",
+            "--input-price-per-mtok",
+            "1",
+            "--cached-input-price-per-mtok",
+            "0.1",
+            "--output-price-per-mtok",
+            "0",
+        )
+        missing_price = run_script(
             "estimate_cache_roi.py",
-            "--static-tokens", "1000",
-            "--dynamic-tokens", "0",
-            "--output-tokens", "0",
-            "--requests", "1",
-            "--hit-rate", "0.5",
-            "--input-price-per-mtok", "2.0",
-            "--cached-input-price-per-mtok", "0.2",
-            "--cache-write-tokens", "600",
-            "--cache-write-price-per-mtok", "2.5",
-            "--output-price-per-mtok", "8.0",
+            *common,
+            "--hit-rate",
+            "0.5",
+            "--cache-write-rate",
+            "0.2",
+        )
+        excess_rate = run_script(
+            "estimate_cache_roi.py",
+            *common,
+            "--hit-rate",
+            "0.8",
+            "--cache-write-rate",
+            "0.3",
+            "--cache-write-input-price-per-mtok",
+            "1",
         )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("exceed uncached input", result.stderr)
+        self.assertEqual(missing_price.returncode, 2)
+        self.assertIn("write price", missing_price.stderr)
+        self.assertEqual(excess_rate.returncode, 2)
+        self.assertIn("sum", excess_rate.stderr)
 
     def test_render_audit_report_outputs_markdown_from_usage_fixture(self):
         result = run_script(
@@ -544,6 +1693,665 @@ class PromptCacheScriptsTest(unittest.TestCase):
         expected = (FIXTURES / "expected" / "report_openai.md").read_text()
         self.assertEqual(result.stdout, expected)
 
+    def test_render_audit_report_distinguishes_unpriced_cache_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = Path(tmp) / "usage.json"
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "input_tokens_details": {
+                                "cached_tokens": 500,
+                                "cache_write_tokens": 250,
+                            },
+                            "output_tokens": 50,
+                        },
+                    }
+                )
+            )
+
+            result = run_script("render_audit_report.py", "--usage-log", usage_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Cache read tokens: 500", result.stdout)
+        self.assertIn("Cache write tokens: 250", result.stdout)
+        self.assertIn("Cost impact: unknown (no pricing supplied)", result.stdout)
+
+    def test_render_audit_report_accepts_estimator_roi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            usage_path = tmp_path / "usage.json"
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "input_tokens_details": {"cache_write_tokens": 800},
+                            "output_tokens": 0,
+                        },
+                    }
+                )
+            )
+            roi_result = run_script(
+                "estimate_cache_roi.py",
+                "--static-tokens",
+                "1000",
+                "--dynamic-tokens",
+                "0",
+                "--output-tokens",
+                "0",
+                "--requests",
+                "10",
+                "--hit-rate",
+                "0.1",
+                "--cache-write-rate",
+                "0.8",
+                "--input-price-per-mtok",
+                "1",
+                "--cached-input-price-per-mtok",
+                "0.1",
+                "--cache-write-input-price-per-mtok",
+                "2",
+                "--output-price-per-mtok",
+                "0",
+            )
+            self.assertEqual(roi_result.returncode, 0, roi_result.stderr)
+            roi_path = tmp_path / "roi.json"
+            roi_path.write_text(roi_result.stdout)
+
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Cost impact: increased cost", result.stdout)
+        self.assertIn("Priced Cache Scenario", result.stdout)
+
+    def test_render_audit_report_rejects_untrusted_roi_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            usage_path = tmp_path / "usage.json"
+            usage_path.write_text(json.dumps({"usage": {"input_tokens": 10}}))
+            roi_path = tmp_path / "roi.json"
+            roi_path.write_text(
+                json.dumps(
+                    {
+                        "producer": "other.py",
+                        "schema_version": 1,
+                        "total_baseline_cost": 1,
+                        "total_with_cache_cost": 0.5,
+                        "total_savings": 0.5,
+                        "pricing": {},
+                    }
+                )
+            )
+
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("producer", result.stderr)
+
+    @staticmethod
+    def write_usage_log(directory, records):
+        path = Path(directory) / "usage.jsonl"
+        path.write_text("\n".join(json.dumps(record) for record in records))
+        return path
+
+    AMBIGUOUS_USAGE_RECORDS = (
+        {
+            "provider": "openai",
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": {"cached_tokens": 600},
+                "output_tokens": 50,
+            },
+        },
+        {"provider": "openai", "model": "gpt-5.4", "route": "responses-api"},
+    )
+    INVALID_USAGE_RECORDS = (
+        {
+            "provider": "gemini",
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "cachedContentTokenCount": 900,
+                "candidatesTokenCount": 10,
+            },
+        },
+    )
+    UNKNOWN_WRAPPER_USAGE_RECORDS = (
+        {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "completion_tokens": 50,
+                }
+            }
+        },
+    )
+    CONTRADICTORY_WRAPPER_USAGE_RECORDS = (
+        {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 100,
+                    "cached_tokens": 900,
+                    "completion_tokens": 10,
+                }
+            }
+        },
+    )
+    AGGREGATE_CONTRADICTORY_WRAPPER_USAGE_RECORDS = (
+        {
+            "data": {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "cached_tokens": 600,
+                    "cache_read_tokens": 700,
+                    "completion_tokens": 50,
+                }
+            }
+        },
+    )
+    VALID_USAGE_RECORDS = (
+        {
+            "provider": "anthropic",
+            "usage": {
+                "input_tokens": 400,
+                "cache_read_input_tokens": 600,
+                "cache_creation_input_tokens": 100,
+                "output_tokens": 50,
+            },
+        },
+    )
+    ROI_JSON = {
+        "producer": "estimate_cache_roi.py",
+        "schema_version": 1,
+        "pricing": {},
+        "cache_read_input_cost": 0.1,
+        "cache_write_input_cost": 0.0,
+        "total_baseline_cost": 1.0,
+        "total_with_cache_cost": 0.5,
+        "total_savings": 0.5,
+    }
+
+    def write_roi_json(self, directory):
+        path = Path(directory) / "roi.json"
+        path.write_text(json.dumps(self.ROI_JSON))
+        return path
+
+    def test_render_audit_report_keeps_unknown_wrapper_ambiguous_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.UNKNOWN_WRAPPER_USAGE_RECORDS
+            )
+            json_result = run_script(
+                "render_audit_report.py", "--json", "--usage-log", usage_path
+            )
+            pass_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--usage-accounting",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        self.assertEqual(output["usage"]["denominator_status"], "ambiguous")
+        self.assertEqual(output["clinic_summary"]["usage_accounting"], "warning")
+        self.assertEqual(pass_result.returncode, 2, pass_result.stdout)
+        self.assertIn("usage_accounting", pass_result.stderr)
+
+    def test_render_audit_report_accepts_operator_supplied_accounting_mode(self):
+        for mode in ("inclusive", "additive"):
+            with self.subTest(mode=mode):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(
+                        tmp, self.UNKNOWN_WRAPPER_USAGE_RECORDS
+                    )
+                    result = run_script(
+                        "render_audit_report.py",
+                        "--json",
+                        "--usage-log",
+                        usage_path,
+                        "--accounting-mode",
+                        mode,
+                        "--usage-accounting",
+                        "pass",
+                    )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output = json.loads(result.stdout)
+                self.assertEqual(output["usage"]["denominator_status"], "valid")
+                self.assertEqual(
+                    output["clinic_summary"]["usage_accounting"], "pass"
+                )
+
+    def test_render_audit_report_rejects_pass_on_inclusive_contradiction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.CONTRADICTORY_WRAPPER_USAGE_RECORDS
+            )
+            json_result = run_script(
+                "render_audit_report.py",
+                "--json",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+            )
+            pass_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+                "--usage-accounting",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        self.assertEqual(output["usage"]["denominator_status"], "invalid")
+        self.assertEqual(output["clinic_summary"]["usage_accounting"], "fail")
+        self.assertEqual(pass_result.returncode, 2, pass_result.stdout)
+        self.assertIn("usage_accounting", pass_result.stderr)
+
+    def test_render_audit_report_rejects_pass_on_aggregate_inclusive_contradiction(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.AGGREGATE_CONTRADICTORY_WRAPPER_USAGE_RECORDS
+            )
+            json_result = run_script(
+                "render_audit_report.py",
+                "--json",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+            )
+            markdown_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+            )
+            pass_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "inclusive",
+                "--usage-accounting",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        self.assertEqual(output["usage"]["denominator_status"], "invalid")
+        self.assertEqual(output["usage"]["cache_hit_ratio"], 1.3)
+        self.assertEqual(output["clinic_summary"]["usage_accounting"], "fail")
+        self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+        self.assertIn(
+            "- Cache hit ratio: 1.3 (non-decision-grade; denominator invalid)",
+            markdown_result.stdout,
+        )
+        self.assertIn(
+            "(usage ratio non-decision-grade; denominator invalid)",
+            markdown_result.stdout,
+        )
+        self.assertEqual(pass_result.returncode, 2, pass_result.stdout)
+        self.assertIn("usage_accounting", pass_result.stderr)
+
+    def test_render_audit_report_rejects_unknown_accounting_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(
+                tmp, self.UNKNOWN_WRAPPER_USAGE_RECORDS
+            )
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--accounting-mode",
+                "guess",
+            )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--accounting-mode", result.stderr)
+        self.assertIn("invalid choice", result.stderr)
+
+    def test_render_audit_report_qualifies_cost_lines_on_bad_denominator(self):
+        cases = (
+            (self.AMBIGUOUS_USAGE_RECORDS, "ambiguous"),
+            (self.INVALID_USAGE_RECORDS, "invalid"),
+        )
+        for records, denominator in cases:
+            with self.subTest(denominator=denominator):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(tmp, records)
+                    roi_path = self.write_roi_json(tmp)
+                    result = run_script(
+                        "render_audit_report.py",
+                        "--usage-log",
+                        usage_path,
+                        "--roi-json",
+                        roi_path,
+                    )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                qualifier = (
+                    f"(usage ratio non-decision-grade; denominator {denominator})"
+                )
+                self.assertIn(
+                    f"- Cost impact: savings of $0.500000 {qualifier}",
+                    result.stdout,
+                )
+                self.assertIn(
+                    f"- Assessment: savings of $0.500000 {qualifier}",
+                    result.stdout,
+                )
+                self.assertIn("estimates $0.500000 in savings", result.stdout)
+                self.assertIn("must not support a savings claim", result.stdout)
+
+    def test_render_audit_report_keeps_plain_cost_lines_on_valid_denominator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, self.VALID_USAGE_RECORDS)
+            roi_path = self.write_roi_json(tmp)
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("- Cost impact: savings of $0.500000\n", result.stdout)
+        self.assertIn("- Assessment: savings of $0.500000\n", result.stdout)
+        self.assertNotIn("non-decision-grade", result.stdout)
+
+    def test_render_audit_report_canonicalizes_cache_planes_and_clinic_statuses(self):
+        result = run_script(
+            "render_audit_report.py",
+            "--json",
+            "--usage-log",
+            FIXTURES / "openai" / "repeated_prefix_usage.jsonl",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "gateway_response",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "provider_prompt",
+            "--applicability",
+            "pass",
+            "--prefix-stability",
+            "warning",
+            "--isolation",
+            "not_applicable",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(
+            output["cache_planes"],
+            ["gateway_response", "provider_prompt", "engine_kv"],
+        )
+        self.assertEqual(
+            output["clinic_summary"],
+            {
+                "applicability": "pass",
+                "evidence_quality": "unknown",
+                "prefix_stability": "warning",
+                "usage_accounting": "unknown",
+                "routing_locality": "unknown",
+                "economics": "unknown",
+                "isolation": "not_applicable",
+            },
+        )
+
+        markdown_result = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            FIXTURES / "openai" / "repeated_prefix_usage.jsonl",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "gateway_response",
+            "--cache-plane",
+            "engine_kv",
+            "--cache-plane",
+            "provider_prompt",
+        )
+        self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+        self.assertIn(
+            "Cache planes: gateway_response, provider_prompt, engine_kv",
+            markdown_result.stdout,
+        )
+
+    def test_render_audit_report_markdown_renders_unknown_clinic_summary(self):
+        result = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            FIXTURES / "openai" / "repeated_prefix_usage.jsonl",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("## Cache Clinic Summary", result.stdout)
+        self.assertLess(
+            result.stdout.index("## Cache Clinic Summary"),
+            result.stdout.index("## Findings"),
+        )
+        self.assertIn("Cache planes: unknown", result.stdout)
+        for label in (
+            "Applicability",
+            "Evidence quality",
+            "Prefix stability",
+            "Usage accounting",
+            "Routing locality",
+            "Economics",
+            "Isolation",
+        ):
+            self.assertIn(f"- {label}: unknown", result.stdout)
+
+    def test_render_audit_report_rejects_invalid_clinic_choices(self):
+        usage_log = FIXTURES / "openai" / "repeated_prefix_usage.jsonl"
+
+        bad_status = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            usage_log,
+            "--economics",
+            "excellent",
+        )
+        bad_plane = run_script(
+            "render_audit_report.py",
+            "--usage-log",
+            usage_log,
+            "--cache-plane",
+            "cdn_cache",
+        )
+
+        self.assertEqual(bad_status.returncode, 2)
+        self.assertIn("--economics", bad_status.stderr)
+        self.assertIn("invalid choice", bad_status.stderr)
+        self.assertEqual(bad_plane.returncode, 2)
+        self.assertIn("--cache-plane", bad_plane.stderr)
+        self.assertIn("invalid choice", bad_plane.stderr)
+
+    def test_render_audit_report_rejects_pass_usage_accounting_on_bad_denominator(self):
+        for records in (self.AMBIGUOUS_USAGE_RECORDS, self.INVALID_USAGE_RECORDS):
+            with self.subTest(records=records):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(tmp, records)
+                    result = run_script(
+                        "render_audit_report.py",
+                        "--usage-log",
+                        usage_path,
+                        "--usage-accounting",
+                        "pass",
+                    )
+
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn("usage_accounting", result.stderr)
+
+    def test_render_audit_report_derives_usage_accounting_from_denominator(self):
+        cases = (
+            (self.AMBIGUOUS_USAGE_RECORDS, "ambiguous", "warning"),
+            (self.INVALID_USAGE_RECORDS, "invalid", "fail"),
+        )
+        for records, denominator, expected_status in cases:
+            with self.subTest(denominator=denominator):
+                with tempfile.TemporaryDirectory() as tmp:
+                    usage_path = self.write_usage_log(tmp, records)
+                    json_result = run_script(
+                        "render_audit_report.py",
+                        "--json",
+                        "--usage-log",
+                        usage_path,
+                    )
+                    markdown_result = run_script(
+                        "render_audit_report.py",
+                        "--usage-log",
+                        usage_path,
+                    )
+
+                self.assertEqual(json_result.returncode, 0, json_result.stderr)
+                output = json.loads(json_result.stdout)
+                self.assertEqual(output["usage"]["denominator_status"], denominator)
+                self.assertEqual(
+                    output["clinic_summary"]["usage_accounting"], expected_status
+                )
+                self.assertNotIn("Observed cache benefit on", output["expected_impact"])
+                self.assertIn(denominator, output["expected_impact"])
+                self.assertIn("must not support a savings claim", output["expected_impact"])
+
+                self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+                self.assertIn(
+                    f"- Usage accounting: {expected_status}", markdown_result.stdout
+                )
+                self.assertIn(
+                    f"Usage denominator status: {denominator}", markdown_result.stdout
+                )
+                self.assertRegex(
+                    markdown_result.stdout,
+                    rf"Cache hit ratio: .*non-decision-grade; denominator {denominator}",
+                )
+                self.assertNotIn("Observed cache benefit on", markdown_result.stdout)
+
+    def test_render_audit_report_qualifies_empty_evidence_ratio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, ())
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "Cache hit ratio: 0 (non-decision-grade; denominator ambiguous)",
+            result.stdout,
+        )
+
+    def test_render_audit_report_keeps_denominator_caveat_with_roi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, self.INVALID_USAGE_RECORDS)
+            roi_path = Path(tmp) / "roi.json"
+            roi_path.write_text(
+                json.dumps(
+                    {
+                        "producer": "estimate_cache_roi.py",
+                        "schema_version": 1,
+                        "pricing": {},
+                        "cache_read_input_cost": 0.1,
+                        "cache_write_input_cost": 0.0,
+                        "total_baseline_cost": 1.0,
+                        "total_with_cache_cost": 0.5,
+                        "total_savings": 0.5,
+                    }
+                )
+            )
+            result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--roi-json",
+                roi_path,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("estimates $0.500000 in savings", result.stdout)
+        self.assertIn("Usage denominator status is invalid", result.stdout)
+        self.assertIn("must not support a savings claim", result.stdout)
+
+    def test_render_audit_report_has_no_aggregate_clinic_rollup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, self.INVALID_USAGE_RECORDS)
+            json_result = run_script(
+                "render_audit_report.py",
+                "--json",
+                "--usage-log",
+                usage_path,
+                "--cache-plane",
+                "engine_kv",
+                "--applicability",
+                "pass",
+            )
+            markdown_result = run_script(
+                "render_audit_report.py",
+                "--usage-log",
+                usage_path,
+                "--cache-plane",
+                "engine_kv",
+                "--applicability",
+                "pass",
+            )
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        output = json.loads(json_result.stdout)
+        forbidden = ("score", "rank", "grade", "percentage", "rollup", "traffic_light")
+        def nested_keys(value):
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    yield key
+                    yield from nested_keys(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from nested_keys(child)
+
+        for key in nested_keys(output):
+            self.assertFalse(
+                any(
+                    f"clinic_{token}" in key or f"{token}_clinic" in key
+                    for token in forbidden
+                ),
+                f"unexpected aggregate key: {key}",
+            )
+        self.assertEqual(json_result.returncode, 0)
+
+        self.assertEqual(markdown_result.returncode, 0, markdown_result.stderr)
+        lowered = markdown_result.stdout.lower()
+        for token in ("clinic score", "overall score", "clinic grade", "clinic rank"):
+            self.assertNotIn(token, lowered)
+
     def test_extract_llm_calls_finds_provider_signals(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -572,6 +2380,287 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 2)
             self.assertEqual(output["findings"][0]["path"], "src/llm.py")
 
+    def test_extract_llm_calls_elides_arbitrary_source_shapes_from_json(self):
+        cases = {
+            "serve.sh": (
+                "VLLM_API_KEY=48915732 vllm serve model --enable-prefix-caching",
+                "vllm serve model --api-key 1234567890 --enable-prefix-caching",
+                'AUTH_TOKEN=00000000 vllm serve model --prefix-caching-hash-algo sha256',
+                'api_key: str = "sk-type-SECRET-01" vllm serve model',
+                'if os.environ["OPENAI_API_KEY"] == "sk-eq-SECRET-02": vllm serve model',
+                'export ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} vllm serve model',
+                'vllm serve model --api-key `sk-backtick-SECRET-03` --enable-prefix-caching',
+                'http -u admin:http-SECRET-04 https://api.anthropic.com/v1 # vllm',
+            ),
+            "app.py": (
+                'password: 987654321  # anthropic',
+                'cfg = {"openrouter": {"api_keys": ["sk-array-SECRET-05", "sk-array-SECRET-06"]}}',
+                'client = Anthropic(api_key=f"sk-f-SECRET-07")',
+            ),
+            "Makefile": (
+                'serve:\n\t$(CURL) --user svc:make-SECRET-08 https://openrouter.ai/api/v1/models # openrouter',
+            ),
+        }
+        sentinels = {
+            "48915732",
+            "1234567890",
+            "00000000",
+            "sk-type-SECRET-01",
+            "sk-eq-SECRET-02",
+            "sk-backtick-SECRET-03",
+            "http-SECRET-04",
+            "987654321",
+            "sk-array-SECRET-05",
+            "sk-array-SECRET-06",
+            "sk-f-SECRET-07",
+            "make-SECRET-08",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for filename, lines in cases.items():
+                (tmp_path / filename).write_text("\n".join(lines) + "\n")
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        rendered = result.stdout
+
+        self.assertEqual(output.get("source_snippet_policy"), "elided")
+        self.assertGreater(output["matches"], 0)
+        for finding in output["findings"]:
+            self.assertEqual(finding["text"], "[SOURCE_SNIPPET_ELIDED]")
+            self.assertIn("path", finding)
+            self.assertIn("line", finding)
+            self.assertIn("provider", finding)
+            self.assertIn("pattern", finding)
+        self.assertIn("signals", output["findings"][0])
+        for sentinel in sentinels:
+            self.assertNotIn(sentinel, rendered)
+
+    def test_extract_llm_calls_is_lexical_locator_without_value_or_comment_claims(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "command: vllm serve model --enable-prefix-caching=false "
+                "--prefix-caching-hash-algo xxhash # old setting\n"
+                "# command: vllm serve model --enable-prefix-caching\n"
+                "args: --no-enable-prefix-caching\n"
+            )
+
+            output = module.find_matches(tmp_path)
+
+        self.assertEqual(output["matches"], 3)
+        for finding in output["findings"]:
+            self.assertEqual(
+                set(finding),
+                {"path", "line", "provider", "pattern", "text", "signals"},
+            )
+            self.assertEqual(finding["text"], "[SOURCE_SNIPPET_ELIDED]")
+        self.assertIn("--enable-prefix-caching", output["findings"][0]["signals"])
+        self.assertIn("--prefix-caching-hash-algo", output["findings"][0]["signals"])
+        self.assertIn("--no-enable-prefix-caching", output["findings"][2]["signals"])
+
+    def test_extract_llm_calls_uses_real_vllm_spellings_as_labels(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "unknown-env.yaml").write_text(
+                "VLLM_ENABLE_PREFIX_CACHING=0\n"
+                "VLLM_ENABLE_KV_CACHE_EVENTS=0\n"
+                "VLLM_KV_CACHE_EVENTS=0\n"
+                "VLLM_PREFIX_CACHING_HASH_ALGO=sha256\n"
+            )
+            (tmp_path / "stale-flag.sh").write_text(
+                "--enable-kv-cache-events\n"
+            )
+            (tmp_path / "real-config.yaml").write_text(
+                "enable_prefix_caching: true\n"
+                "enable_kv_cache_events: true\n"
+                "prefix_caching_hash_algo: sha256\n"
+                "prefix_cache_retention_interval: 300\n"
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=300\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --enable-prefix-caching "
+                "--no-enable-prefix-caching --kv-events-config config.json "
+                "--prefix-caching-hash-algo sha256 "
+                "--prefix-cache-retention-interval 300\n"
+            )
+            output = module.find_matches(tmp_path)
+
+        unknown = [
+            finding
+            for finding in output["findings"]
+            if finding["path"] == "unknown-env.yaml"
+        ]
+        self.assertEqual(unknown, [])
+        stale = [
+            finding
+            for finding in output["findings"]
+            if finding["path"] == "stale-flag.sh"
+        ]
+        self.assertEqual(len(stale), 1)
+        self.assertEqual(stale[0]["signals"], ["--enable-kv-cache-events"])
+        by_path = {
+            path: {
+                signal
+                for finding in output["findings"]
+                if finding["path"] == path
+                for signal in finding["signals"]
+            }
+            for path in ("real-config.yaml", "serve.sh")
+        }
+        self.assertEqual(
+            by_path["real-config.yaml"],
+            {
+                "enable_prefix_caching",
+                "enable_kv_cache_events",
+                "prefix_caching_hash_algo",
+                "prefix_cache_retention_interval",
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+            },
+        )
+        self.assertEqual(
+            by_path["serve.sh"],
+            {
+                "vllm",
+                "--enable-prefix-caching",
+                "--no-enable-prefix-caching",
+                "--kv-events-config",
+                "--prefix-caching-hash-algo",
+                "--prefix-cache-retention-interval",
+            },
+        )
+        for pattern, label in module.SIGNAL_LABELS.items():
+            if pattern in module.PROVIDER_PATTERNS["vllm"]:
+                token = label[2:] if label.startswith("--") else label
+                self.assertIn(
+                    token,
+                    pattern.replace("\\b", ""),
+                    f"label {label!r} is not represented by pattern {pattern!r}",
+                )
+
+    def test_extract_llm_calls_signal_labels_cover_patterns_without_regex_source(self):
+        module = load_script_module("extract_llm_calls.py")
+        self.assertFalse(hasattr(module, "VLLM_SIGNAL_LABELS"))
+        patterns = {
+            pattern
+            for provider_patterns in module.PROVIDER_PATTERNS.values()
+            for pattern in provider_patterns
+        }
+        self.assertEqual(patterns, set(module.SIGNAL_LABELS))
+        for label in module.SIGNAL_LABELS.values():
+            self.assertNotRegex(label, r"[\\()]")
+
+    def test_extract_llm_calls_preserves_legacy_pattern_for_split_signals(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "bedrock.py").write_text("CacheWriteInputTokens = 128\n")
+            (tmp_path / "vllm.yaml").write_text("connector: LMCacheConnector\n")
+            (tmp_path / "sglang.py").write_text("pd_disaggregation = true\n")
+            output = module.find_matches(tmp_path)
+
+        by_provider = {
+            finding["provider"]: finding for finding in output["findings"]
+        }
+        self.assertEqual(
+            by_provider["bedrock"]["pattern"],
+            r"\bCache(Read|Write)InputTokens\b",
+        )
+        self.assertEqual(
+            by_provider["vllm"]["pattern"],
+            r"\b(kv_transfer_config|kv_connector|LMCacheConnector)\b",
+        )
+        self.assertEqual(
+            by_provider["sglang"]["pattern"],
+            r"\b(disaggregation_mode|pd_disaggregation)\b",
+        )
+        self.assertIn("CacheWriteInputTokens", by_provider["bedrock"]["signals"])
+        self.assertIn("LMCacheConnector", by_provider["vllm"]["signals"])
+        self.assertIn("pd_disaggregation", by_provider["sglang"]["signals"])
+
+    def test_extract_llm_calls_output_has_recursive_structural_allowlist(self):
+        module = load_script_module("extract_llm_calls.py")
+        sentinel = "recursive-source-secret-7f4a"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "serve.sh").write_text(
+                f"vllm serve model --api-key {sentinel} --enable-prefix-caching\n"
+            )
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn(sentinel, result.stdout)
+        allowed_keys = {
+            "root",
+            "files_scanned",
+            "matches",
+            "providers",
+            "findings",
+            "source_snippet_policy",
+            "path",
+            "line",
+            "provider",
+            "pattern",
+            "text",
+            "signals",
+        }
+        allowed_values = set(module.SIGNAL_LABELS.values())
+
+        def assert_structure(value, key=None):
+            if isinstance(value, dict):
+                for child_key, child_value in value.items():
+                    if key == "providers":
+                        self.assertIn(child_key, module.PROVIDER_PATTERNS)
+                        assert_structure(child_value, "provider_count")
+                        continue
+                    self.assertIn(child_key, allowed_keys)
+                    assert_structure(child_value, child_key)
+            elif isinstance(value, list):
+                for child_value in value:
+                    assert_structure(child_value, key)
+            elif isinstance(value, str):
+                if key in {"root", "path", "pattern"}:
+                    return
+                if key == "text":
+                    self.assertEqual(value, "[SOURCE_SNIPPET_ELIDED]")
+                elif key == "signals":
+                    self.assertIn(value, allowed_values)
+                else:
+                    self.assertIn(value, allowed_values | {"elided"})
+
+        assert_structure(output)
+
+    def test_extract_llm_calls_docs_describe_locator_only_contract(self):
+        module = load_script_module("extract_llm_calls.py")
+        expected = (
+            "lexical locator only",
+            "snippets are always elided",
+            "comments, dead code, or overridden configuration",
+            "never resolves active/effective values or source precedence",
+            "path:line",
+            "verify the resolved runtime configuration",
+        )
+        documents = (
+            module.__doc__,
+            (ROOT / "docs" / "usage.md").read_text(),
+            (ROOT / "audit-prompt-caching" / "SKILL.md").read_text(),
+        )
+        for document in documents:
+            document = " ".join(document.split())
+            for phrase in expected:
+                self.assertIn(phrase, document)
+        for document in documents:
+            document = " ".join(document.split())
+            self.assertNotIn("closed signal/value allow-lists", document)
+            self.assertNotIn("allow-listed vLLM values", document)
+            self.assertNotRegex(document, r"bare boolean flags? mean")
+
     def test_extract_llm_calls_detects_openai_prompt_cache_retention(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -586,30 +2675,17 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["providers"]["openai"], 1)
             self.assertEqual(output["findings"][0]["path"], "llm-config.json")
 
-    def test_extract_llm_calls_detects_new_openai_cache_controls(self):
+    def test_extract_llm_calls_detects_explicit_breakpoint_without_other_openai_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
-            config = Path(tmp) / "llm-config.json"
-            config.write_text(json.dumps({
-                "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
-                "input": [{"prompt_cache_breakpoint": {"mode": "explicit"}}],
-            }, indent=2))
+            config = Path(tmp) / "prompt.json"
+            config.write_text('{"prompt_cache_breakpoint": {"mode": "explicit"}}')
 
             result = run_script("extract_llm_calls.py", tmp)
 
-            self.assertEqual(result.returncode, 0, result.stderr)
-            output = json.loads(result.stdout)
-            self.assertGreaterEqual(output["providers"]["openai"], 2)
-
-    def test_extract_llm_calls_detects_bedrock_mantle_surface(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            config = Path(tmp) / "llm-config.json"
-            config.write_text('{"base_url": "https://bedrock-mantle.us-east-2.api.aws/openai/v1"}')
-
-            result = run_script("extract_llm_calls.py", tmp)
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            output = json.loads(result.stdout)
-            self.assertEqual(output["providers"]["bedrock"], 1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["providers"]["openai"], 1)
+        self.assertIn("prompt_cache_breakpoint", output["findings"][0]["signals"])
 
     def test_extract_llm_calls_scans_dockerfile_for_vllm_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -642,6 +2718,578 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             output = json.loads(result.stdout)
             self.assertGreaterEqual(output["providers"]["sglang"], 2)
+
+    def test_extract_llm_calls_detects_kv_events_and_hicache_tiers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "\n".join(
+                    [
+                        "command: vllm serve model --kv-events-config config.json",
+                        "kv_transfer_config: {kv_connector: LMCacheConnectorV1}",
+                        "command: sglang.launch_server --enable-hierarchical-cache",
+                        "hicache_storage_backend: disk",
+                        "disaggregation_mode: prefill",
+                    ]
+                )
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertGreaterEqual(output["providers"]["vllm"], 2)
+        self.assertGreaterEqual(output["providers"]["sglang"], 3)
+
+    def test_extract_llm_calls_collects_vllm_retention_and_hash_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "deployment.yaml").write_text(
+                "prefix_cache_retention_interval: 0\n"
+                "prefix_caching_hash_algo: sha256\n"
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL: 0\n"
+            )
+            (tmp_path / "engine.py").write_text(
+                "prefix_cache_retention_interval = 0\n"
+                "prefix_caching_hash_algo = 'sha256_cbor'\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0 "
+                "--prefix-caching-hash-algo sha256\n"
+            )
+            (tmp_path / "vllm.service").write_text(
+                "ExecStart=/usr/bin/vllm serve model "
+                "--prefix-cache-retention-interval 64\n"
+            )
+            (tmp_path / "Makefile").write_text(
+                "serve:\n\tvllm serve model --prefix-caching-hash-algo xxhash\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["files_scanned"], 5)
+        self.assertIn("vllm", output["providers"])
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        for signal in (
+            "--prefix-cache-retention-interval",
+            "prefix_cache_retention_interval",
+            "VLLM_PREFIX_CACHE_RETENTION_INTERVAL",
+            "--prefix-caching-hash-algo",
+            "prefix_caching_hash_algo",
+        ):
+            self.assertIn(signal, signals)
+
+    def test_extract_llm_calls_keeps_generic_and_specific_vllm_signals_additive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "compose.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0 "
+                "--prefix-caching-hash-algo sha256\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["providers"]["vllm"], 1)
+        self.assertEqual(output["matches"], 1)
+        finding = output["findings"][0]
+        self.assertEqual(finding["provider"], "vllm")
+        self.assertIn("vllm", finding["signals"])
+        self.assertIn("--prefix-cache-retention-interval", finding["signals"])
+        self.assertIn("--prefix-caching-hash-algo", finding["signals"])
+
+    def test_extract_llm_calls_does_not_classify_generic_pythonhashseed_as_vllm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "service.py").write_text(
+                "import os\nos.environ['PYTHONHASHSEED'] = '42'\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn("vllm", output["providers"])
+
+    def test_extract_llm_calls_elides_source_snippet_for_long_lines(self):
+        module = load_script_module("extract_llm_calls.py")
+        long_line = "vllm " + ("A-" * 6000) + "\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "long.yaml").write_text(long_line)
+
+            started = time.monotonic()
+            output = module.find_matches(tmp_path)
+            elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 2.0, f"long-line scan took {elapsed:.3f}s")
+        self.assertEqual(output["providers"].get("vllm"), 1)
+        self.assertEqual(len(output["findings"]), 1)
+        self.assertEqual(output["findings"][0]["text"], "[SOURCE_SNIPPET_ELIDED]")
+        self.assertEqual(output["source_snippet_policy"], "elided")
+
+    def test_extract_llm_calls_excludes_dotenv_files_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / ".env").write_text(
+                "VLLM_PREFIX_CACHE_RETENTION_INTERVAL=0\n"
+                "PYTHONHASHSEED=dotenv-secret\n"
+            )
+            (tmp_path / ".env.production").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".env.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".env.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".env.json").write_text(
+                '{"command": "vllm serve model --prefix-cache-retention-interval 0"}\n'
+            )
+            (tmp_path / ".env.d").mkdir()
+            (tmp_path / ".env.d" / "production.yaml").write_text(
+                "command: vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / ".envs").mkdir()
+            (tmp_path / ".envs" / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+            (tmp_path / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            result = run_script("extract_llm_calls.py", tmp_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["files_scanned"], 1)
+        scanned_paths = "\n".join(f["path"] for f in output["findings"])
+        for env_name in (
+            ".env",
+            ".env.production",
+            ".env.yaml",
+            ".env.sh",
+            ".env.json",
+            ".env.d",
+            ".envs",
+        ):
+            self.assertNotIn(env_name, scanned_paths)
+        self.assertNotIn("dotenv-secret", result.stdout)
+
+    def test_extract_llm_calls_excludes_dotenv_root_target(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            env_root = Path(tmp) / ".env.d"
+            env_root.mkdir()
+            (env_root / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            output = module.find_matches(env_root)
+
+        self.assertEqual(output["files_scanned"], 0)
+        self.assertEqual(output["matches"], 0)
+
+    def test_extract_llm_calls_scans_root_under_skipped_named_ancestor(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            service_root = Path(tmp) / "build" / "pkg"
+            service_root.mkdir(parents=True)
+            (service_root / "serve.sh").write_text(
+                "vllm serve model --prefix-cache-retention-interval 0\n"
+            )
+
+            output = module.find_matches(service_root)
+
+        self.assertEqual(output["files_scanned"], 1)
+        self.assertEqual(output["matches"], 1)
+
+    def test_skill_frontmatter_description_is_yaml_safe_and_retains_trigger_terms(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        frontmatter = skill.split("---", 2)[1]
+        lines = frontmatter.splitlines()
+        description_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("description:")
+        )
+        description_line = lines[description_index]
+        self.assertRegex(description_line, r'^description:\s+".*"$')
+        description = json.loads(description_line.split("description:", 1)[1].strip())
+        for required in (
+            "Use whenever the user mentions",
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "prompt_cache_options",
+            "previous_interaction_id",
+            "tools",
+            "schemas",
+            "response_format",
+            "model/router",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "Mamba/SWA/hybrid",
+            "cross-process block hash",
+        ):
+            self.assertIn(required, description)
+        self.assertNotIn("provider API surface", description)
+
+    def test_skill_frontmatter_trigger_terms_keep_lexical_boundaries(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        frontmatter = skill.split("---", 2)[1]
+        description_line = next(
+            line for line in frontmatter.splitlines() if line.startswith("description:")
+        )
+        self.assertRegex(description_line, r'^description:\s+".*"$')
+        description = json.loads(description_line.split("description:", 1)[1].strip())
+
+        self.assertNotIn("provider API surface", description)
+        for required in (
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+            "cache_control/cachePoint",
+        ):
+            self.assertRegex(
+                description,
+                rf"(?<![A-Za-z0-9_]){re.escape(required)}(?![A-Za-z0-9_])",
+            )
+        for left, right in (
+            ("cached_tokens=0", "total_cached_tokens"),
+            ("total_cached_tokens=0", "cache_read_input_tokens"),
+            ("total_cached_tokens", "cache_read_input_tokens"),
+            ("TTFT", "KV reuse"),
+            ("KV reuse", "prefix_cache_retention_interval"),
+            ("tools", "schemas"),
+            ("schemas", "response_format"),
+            ("Not for generic prompt writing", "RAG"),
+            ("RAG", "token counts"),
+            ("token counts", "non-LLM perf"),
+        ):
+            self.assertNotIn(
+                f"{left}{right}",
+                description,
+                f"glued trigger terms: {left!r} + {right!r}",
+            )
+
+        for term in (
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+            "cache_control/cachePoint",
+            "TTFT",
+            "KV reuse",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "Mamba/SWA/hybrid",
+            "cross-process block hash",
+            "LLM cost or speed regressed",
+            "repeated long prompts",
+            "speeding up agents",
+            "LLM request shape changes",
+            "tools",
+            "schemas",
+            "response_format",
+            "model/router",
+            "agent loops",
+            "compaction",
+            "Not for generic prompt writing",
+            "RAG",
+            "token counts",
+            "non-LLM perf",
+        ):
+            with self.subTest(term=term):
+                self.assertRegex(
+                    description,
+                    rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",
+                )
+
+    def test_vllm_contract_rows_encode_version_geometry_and_hash_upgrade_delta(self):
+        reference = (ROOT / "audit-prompt-caching" / "references" / "vllm.md").read_text()
+        feature_rows = parse_markdown_table(
+            reference,
+            "| Runtime evidence | Feature surface | Default/meaning |",
+        )
+        feature_by_runtime = {row["Runtime evidence"]: row for row in feature_rows}
+        self.assertEqual(
+            feature_by_runtime["stable `v0.27.1` source/release"]["Feature surface"],
+            "env `VLLM_PREFIX_CACHE_RETENTION_INTERVAL`; coordinator consumes it",
+        )
+        self.assertIn(
+            "default `None`",
+            feature_by_runtime["stable `v0.27.1` source/release"]["Default/meaning"],
+        )
+        self.assertIn(
+            "CLI/config `prefix_cache_retention_interval`",
+            feature_by_runtime["source/nightly containing `017e9f4`"]["Feature surface"],
+        )
+        self.assertIn(
+            "default `0`",
+            feature_by_runtime["source/nightly containing `017e9f4`"]["Default/meaning"],
+        )
+
+        retention_rows = parse_markdown_table(
+            reference,
+            "| Runtime | Effective value | Dense/non-eligible groups | SWA/Mamba/hybrid groups |",
+        )
+        retention = {
+            (row["Runtime"], row["Effective value"]): row for row in retention_rows
+        }
+        stable_none = retention[("stable `v0.27.1` env-only", "`None`")]
+        stable_zero = retention[("stable `v0.27.1` env-only", "`0`")]
+        stable_positive = retention[("stable `v0.27.1` env-only", "positive")]
+        post_zero = retention[("post-`017e9f4` source/main", "`0`")]
+        post_positive = retention[("post-`017e9f4` source/main", "positive")]
+        self.assertIn("interval does not apply", stable_none["Dense/non-eligible groups"])
+        self.assertIn("dense checkpoints", stable_none["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", stable_zero["Dense/non-eligible groups"])
+        self.assertIn("semantic checkpoints", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("latest replay boundary", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("shared-prefix junctions", stable_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", stable_positive["Dense/non-eligible groups"])
+        self.assertIn("multiple of effective `scheduler_block_size`", stable_positive["SWA/Mamba/hybrid groups"])
+        self.assertIn("permitted no-op", post_zero["Dense/non-eligible groups"])
+        self.assertIn("semantic checkpoints", post_zero["SWA/Mamba/hybrid groups"])
+        self.assertIn("startup/config error", post_positive["Dense/non-eligible groups"])
+        self.assertIn("full-attention groups ignore it", post_positive["SWA/Mamba/hybrid groups"])
+
+        geometry_rows = parse_markdown_table(
+            reference,
+            "| Concrete KV spec class | Retention-interval eligibility |",
+        )
+        geometry = {row["Concrete KV spec class"]: row["Retention-interval eligibility"] for row in geometry_rows}
+        self.assertEqual(
+            geometry["`SlidingWindowSpec`, including `SlidingWindowMLASpec`"],
+            "eligible",
+        )
+        self.assertEqual(geometry["`MambaSpec`"], "eligible")
+        self.assertEqual(
+            geometry["`FullAttentionSpec` and subclasses, including `RSWASpec` and `SinkFullAttentionSpec`"],
+            "not eligible",
+        )
+        self.assertEqual(geometry["`ChunkedLocalAttentionSpec`"], "not eligible in the checked validator")
+        self.assertEqual(geometry["unknown/new spec"], "`unknown` until a source/runtime probe confirms it")
+
+        hash_rows = parse_markdown_table(
+            reference,
+            "| Runtime evidence | Algorithm | Effective default seed | Cross-process reuse |",
+        )
+        hash_by_key = {(row["Runtime evidence"], row["Algorithm"]): row for row in hash_rows}
+        self.assertIn(
+            "random `os.urandom(32)` per process",
+            hash_by_key[("stable `v0.27.1`", "every supported algorithm")]["Effective default seed"],
+        )
+        self.assertIn(
+            "deterministic from the supplied value",
+            hash_by_key[("stable `v0.27.1`", "any algorithm with an explicitly common `PYTHONHASHSEED`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "fixed deterministic default",
+            hash_by_key[("post-`ef47a897` source/main", "`sha256`, `sha256_cbor`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "random per process",
+            hash_by_key[("post-`ef47a897` source/main", "`xxhash`, `xxhash_cbor`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "explicit `PYTHONHASHSEED` wins",
+            hash_by_key[("post-`ef47a897` source/main", "any algorithm with an explicit `PYTHONHASHSEED`")]["Effective default seed"],
+        )
+        self.assertIn(
+            "same algorithm and all other inputs",
+            hash_by_key[("post-`ef47a897` source/main", "`sha256`, `sha256_cbor`")]["Cross-process reuse"],
+        )
+
+    def test_vllm_version_geometry_contract_is_documented(self):
+        root = ROOT / "audit-prompt-caching"
+        vllm = (root / "references" / "vllm.md").read_text()
+        skill = (root / "SKILL.md").read_text()
+        checklist = (root / "references" / "predeploy-checklist.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        rules = json.loads((root / "references" / "rules.json").read_text())
+
+        vllm_locator_docs = " ".join(vllm.split())
+        self.assertIn("--kv-events-config", vllm_locator_docs)
+        self.assertIn(
+            "If a deployment line uses `--enable-kv-cache-events`, treat it as "
+            "stale/integration-specific deployment guidance; verify exact runtime "
+            "parser/version/startup acceptance, and do not assume upstream vLLM "
+            "support.",
+            vllm_locator_docs,
+        )
+
+        for required in (
+            "Version and capability gate",
+            "v0.27.1",
+            "017e9f4",
+            "ef47a897",
+            "prefix_cache_retention_interval",
+            "SlidingWindowSpec",
+            "SlidingWindowMLASpec",
+            "MambaSpec",
+            "RSWASpec",
+            "ChunkedLocalAttentionSpec",
+            "scheduler_block_size",
+            "prefix_match_unit",
+            "sha256_cbor",
+            "xxhash_cbor",
+            "P2P handshake",
+            "FS/OBJ",
+            "Compatibility is not isolation",
+            "cache_salt",
+            "raw seed",
+        ):
+            self.assertIn(required, vllm, required)
+
+        for required in (
+            "image digest",
+            "feature presence",
+            "effective retention",
+            "KV-group topology",
+            "scheduler block size",
+            "hash algorithm",
+            "seed compatibility status",
+            "tier type",
+            "retention/geometry mismatch",
+            "cross-process hash mismatch",
+            "feature detection",
+            "prefix_cache_retention_interval",
+            "prefix_caching_hash_algo",
+            "AP-1 through AP-15",
+            "AP-9b",
+            "AP-14",
+            "AP-15",
+        ):
+            self.assertIn(required, skill, required)
+
+        for required in (
+            "retention flag/env",
+            "positive interval",
+            "different algorithms",
+            "different effective seeds",
+            "PYTHONHASHSEED",
+            "rolling upgrade",
+            "image digest",
+            "resolved cache config",
+            "compatibility status",
+        ):
+            self.assertIn(required, checklist, required)
+
+        for required in (
+            "engine_version",
+            "engine_commit",
+            "image_digest",
+            "retention_feature_present",
+            "retention_effective_value",
+            "attention_geometry",
+            "scheduler_block_size",
+            "hash_algorithm",
+            "seed_compatibility_status",
+            "pythonhashseed_present",
+            "pythonhashseed_match_status",
+            "kv_tier_type",
+            "cache_salt_boundary_fingerprint",
+            "matched",
+            "mismatched",
+            "unknown",
+            "Raw seed",
+            "bounded cardinality",
+        ):
+            self.assertIn(required, observability, required)
+
+        for required in (
+            "Deployment Audit",
+            "Engine version/commit/image:",
+            "Capability evidence:",
+            "Attention/KV geometry:",
+            "Effective retention and source:",
+            "Scheduler block size:",
+            "Hash algorithm:",
+            "Seed compatibility status:",
+            "KV tier:",
+            "Isolation/cache_salt boundary:",
+        ):
+            self.assertIn(required, report, required)
+
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+        for rule_id in ("AP-13", "AP-14"):
+            self.assertIn(rule_id, rule_map)
+            self.assertEqual(rule_map[rule_id]["default_severity"], "medium")
+        self.assertIn("raw seed", rule_map["AP-14"]["avoid"].lower())
+        self.assertIn("cache_salt", rule_map["AP-14"]["avoid"])
+
+    def test_vllm_contract_rejects_shortcuts_and_raw_isolation_identifiers(self):
+        root = ROOT / "audit-prompt-caching"
+        vllm = (root / "references" / "vllm.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        rules = json.loads((root / "references" / "rules.json").read_text())
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+
+        def assert_retention_semantics(reference_text):
+            retention_rows = parse_markdown_table(
+                reference_text,
+                "| Runtime | Effective value | Dense/non-eligible groups | SWA/Mamba/hybrid groups |",
+            )
+            retention = {
+                (row["Runtime"], row["Effective value"]): row
+                for row in retention_rows
+            }
+            self.assertIn(
+                "startup/config error",
+                retention[("stable `v0.27.1` env-only", "`0`")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "startup/config error",
+                retention[("stable `v0.27.1` env-only", "positive")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "permitted no-op",
+                retention[("post-`017e9f4` source/main", "`0`")]["Dense/non-eligible groups"],
+            )
+            self.assertIn(
+                "full-attention groups ignore it",
+                retention[("post-`017e9f4` source/main", "positive")]["SWA/Mamba/hybrid groups"],
+            )
+
+        assert_retention_semantics(vllm)
+        for original, replacement in (
+            (
+                "startup/config error: any non-`None` env value requires SWA/Mamba groups",
+                "permitted no-op",
+            ),
+            ("permitted no-op", "startup/config error"),
+            ("full-attention groups ignore it", "full-attention groups keep it"),
+        ):
+            mutated_reference = vllm.replace(original, replacement, 1)
+            self.assertNotEqual(mutated_reference, vllm)
+            with self.subTest(original=original):
+                with self.assertRaises(AssertionError):
+                    assert_retention_semantics(mutated_reference)
+
+        self.assertIn("algorithm and effective seed are necessary but insufficient", vllm)
+        self.assertIn("serialization/runtime", vllm)
+        self.assertIn("tenant ID", observability)
+        self.assertIn("unbounded metric cardinality", observability)
+        self.assertIn("PYTHONHASHSEED", rule_map["AP-14"]["avoid"])
 
     def test_validate_skill_package_checks_required_files_and_references(self):
         result = run_script("validate_skill_package.py", ROOT / "audit-prompt-caching")
@@ -723,7 +3371,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertTrue(path.exists(), "missing machine-readable rules.json")
         data = json.loads(path.read_text())
         rules = {rule["id"]: rule for rule in data["rules"]}
-        for rule_id in ("AP-1", "AP-2", "AP-7"):
+        for rule_id in ("AP-1", "AP-2", "AP-7", "AP-11"):
             self.assertIn(rule_id, rules)
         for rule in data["rules"]:
             for key in (
@@ -813,6 +3461,446 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["findings"][0]["rule_id"], "AP-1")
         self.assertIn("input contains", output["findings"][0]["evidence"])
 
+    def test_layout_linter_validates_direct_gpt56_explicit_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6-terra",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Stable policy",
+                                        "prompt_cache_breakpoint": {
+                                            "mode": "explicit"
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                        "prompt_cache_options": {
+                            "mode": "explicit",
+                            "ttl": "30m",
+                        },
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertTrue(output["cache_policy"]["validated"])
+        self.assertEqual(output["cache_policy"]["api_surface"], "chat")
+        self.assertEqual(output["cache_policy"]["mode"], "explicit")
+        self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 1)
+        self.assertIn("AP-11", output["clean_checks"])
+
+    def test_layout_linter_flags_explicit_mode_without_breakpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6-terra",
+                        "messages": [
+                            {"role": "system", "content": "Stable policy"}
+                        ],
+                        "prompt_cache_options": {
+                            "mode": "explicit",
+                            "ttl": "30m",
+                        },
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        finding = next(
+            item
+            for item in output["findings"]
+            if item["rule_id"] == "AP-11"
+        )
+        self.assertEqual(finding["severity"], "medium")
+        self.assertIn("no valid prompt_cache_breakpoint", finding["issue"])
+        self.assertFalse(output["cache_policy"]["valid"])
+
+    def test_layout_linter_reports_invalid_gpt56_cache_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6",
+                        "input": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "output_text",
+                                        "text": "Question",
+                                        "prompt_cache_breakpoint": {
+                                            "mode": "implicit"
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                        "prompt_cache_options": {
+                            "mode": "automatic",
+                            "ttl": "24h",
+                        },
+                        "prompt_cache_retention": "24h",
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        ap11 = [item for item in output["findings"] if item["rule_id"] == "AP-11"]
+        evidence = "\n".join(item["evidence"] for item in ap11)
+        self.assertIn("prompt_cache_options.mode", evidence)
+        self.assertIn("prompt_cache_options.ttl", evidence)
+        self.assertIn("prompt_cache_retention", evidence)
+        self.assertIn("prompt_cache_breakpoint", evidence)
+
+    def test_layout_linter_does_not_treat_write_slots_as_a_marker_limit(self):
+        blocks = [
+            {
+                "type": "input_text",
+                "text": f"Stable section {index}",
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }
+            for index in range(5)
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6",
+                        "input": [{"role": "user", "content": blocks}],
+                        "prompt_cache_options": {"mode": "explicit"},
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 5)
+
+    def test_layout_linter_validates_direct_gpt6_astra_cache_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-6-astra",
+                        "reasoning": {"effort": "medium"},
+                        "input": [
+                            {
+                                "role": "developer",
+                                "content": [
+                                    {
+                                        "type": "input_text",
+                                        "text": "Stable policy",
+                                        "prompt_cache_breakpoint": {
+                                            "mode": "explicit"
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "type": "configuration_update",
+                                "reasoning": {"effort": "high"},
+                            },
+                            {"role": "user", "content": "Hard follow-up"},
+                        ],
+                        "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
+                        "prompt_cache_key": "policy-family-v1",
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cache_policy"]["model_support"], "gpt-6")
+        self.assertTrue(output["cache_policy"]["validated"])
+        self.assertIn("AP-11", output["clean_checks"])
+        self.assertIn("AP-15", output["clean_checks"])
+        self.assertEqual(output["effort_policy"]["provider"], "openai")
+        self.assertEqual(output["effort_policy"]["request_effort"], "medium")
+        self.assertEqual(output["effort_policy"]["per_message_effort_items"], 1)
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+
+    def test_layout_linter_accepts_gpt6_sol_configuration_update(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(json.dumps({
+                "model": "gpt-6-sol",
+                "reasoning": {"effort": "medium"},
+                "input": [
+                    {"role": "developer", "content": "Stable policy"},
+                    {"type": "configuration_update", "reasoning": {"effort": "high"}},
+                    {"role": "user", "content": "Hard follow-up"},
+                ],
+                "prompt_cache_options": {"mode": "implicit", "ttl": "30m"},
+            }))
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cache_policy"]["model_support"], "gpt-6")
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_flags_configuration_update_outside_gpt6(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.6-terra",
+                        "input": [
+                            {"role": "developer", "content": "Stable policy"},
+                            {
+                                "type": "configuration_update",
+                                "reasoning": {"effort": "high"},
+                            },
+                            {"role": "user", "content": "Question"},
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        finding = next(
+            item for item in output["findings"] if item["rule_id"] == "AP-15"
+        )
+        self.assertEqual(finding["category"], "effort-continuity")
+        self.assertIn("GPT-6", finding["issue"])
+        self.assertEqual(finding["evidence"], "$.input[1]")
+        self.assertFalse(output["effort_policy"]["per_message_effort_supported"])
+        self.assertNotIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_flags_configuration_update_in_pro_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-6-astra",
+                        "reasoning": {"effort": "high", "mode": "pro"},
+                        "input": [
+                            {"role": "developer", "content": "Stable policy"},
+                            {
+                                "type": "configuration_update",
+                                "reasoning": {"effort": "low"},
+                                "instructions": "not allowed here",
+                            },
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        issues = [
+            item["issue"] for item in output["findings"] if item["rule_id"] == "AP-15"
+        ]
+        self.assertTrue(any("pro" in issue for issue in issues), issues)
+        self.assertTrue(
+            any("only reasoning.effort" in issue for issue in issues), issues
+        )
+
+    def test_layout_linter_validates_anthropic_per_message_effort(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "claude-fable-5-1",
+                        "max_tokens": 4096,
+                        "output_config": {"effort": "high"},
+                        "system": [
+                            {
+                                "type": "text",
+                                "text": "Stable policy",
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ],
+                        "messages": [
+                            {"role": "user", "content": "Plan the migration."},
+                            {"role": "assistant", "content": "Three steps."},
+                            {
+                                "role": "system",
+                                "content": [],
+                                "output_config": {"effort": "low"},
+                            },
+                            {"role": "user", "content": "Summarize it."},
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertIn("AP-15", output["clean_checks"])
+        self.assertEqual(output["effort_policy"]["provider"], "anthropic")
+        self.assertEqual(output["effort_policy"]["request_effort"], "high")
+        self.assertEqual(output["effort_policy"]["per_message_effort_items"], 1)
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertEqual(
+            output["effort_policy"]["beta_header"],
+            "mid-conversation-output-config-2026-07-01",
+        )
+
+    def test_layout_linter_accepts_opus_5_5_per_message_effort(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(json.dumps({
+                "model": "claude-opus-5-5",
+                "output_config": {"effort": "medium"},
+                "messages": [
+                    {"role": "user", "content": "Plan."},
+                    {"role": "system", "content": [], "output_config": {"effort": "high"}},
+                    {"role": "user", "content": "Review."},
+                ],
+            }))
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_flags_anthropic_per_message_effort_on_unsupported_model(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "claude-fable-5",
+                        "messages": [
+                            {"role": "user", "content": "Plan the migration."},
+                            {
+                                "role": "system",
+                                "content": [],
+                                "output_config": {"effort": "low"},
+                            },
+                            {"role": "user", "content": "Summarize it."},
+                        ],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        output = json.loads(result.stdout)
+        finding = next(
+            item for item in output["findings"] if item["rule_id"] == "AP-15"
+        )
+        self.assertEqual(finding["evidence"], "$.messages[1]")
+        self.assertIn("per-message effort", finding["issue"])
+        self.assertFalse(output["effort_policy"]["per_message_effort_supported"])
+
+    def test_layout_linter_reports_effort_policy_without_items(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "gpt-5.4",
+                        "messages": [{"role": "user", "content": "Question"}],
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["effort_policy"]["provider"], "openai")
+        self.assertIsNone(output["effort_policy"]["request_effort"])
+        self.assertEqual(output["effort_policy"]["per_message_effort_items"], 0)
+        self.assertNotIn("AP-15", output["clean_checks"])
+
+    def test_layout_fixtures_cover_effort_continuity(self):
+        good_astra = FIXTURES / "layout" / "good_openai_astra_effort_request.json"
+        bad_astra = FIXTURES / "layout" / "bad_openai_astra_effort_request.json"
+        good_claude = FIXTURES / "layout" / "good_anthropic_effort_request.json"
+        bad_claude = FIXTURES / "layout" / "bad_anthropic_effort_request.json"
+        for path in (good_astra, bad_astra, good_claude, bad_claude):
+            self.assertTrue(path.exists(), f"missing fixture: {path}")
+
+        for path in (good_astra, good_claude):
+            result = run_script("layout_linter.py", path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("AP-15", json.loads(result.stdout)["clean_checks"])
+
+        for path in (bad_astra, bad_claude):
+            result = run_script("layout_linter.py", path)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            rule_ids = {
+                item["rule_id"] for item in json.loads(result.stdout)["findings"]
+            }
+            self.assertIn("AP-15", rule_ids)
+
+    def test_layout_linter_leaves_provider_wrappers_unvalidated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "model": "openrouter/gpt-5.6",
+                        "messages": [{"role": "user", "content": "Question"}],
+                        "prompt_cache_options": {"mode": "made-up"},
+                    }
+                )
+            )
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertFalse(output["cache_policy"]["validated"])
+        self.assertEqual(output["cache_policy"]["model_support"], "unknown")
+        self.assertNotIn("AP-11", output["clean_checks"])
+
+    def test_layout_linter_returns_usage_error_for_malformed_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "request.json"
+            request_path.write_text("{")
+
+            result = run_script("layout_linter.py", request_path)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid request JSON", result.stderr)
+
     def test_productization_files_cover_ci_and_governance(self):
         ci_path = ROOT / ".github" / "workflows" / "ci.yml"
         license_path = ROOT / "LICENSE"
@@ -824,7 +3912,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
 
         ci = ci_path.read_text()
         for expected in (
-            "python3 -m unittest tests/test_prompt_cache_scripts.py",
+            "python3 -m unittest discover -s tests -p 'test_*.py'",
             "validate_skill_package.py audit-prompt-caching",
             "run_trigger_eval.py audit-prompt-caching",
             "compile(path.read_text()",
@@ -935,40 +4023,41 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertNotIn("Manual Install", readme)
         self.assertNotIn("raw.githubusercontent.com/sernote/audit-prompt-caching/main/install.sh", readme)
 
-    def test_readme_demo_uses_successful_linter_command(self):
-        readme = (ROOT / "README.md").read_text()
+    def test_usage_guide_demo_uses_successful_linter_command(self):
+        guide = (ROOT / "docs" / "usage.md").read_text()
 
-        self.assertIn("fixtures/layout/good_openai_request.json", readme)
-        self.assertIn("fixtures/layout/good_openai_responses_request.json", readme)
-        self.assertIn("Responses-style", readme)
+        self.assertIn("fixtures/layout/good_openai_request.json", guide)
+        self.assertIn("fixtures/layout/good_openai_responses_request.json", guide)
+        self.assertIn("Responses-style", guide)
         self.assertNotIn(
             "python3 audit-prompt-caching/scripts/layout_linter.py \\\n"
             "  fixtures/layout/bad_openai_request.json",
-            readme,
+            guide,
         )
 
     def test_readme_front_door_has_adoption_assets(self):
         readme = (ROOT / "README.md").read_text()
+        guide = (ROOT / "docs" / "usage.md").read_text()
 
         for required in [
             "[![CI]",
             "LLM Cache Audit Skill",
-            "Why This Exists",
             "Quick Start",
-            "Audit Hero Shot",
-            "LLM CACHE AUDIT",
-            "Fixture Signal",
-            "Cache Flow",
-            "Positioning",
-            "59.62%",
-            "$34.60 -> $23.10",
+            "docs/first-audit.md",
+            "examples/first-audit/README.md",
+            "docs/usage.md#bundled-scripts",
+            "docs/usage.md#synthetic-usage-and-roi",
+            "docs/usage.md#example-prompts",
+            "docs/routing-capture.md",
             "git clone --depth 1",
         ]:
             self.assertIn(required, readme)
+        self.assertIn("59.62%", guide)
+        self.assertIn("$34.60 -> $23.10", guide)
         self.assertNotIn("Prompt Cache Doctor", readme)
 
-    def test_readme_examples_cover_non_obvious_audit_scenarios(self):
-        readme = (ROOT / "README.md").read_text()
+    def test_usage_guide_examples_cover_non_obvious_audit_scenarios(self):
+        guide = (ROOT / "docs" / "usage.md").read_text()
 
         for required in [
             "OpenAI-compatible wrapper ambiguity",
@@ -978,7 +4067,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "vLLM/SGLang multi-replica KV",
             "High cached tokens, low savings",
         ]:
-            self.assertIn(required, readme)
+            self.assertIn(required, guide)
 
     def test_skill_description_has_stronger_trigger_surface(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -1031,6 +4120,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "switched from direct Anthropic to OpenRouter",
             "scaled vLLM pods and did not touch prompts",
             "LLM cost increased after an agent refactor",
+            "GPT-5.6 prompt_cache_options",
             "Rewrite this short greeting prompt",
         ]:
             self.assertIn(required, queries)
@@ -1117,8 +4207,28 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "prompt_cache_key",
             "MCP tool registry",
             "not worth changing the cache setup",
+            "GPT-5.6",
+            "prompt_cache_options",
+            "cache_write_tokens",
+            "pricing",
         ]:
             self.assertIn(required, combined_prompts + "\n" + combined_expected)
+
+    def test_skill_routes_minimal_gpt56_cache_audit_tools(self):
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+        for required in [
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "cache_write_tokens",
+            "--accounting-mode",
+            "--cache-write-rate",
+            "--cache-write-input-price-per-mtok",
+            "--roi-json",
+            "whole-input comparison",
+            "does not prove explicit breakpoint reuse",
+        ]:
+            self.assertIn(required, skill)
 
     def test_skill_requires_project_context_language_and_script_transparency(self):
         skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
@@ -1224,7 +4334,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "vllm:prefix_cache_hits",
             "vllm:prefix_cache_queries",
             "vllm:prompt_tokens_cached",
-            "synthetic benchmark speedup",
+            "Synthetic benchmark speedup",
             "production ROI",
         ]:
             self.assertIn(required, reference)
@@ -1288,6 +4398,322 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, combined)
 
+    def test_ap7_treats_cache_aware_routing_as_a_measured_candidate(self):
+        root = ROOT / "audit-prompt-caching"
+        rules = json.loads((root / "references" / "rules.json").read_text())
+        rule_map = {rule["id"]: rule for rule in rules["rules"]}
+        ap7 = rule_map["AP-7"]
+
+        self.assertNotIn("Lost locality", ap7["summary"])
+        ap7_text = " ".join(ap7[field] for field in ("summary", "fix", "avoid", "validation"))
+        self.assertIn("candidate", ap7_text.lower())
+        self.assertIn("matched-workload comparison", ap7["fix"])
+        self.assertIn("hit-only", ap7["avoid"].lower())
+        self.assertIn("capacity at SLO", ap7["validation"])
+        self.assertIn("rewarm", ap7["validation"].lower())
+        self.assertIn("references/mechanics.md", ap7["fix"])
+        summary = ap7["summary"].lower()
+        self.assertRegex(summary, r"proposed\s+rollout")
+        self.assertIn("open", summary)
+        self.assertIn("outcome gap", summary)
+
+        predeploy = (root / "references" / "predeploy-checklist.md").read_text().lower()
+        self.assertNotIn("round robin without prefix-aware routing", predeploy)
+        self.assertIn("cache-aware or cache-blind", predeploy)
+        self.assertIn("references/mechanics.md", predeploy)
+        scope = predeploy.split("## blockers", 1)[0]
+        self.assertNotIn("these blockers apply to a proposed", scope)
+        blockers = extract_markdown_section(predeploy, "blockers")
+        routing_scope = next(
+            line for line in blockers.splitlines()
+            if "scope note:" in line
+        )
+        for required in (
+            "routing-policy",
+            "continued operation",
+            "unrelated release",
+            "emergency rollback",
+            "scale-out",
+            "candidate",
+            "prefix stability",
+            "provider correctness",
+            "hash/seed compatibility",
+            "isolation",
+        ):
+            with self.subTest(predeploy_scope_anchor=required):
+                self.assertIn(required, routing_scope)
+        routing_blocker = next(
+            line for line in predeploy.splitlines()
+            if "routing-policy or replica/kv-topology change" in line
+        )
+        self.assertIn("scale-out", routing_blocker)
+        self.assertIn("is a blocker when", routing_blocker)
+        self.assertIn("unreviewed trust-boundary broadening", routing_blocker)
+        self.assertNotIn("and no unreviewed trust-boundary broadening", routing_blocker)
+        self.assertIn("other blockers here", routing_scope)
+        self.assertIn("still apply", routing_scope)
+        self.assertIn("remains a candidate", routing_scope)
+        self.assertRegex(
+            routing_scope,
+            r"continued operation.*unrelated release.*unchanged routing policy.*emergency rollback to a previously running policy",
+        )
+        self.assertIn("does not block", routing_scope)
+
+        self.assertEqual(
+            rule_map["AP-9b"],
+            {
+                "id": "AP-9b",
+                "category": "cache-isolation",
+                "default_severity": "medium",
+                "summary": "Isolation fragmentation.",
+                "search": "cache_salt, per-user keys, tenant routing.",
+                "fix": "Use coarsest safe trust boundary.",
+                "avoid": "Weakening privacy or ZDR.",
+                "validation": "Boundary/loss documented.",
+            },
+        )
+
+    def test_routing_outcome_gate_is_consistent_across_core_references(self):
+        root = ROOT / "audit-prompt-caching"
+        mechanics = (root / "references" / "mechanics.md").read_text()
+        gate = extract_markdown_section(mechanics, "Routing Outcome Gate")
+
+        self.assertIn("Routing Outcome Gate", mechanics)
+        for required in ("matched-workload comparison", "capacity at SLO", "rewarm"):
+            self.assertIn(required, mechanics)
+            self.assertIn(required, gate)
+        for required in (
+            "cited policy",
+            "not itself an outcome gap",
+            "For a candidate under evaluation",
+            "pilot/canary only",
+        ):
+            with self.subTest(gate_anchor=required):
+                self.assertIn(required.lower(), gate.lower())
+        self.assertRegex(
+            gate.lower(),
+            r"performance.*capacity.*cost.*outcomes.*met.*no unresolved safety or correctness concern",
+        )
+        self.assertIn("no unresolved safety or correctness concern", gate.lower())
+        self.assertNotIn("no separate safety or correctness review is pending", gate.lower())
+        self.assertIn("may be no-change", gate.lower())
+        self.assertRegex(
+            gate.lower(),
+            r"for unchanged continued operation or an unrelated release.*may be no-change",
+        )
+        self.assertRegex(
+            gate.lower(),
+            r"emergency rollback to a previously running policy.*not a candidate|emergency rollback to a previously running policy.*may proceed",
+        )
+        self.assertRegex(
+            gate.lower(),
+            r"for a candidate under evaluation, missing evidence is pilot/canary only",
+        )
+        self.assertLess(gate.index("Before applying this gate"), gate.index("Require:"))
+        self.assertRegex(
+            gate.lower(),
+            r"routing-policy or replica/kv-topology change.*including scale-out.*candidate",
+        )
+        self.assertRegex(
+            gate.lower(),
+            r"unchanged.*continued operation.*unrelated release",
+        )
+        self.assertIn("restart, scale, and failover", gate.lower())
+        for required in (
+            "Use this reference when the symptom is latency",
+            "### High Hit Rate, Low Savings",
+            "### TTFT Improved, Total Latency Did Not",
+            "### Total Prompt Tokens Look High",
+            "### Self-Hosted Hit Rate Looks Good, Throughput Still Bad",
+            "For cost audits, collect raw usage records",
+        ):
+            self.assertIn(required, mechanics)
+
+        consumers = [
+            root / "SKILL.md",
+            root / "references" / "predeploy-checklist.md",
+            root / "references" / "observability.md",
+            root / "references" / "report-template.md",
+            root / "references" / "vllm.md",
+            root / "references" / "sglang.md",
+        ]
+        for path in consumers:
+            text = path.read_text()
+            with self.subTest(path=path):
+                self.assertIn("Routing Outcome Gate", text)
+                self.assertIn("references/mechanics.md", text)
+                self.assertNotIn("use prefix-aware routing", text.lower())
+
+        for path in (root / "references" / "vllm.md", root / "references" / "sglang.md"):
+            with self.subTest(engine=path.name):
+                engine_text = path.read_text().lower()
+                self.assertNotIn("is cache-blind; use", engine_text)
+
+        skill = (root / "SKILL.md").read_text().lower()
+        self.assertIn("routing_locality: pass", skill)
+        self.assertIn("locality only", skill)
+        self.assertIn("rollout approval", skill)
+        for required in (
+            "tokenizer/chat-template drift",
+            "max_model_len",
+            "kv pressure/eviction",
+            "gateway/service routing",
+        ):
+            self.assertIn(required, skill)
+
+        observability = (root / "references" / "observability.md").read_text()
+        for required in (
+            "p50",
+            "p95",
+            "p99",
+            "TTFT",
+            "end-to-end latency",
+            "throughput",
+            "capacity at SLO",
+            "queue",
+            "per-replica",
+            "KV",
+            "error",
+            "retry",
+            "rewarm",
+            "recovery time",
+        ):
+            self.assertIn(required.lower(), observability.lower(), required)
+
+        report = (root / "references" / "report-template.md").read_text().lower()
+        self.assertIn("routing_locality: pass", report)
+        self.assertIn("locality only", report)
+        self.assertIn("cannot by itself", report)
+        self.assertIn("approve a routing-policy rollout", report)
+
+    def test_routing_change_contract_is_always_loaded_and_policy_neutral(self):
+        # These structural checks pin loading, ordering, and fixture safety only;
+        # fresh-context behavioral evaluation remains the proof of agent behavior.
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        skill_contract = (
+            "Evidence requirements gate proposed changes",
+            "stated SLOs, targets, and budgets",
+            "Change needed: no",
+            "not a finding, warning, or precondition",
+            "A defect needs a measured outcome gap, not an implementation name",
+            "policy, checklist, standard, or ticket",
+            "intent claim, not measurement",
+            "Do not manufacture a canary, pilot, shadow, or measurement campaign",
+        )
+        for required in skill_contract:
+            with self.subTest(always_loaded_anchor=required):
+                self.assertIn(required, skill)
+
+        section = extract_markdown_section(skill, "Agent-First Output Contracts")
+        contract_lower = section.lower()
+        for required in (
+            "performance",
+            "capacity",
+            "cost",
+            "isolation",
+            "privacy",
+            "zdr",
+            "residency",
+            "provider correctness",
+            "do not waive",
+            "change needed: unknown until",
+            "outcome targets",
+            "escalate",
+            "authority",
+            "rationale",
+        ):
+            with self.subTest(safety_or_unknown_anchor=required):
+                self.assertIn(required, contract_lower)
+        self.assertRegex(
+            contract_lower,
+            r"healthy outcomes do not waive.*isolation.*privacy/zdr.*residency.*provider correctness",
+        )
+        self.assertRegex(
+            contract_lower,
+            r"when a no-change answer rests on claimed.*outcome health.*outcome targets or evidence are absent.*change needed: unknown until.*not no",
+        )
+        self.assertRegex(
+            contract_lower,
+            r"this does not override.*applicability gate.*not worth caching",
+        )
+        self.assertRegex(
+            contract_lower,
+            r"routing or replica/kv-topology change.*references/mechanics\.md",
+        )
+
+        self.assertIn("Evidence requirements gate proposed changes", section)
+        self.assertLess(
+            skill.index("Evidence requirements gate proposed changes"),
+            skill.index("## Evidence-Bearing Findings"),
+        )
+
+        package = ROOT / "audit-prompt-caching"
+        package_text = "\n".join(
+            path.read_text()
+            for path in package.rglob("*")
+            if path.is_file() and path.suffix in {".md", ".json"}
+        ).lower()
+        self.assertNotIn("round robin without prefix-aware routing", package_text)
+
+        fixture = json.loads((FIXTURES / "vllm" / "apc_deployment.json").read_text())
+        self.assertIn("outcome", fixture["expected_issue"].lower())
+        self.assertNotIn("fragment", fixture["expected_issue"].lower())
+
+    def test_routing_verification_does_not_accept_mechanism_only(self):
+        skill = self.skill_text()
+        verification = extract_markdown_section(skill, "Verification").lower()
+
+        self.assertIn("until the matching scoped check holds", verification)
+        self.assertRegex(
+            verification,
+            r"routing.*full.*routing outcome gate|routing.*routing outcome gate.*not.*prefix-hit",
+        )
+        self.assertIn("self-hosted non-routing fixes", verification)
+        self.assertIn("prefix-hit/kv-pressure", verification)
+
+    def test_evals_cover_routing_harmful_hit_and_evidence_gap(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        by_id = {item["id"]: item for item in evals["evals"]}
+
+        evidence_gap = by_id[10]
+        evidence_gap_text = (
+            evidence_gap["prompt"] + "\n" + evidence_gap["expected_output"]
+        )
+        for required in ("four replicas", "30k-token", "--max-model-len 131072"):
+            self.assertIn(required, evidence_gap_text)
+        self.assertIn("matched-workload comparison", evidence_gap["expected_output"])
+        self.assertIn("capacity at SLO", evidence_gap["expected_output"])
+        self.assertIn("rewarm", evidence_gap["expected_output"].lower())
+        self.assertNotIn("use prefix-aware routing", evidence_gap["expected_output"].lower())
+
+        harmful_hit = by_id[30]
+        harmful_hit_text = harmful_hit["prompt"] + "\n" + harmful_hit["expected_output"]
+        for required in (
+            "prefix hit rate from 4% to 22%",
+            "p99 TTFT rises from 4s to 9s",
+            "capacity at SLO",
+            "Do not approve rollout",
+            "mechanism",
+            "reject",
+            "rewarm",
+        ):
+            self.assertIn(required.lower(), harmful_hit_text.lower(), required)
+
+        sibling = by_id[31]
+        sibling_text = sibling["prompt"] + "\n" + sibling["expected_output"]
+        for required in (
+            "SGLang",
+            "approximate-radix-tree",
+            "stated outcomes",
+            "internal runbook",
+            "Change needed: no",
+            "intent claim",
+            "outcome condition",
+        ):
+            self.assertIn(required.lower(), sibling_text.lower(), required)
+
     def test_trigger_eval_preserves_negative_non_cache_cases(self):
         trigger_eval = json.loads(
             (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
@@ -1318,9 +4744,195 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertIsInstance(rule[key], str, rule["id"])
                 self.assertTrue(rule[key].strip(), rule["id"])
 
+    def test_moonshot_reference_and_detection_cover_kimi_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "moonshot.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "256 tokens",
+            "`usage.cached_tokens`",
+            "`cache_read_input_tokens`",
+            "reasoning effort",
+            "`prompt_cache_key`",
+            "/v1/caching",
+            "provider: moonshot",
+        ):
+            self.assertIn(required, reference)
+        skill = (root / "SKILL.md").read_text()
+        self.assertIn("`references/moonshot.md`", skill)
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "kimi.py").write_text(
+                "client = OpenAI(base_url='https://api.moonshot.ai/v1')\n"
+                "model = 'kimi-k2.6'\n"
+            )
+            output = module.find_matches(tmp_path)
+        self.assertEqual(output["providers"]["moonshot"], 2)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("moonshot_api", signals)
+        self.assertIn("kimi_model", signals)
+
+    def test_minimax_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "minimax.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "512 input tokens",
+            "most recent 4 markers",
+            "`cache_control`",
+            "provider: minimax",
+            "5-minute lifetime",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/minimax.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = Anthropic(base_url='https://api.minimax.io/anthropic')\nmodel = 'MiniMax-M3'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["minimax"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("minimax_api", signals)
+        self.assertIn("minimax_model", signals)
+
+    def test_xai_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "xai.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "`x-grok-conv-id`",
+            "`usage.cached_prompt_text_tokens`",
+            "`reasoning_content`",
+            "including cached tokens",
+            "provider: xai",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/xai.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://api.x.ai/v1', default_headers={'x-grok-conv-id': conv})\nmodel = 'grok-4.6'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["xai"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("xai_api", signals)
+        self.assertIn("x-grok-conv-id", signals)
+        self.assertIn("grok_model", signals)
+
+    def test_mistral_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "mistral.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "`prompt_cache_key`",
+            "64 tokens",
+            "multiple of 64",
+            "10% of the input price",
+            "provider: mistral",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/mistral.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("from mistralai import Mistral\nclient = Mistral(server_url='https://api.mistral.ai')\nmodel = 'mistral-large-latest'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["mistral"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("mistralai", signals)
+        self.assertIn("mistral_api", signals)
+        self.assertIn("mistral_model", signals)
+
+    def test_tencent_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "tencent.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "`cached_token`",
+            "`prompt_tokens_details.cached_tokens`",
+            "provider: tencent",
+            "best-effort",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/tencent.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://tokenhub-intl.tencentcloudmaas.com/v1')\nmodel = 'hy4-preview'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["tencent"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("tokenhub_api", signals)
+        self.assertIn("hunyuan_model", signals)
+
+    def test_xiaomi_reference_and_detection_cover_cache_semantics(self):
+        root = ROOT / "audit-prompt-caching"
+        reference = (root / "references" / "xiaomi.md").read_text()
+        for required in (
+            "Last reviewed: 2026-09-12.",
+            "automatic",
+            "limited-time free",
+            "4096-token",
+            "provider: xiaomi",
+            "`cached_tokens` granularity",
+        ):
+            self.assertIn(required, reference)
+        self.assertIn("`references/xiaomi.md`", (root / "SKILL.md").read_text())
+
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "client.py").write_text("client = OpenAI(base_url='https://api.xiaomimimo.com/v1')\nmodel = 'mimo-v2.5-pro'\n")
+            output = module.find_matches(tmp_path)
+        self.assertGreaterEqual(output["providers"]["xiaomi"], 1)
+        signals = {
+            signal
+            for finding in output["findings"]
+            for signal in finding["signals"]
+        }
+        self.assertIn("mimo_api", signals)
+        self.assertIn("mimo_model", signals)
+
+    def test_extract_llm_calls_vendor_patterns_skip_common_false_positives(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "search.py").write_text(
+                "def minimax(node, depth):\n    return depth\n"
+                "version = 'hy3'\n"
+                "flag = 'hy4'\n"
+            )
+            output = module.find_matches(tmp_path)
+        self.assertNotIn("minimax", output["providers"])
+        self.assertNotIn("tencent", output["providers"])
+
     def test_anthropic_reference_covers_current_prompt_cache_semantics(self):
-        # Provider guide and Opus 5.5 model page, reviewed 2026-09-22.
-        # https://platform.claude.com/docs/en/build-with-claude/prompt-caching
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "anthropic.md"
         ).read_text()
@@ -1336,14 +4948,12 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "thinking blocks",
             "workspace-level isolation",
             "claude-opus-5-5",
-            "0.05×",
-            "512 tokens",
+            "0.05x",
+            "512-token",
         ]:
             self.assertIn(required, reference)
 
     def test_openai_reference_covers_current_prompt_cache_semantics(self):
-        # Provider guide, reviewed 2026-09-22. Legacy fields remain for mixed fleets.
-        # https://developers.openai.com/api/docs/guides/prompt-caching
         reference = (
             ROOT / "audit-prompt-caching" / "references" / "openai.md"
         ).read_text()
@@ -1360,14 +4970,793 @@ class PromptCacheScriptsTest(unittest.TestCase):
             "Regional Inference",
             "TPM rate limits",
             "GPU-local storage",
+            "GPT-5.6",
             "prompt_cache_options",
             "prompt_cache_breakpoint",
+            '"mode": "explicit"',
             "cache_write_tokens",
-            "configuration_update",
             "30m",
+            "four",
+            "breakdowns of the reported input total",
+            "minimum reuse lifetime",
+            "not a Regional processing guarantee",
+            "gpt-6-sol",
+            "optional on GPT-5.6+",
+            "Implicit mode can reuse earlier message boundaries",
+        ]:
+            self.assertIn(required, reference)
+        self.assertNotIn("prompt_cache_key` is required", reference)
+
+    def test_vercel_allowed_tools_contract_is_responses_only_and_version_aware(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "vercel-ai-sdk.md"
+        ).read_text()
+        section = extract_markdown_section(reference, "OpenAI Responses allowedTools")
+        normalized = " ".join(section.split())
+
+        self.assertIn("stable full `tools` catalog", normalized)
+        self.assertIn("providerOptions.openai.allowedTools", normalized)
+        self.assertIn("Responses-only", normalized)
+        self.assertIn("mode: `auto`", normalized)
+        self.assertIn("mode: `required`", normalized)
+        self.assertIn("toolChoice", normalized)
+        self.assertIn("model capability", normalized)
+        self.assertIn("tool class", normalized)
+        self.assertIn("package.json", normalized)
+        self.assertIn("lockfile", normalized)
+        self.assertIn("allowedTools capability gate", normalized)
+        self.assertIn("allowedTools capability and economics gates", normalized)
+        self.assertNotIn("applicability and economics gates", normalized)
+        self.assertIn("corrected-mapping gate", normalized)
+
+        chronology = re.search(
+            r"May 5, 2026.*?29e6ac6.*?base Responses option.*?"
+            r"Aug 18, 2026.*?a062795.*?corrected.*?3\.0\.98.*?4\.0\.43",
+            " ".join(section.split()),
+        )
+        self.assertIsNotNone(
+            chronology,
+            "base introduction and Aug 18 correction must be distinct chronological evidence",
+        )
+
+        rows = parse_markdown_table(
+            reference,
+            "| `@ai-sdk/openai` line | Availability | Corrected provider-tool mapping |",
+        )
+        self.assertEqual(len(rows), 4)
+        by_line = {row["`@ai-sdk/openai` line"]: row for row in rows}
+        self.assertIn("`allowedTools` is absent", by_line["`2.x` / AI SDK v5"]["Availability"])
+        self.assertIn("not applicable", by_line["`2.x` / AI SDK v5"]["Corrected provider-tool mapping"])
+        self.assertEqual(
+            by_line["`3.x` / AI SDK v6"]["Availability"],
+            "available from `3.0.62`",
+        )
+        self.assertEqual(
+            by_line["`3.x` / AI SDK v6"]["Corrected provider-tool mapping"],
+            "corrected at `>=3.0.98`",
+        )
+        self.assertEqual(
+            by_line["`4.x`"]["Corrected provider-tool mapping"],
+            "corrected at `>=4.0.43`",
+        )
+        self.assertIn("unknown line", by_line)
+        self.assertIn("do not transfer floors", by_line["unknown line"]["Corrected provider-tool mapping"])
+        self.assertRegex(
+            normalized,
+            r"For Azure.*references/azure-openai\.md.*endpoint.*deployment/model.*api-version.*Responses tool_choice schema.*final wire",
+        )
+        self.assertIn("Vercel SDK's name-resolution", normalized)
+        self.assertIn("warnings, drop, or error semantics", normalized)
+        self.assertNotIn("Do not transfer this behavior to direct OpenAI Responses", normalized)
+
+    def test_vercel_allowed_tools_contract_covers_wire_mapping_and_failure_modes(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "vercel-ai-sdk.md"
+        ).read_text()
+        section = extract_markdown_section(reference, "OpenAI Responses allowedTools")
+        rows = parse_markdown_table(
+            section,
+            "| Tool class | Entry in `allowed_tools.tools` |",
+        )
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "Tool class": "function",
+                    "Entry in `allowed_tools.tools`": "`{type: \"function\", name}`",
+                },
+                {
+                    "Tool class": "custom",
+                    "Entry in `allowed_tools.tools`": "`{type: \"custom\", name}`",
+                },
+                {
+                    "Tool class": "MCP",
+                    "Entry in `allowed_tools.tools`": "`{type: \"mcp\", server_label}`",
+                },
+                {
+                    "Tool class": "supported built-in/provider-defined tool",
+                    "Entry in `allowed_tools.tools`": "`{type}`",
+                },
+            ],
+        )
+
+        normalized = " ".join(section.split())
+        for required in [
+            "`tool_search`",
+            "`deferLoading`",
+            "namespaced tools",
+            "ambiguous",
+            "declared tool name has priority",
+            "server-level",
+            "empty allow-list",
+            "fails with an error",
+        ]:
+            self.assertIn(required, normalized, required)
+
+    def test_dynamic_tool_references_use_wrapper_aware_economics_gate(self):
+        agent_tools = (
+            ROOT / "audit-prompt-caching" / "references" / "agent-tools.md"
+        ).read_text()
+        skill = (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+        rules = json.loads(
+            (ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text()
+        )
+
+        agent_section = extract_markdown_section(agent_tools, "Dynamic-tool decision rule")
+        agent_normalized = " ".join(agent_section.split())
+        self.assertRegex(
+            agent_normalized,
+            r"global Applicability Gate.*allowedTools capability gate.*stable catalog.*allowed-list.*prefix hashes.*provider usage",
+        )
+        self.assertRegex(
+            agent_normalized,
+            r"A direct OpenAI Responses.*Vercel.*different API surfaces",
+        )
+        self.assertRegex(
+            agent_normalized,
+            r"Chat Completions.*arbitrary OpenAI-compatible wrapper.*do not inherit",
+        )
+        self.assertIn("activeTools", agent_normalized)
+        self.assertIn("cold or low-reuse route", agent_normalized)
+        self.assertNotIn("blanket ban on `activeTools`", agent_normalized)
+
+        playbooks = extract_markdown_section(skill, "Audit Playbooks")
+        dynamic_line = next(
+            line for line in playbooks.splitlines() if "Dynamic tools in long agent loops" in line
+        )
+        self.assertIn("economics", dynamic_line)
+        self.assertIn("version/model-verified allow-list", dynamic_line)
+        self.assertIn("wire proof", dynamic_line)
+
+        ap4 = next(rule for rule in rules["rules"] if rule["id"] == "AP-4")
+        self.assertRegex(
+            ap4["fix"],
+            r"After the global Applicability Gate and economics check, use a stable full catalog plus an endpoint/version-verified allow-list",
+        )
+        self.assertIn("Mutating activeTools without prefix/economics measurement", ap4["avoid"])
+        self.assertIn("provider cache usage", ap4["validation"])
+        self.assertNotIn("ban activeTools", ap4["fix"].lower())
+
+    def test_provider_aggregate_evidence_contract_keeps_dashboard_usage_and_request_scopes_separate(self):
+        root = ROOT / "audit-prompt-caching"
+        openai = (root / "references" / "openai.md").read_text()
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        evals_text = (root / "evals" / "evals.json").read_text()
+        for source_text in (openai, observability, report, evals_text):
+            self.assertNotIn(
+                "unless its denominator is explicitly defined and recorded",
+                source_text,
+            )
+        openai_section = extract_markdown_section(
+            openai, "Prompt Caching dashboard and aggregate evidence"
+        )
+        marker = "The documented OpenAI Organization Usage API is a separate"
+        self.assertIn(marker, openai_section)
+        dashboard, _, usage = openai_section.partition(marker)
+        self.assertIn("provider_dashboard_aggregate", dashboard)
+        self.assertRegex(
+            " ".join(dashboard.split()),
+            r"evidence_definition_status.*unknown.*evidence_denominator_status.*unknown.*evidence_accounting_semantics.*unknown",
+        )
+        self.assertIn("provider_usage_api_aggregate", usage)
+        usage_normalized = " ".join(usage.split())
+        self.assertIn("evidence_definition_status=provider_documented", usage_normalized)
+        self.assertIn("evidence_denominator_status=unknown", usage_normalized)
+        self.assertIn("evidence_accounting_semantics=provider_defined", usage_normalized)
+        self.assertRegex(
+            usage_normalized,
+            r"input_tokens.*inclusive.*input_uncached_tokens.*uncached input.*excluding cache-write.*neither cache reads nor writes",
+        )
+        self.assertIn("OpenAI Organization Usage API", usage_normalized)
+        self.assertIn("OpenAI prompt-caching guide", usage_normalized)
+        self.assertIn("read/write/neither partition", usage_normalized)
+        self.assertIn(
+            "do not add breakdowns onto inclusive `input_tokens`",
+            usage_normalized.lower(),
+        )
+        self.assertIn("mismatched bucket/group/filter scope", usage_normalized)
+        self.assertRegex(
+            usage_normalized.lower(),
+            r"documented mixed decomposition.*not permission to sum|do not naively sum",
+        )
+        self.assertRegex(
+            usage_normalized.lower(),
+            r"optional or missing.*absent/unknown.*never.*zero",
+        )
+        self.assertNotIn("provider_documented", dashboard)
+
+        observability_section = extract_markdown_section(
+            observability, "Provider aggregate evidence boundary"
+        )
+        contract = re.search(r"```text\n(.*?)\n```", observability_section, re.DOTALL)
+
+        def parse_contract(match, label):
+            self.assertIsNotNone(match, label)
+            values = {}
+            for line in match.group(1).splitlines():
+                self.assertRegex(
+                    line,
+                    r"^[a-z][a-z0-9_]*: .+$",
+                    f"malformed {label} line: {line!r}",
+                )
+                key, value = line.split(":", 1)
+                self.assertNotIn(key, values, f"duplicate {label} field: {key}")
+                values[key] = value.strip()
+            return values
+
+        contract_values = parse_contract(contract, "observability provenance block")
+        contract_fields = set(contract_values)
+        self.assertEqual(
+            contract_fields,
+            {
+                "evidence_source",
+                "provider",
+                "time_window",
+                "granularity",
+                "filters",
+                "displayed_metric",
+                "displayed_value",
+                "evidence_definition_status",
+                "evidence_denominator_status",
+                "evidence_accounting_semantics",
+                "request_correlation",
+                "route_correlation",
+            },
+        )
+        observability_normalized = " ".join(observability_section.split())
+        self.assertIn("provider_dashboard_aggregate", observability_normalized)
+        self.assertIn("provider_usage_api_aggregate", observability_normalized)
+        self.assertIn("evidence_definition_status=provider_documented", observability_normalized)
+        self.assertIn("evidence_denominator_status=unknown", observability_normalized)
+        self.assertIn("evidence_accounting_semantics=provider_defined", observability_normalized)
+        self.assertIn("optional or missing fields remain absent/unknown", observability_normalized.lower())
+        self.assertIn("never zero", observability_normalized)
+
+        report_section = extract_markdown_section(report, "Evidence Needed Next")
+        report_normalized = " ".join(report_section.split())
+        report_contract = re.search(r"```text\n(.*?)\n```", report_section, re.DOTALL)
+        report_values = parse_contract(report_contract, "report provenance block")
+        self.assertEqual(
+            report_values,
+            contract_values,
+            "report-template provenance block must mirror observability schema and enums",
+        )
+        self.assertIn("Dashboard aggregate", report_normalized)
+        self.assertIn("Usage API aggregate", report_normalized)
+        for key in (
+            "evidence_definition_status",
+            "evidence_denominator_status",
+            "evidence_accounting_semantics",
+        ):
+            self.assertIn(key, report_normalized)
+        self.assertIn("provider_documented", report_normalized)
+        self.assertIn("provider_defined", report_normalized)
+        self.assertIn("OpenAI Organization Usage API", report_normalized)
+        self.assertIn("OpenAI prompt-caching guide", report_normalized)
+        self.assertIn(
+            "input_uncached_tokens` is uncached input excluding cache-write tokens",
+            report_normalized,
+        )
+        self.assertIn("read/write/neither partition", report_normalized)
+        self.assertIn(
+            "optional/missing fields: absent/unknown, never zero",
+            report_normalized.lower(),
+        )
+        self.assertIn("Dashboard statuses remain unknown", report_normalized)
+
+    def test_additive_provider_aggregate_rule_preserves_documented_denominators(self):
+        root = ROOT / "audit-prompt-caching"
+        observability = (root / "references" / "observability.md").read_text()
+        report = (root / "references" / "report-template.md").read_text()
+        for reference in (observability, report):
+            normalized = " ".join(reference.split())
+            self.assertRegex(
+                normalized,
+                r"additive provider.*full total/denominator.*"
+                r"evidence_accounting_semantics=additive.*"
+                r"evidence_denominator_status=provider_documented",
+            )
+            self.assertIn("mismatched bucket/group/filter scopes", normalized)
+            self.assertIn("keep the denominator unknown", normalized)
+            self.assertIn("Do not apply this additive rule to OpenAI", normalized)
+
+    def test_usage_api_accounting_contract_is_not_reused_for_dashboard_ratios(self):
+        openai = (
+            ROOT / "audit-prompt-caching" / "references" / "openai.md"
+        ).read_text()
+        section = extract_markdown_section(
+            openai, "Prompt Caching dashboard and aggregate evidence"
+        )
+        marker = "The documented OpenAI Organization Usage API is a separate"
+        self.assertIn(marker, section)
+        dashboard, _, usage = section.partition(marker)
+        dashboard_normalized = " ".join(dashboard.split())
+        usage_normalized = " ".join(usage.split())
+        self.assertIn("Dashboard UI", dashboard_normalized)
+        self.assertIn("not causal proof", dashboard_normalized)
+        self.assertIn("input_tokens` is inclusive", usage_normalized)
+        self.assertIn(
+            "input_uncached_tokens` is uncached input excluding cache-write tokens",
+            usage_normalized,
+        )
+        self.assertIn("neither cache reads nor writes", usage_normalized)
+        self.assertIn("read/write/neither partition", usage_normalized)
+        self.assertIn("No same formula is assumed", usage_normalized)
+        self.assertIn("denominator is not inferred", usage_normalized)
+        self.assertIn("evidence_denominator_status=unknown", usage_normalized)
+        self.assertIn("unless the provider documents the denominator", usage_normalized)
+        self.assertIn("auditor-defined ratio", usage_normalized)
+        self.assertNotIn("input_tokens` is inclusive", dashboard_normalized)
+
+    def test_dynamic_evals_cover_version_wire_contrast_and_aggregate_evidence(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        by_id = {item["id"]: item for item in evals["evals"]}
+        required_ids = {25, 26, 27, 28, 29}
+        for eval_id in sorted(required_ids):
+            self.assertIn(eval_id, by_id, f"missing eval id {eval_id}")
+
+        vercel = by_id[25]
+        self.assertIn("activeTools", vercel["prompt"])
+        self.assertIn("providerOptions.openai.allowedTools", vercel["prompt"])
+        self.assertNotIn("server_label", vercel["prompt"])
+        for tool_class in ("function", "custom", "MCP", "web-search"):
+            self.assertIn(tool_class, vercel["prompt"])
+        self.assertNotIn("{type:", vercel["prompt"])
+        self.assertRegex(vercel["expected_output"], r"stable full tools catalog.*Responses")
+        self.assertIn("mode: auto", vercel["expected_output"])
+        self.assertIn("mode: required", vercel["expected_output"])
+        self.assertIn("tool_choice wire mapping", vercel["expected_output"])
+        self.assertIn("allowedTools capability", vercel["expected_output"])
+        self.assertNotIn("tool applicability", vercel["expected_output"])
+        for wire_anchor in (
+            '{type: "function", name}',
+            '{type: "custom", name}',
+            '{type: "mcp", server_label}',
+            '{type: "web_search"}',
+        ):
+            self.assertIn(wire_anchor, vercel["expected_output"])
+        for unsupported in ("tool_search", "deferLoading", "namespaced tools"):
+            self.assertIn(unsupported, vercel["expected_output"])
+        self.assertIn("empty allow-list", vercel["expected_output"])
+        self.assertIn("fails with an error", vercel["expected_output"])
+
+        version = by_id[26]
+        self.assertIn("@ai-sdk/openai ^3.0.70", version["prompt"])
+        self.assertIn("openai.responses()", version["prompt"])
+        self.assertIn("openai.tools.webSearch()", version["prompt"])
+        self.assertIn("Which version evidence and version floors decide", version["prompt"])
+        for leaked_floor in ("2.x unavailable", "3.0.62", "3.0.98", "4.0.43"):
+            self.assertNotIn(leaked_floor, version["prompt"])
+        self.assertRegex(
+            version["expected_output"],
+            r"2\.x unavailable.*3\.x.*3\.0\.62.*3\.0\.98.*4\.0\.43",
+        )
+
+        dashboard = by_id[27]["expected_output"]
+        self.assertRegex(
+            dashboard,
+            r"provider_dashboard_aggregate.*Dashboard aggregate.*evidence_definition_status.*unknown.*evidence_denominator_status.*unknown.*evidence_accounting_semantics.*unknown",
+        )
+        self.assertNotIn("provider_documented", dashboard)
+        self.assertIn("request-level usage", dashboard)
+        self.assertIn("route correlation", dashboard)
+
+        usage = by_id[28]["expected_output"]
+        self.assertRegex(
+            usage,
+            r"provider_usage_api_aggregate.*Usage API aggregate.*evidence_definition_status.*provider_documented.*evidence_denominator_status.*unknown.*input_tokens.*inclusive.*input_uncached_tokens.*uncached input.*excluding cache-write.*neither cache reads nor writes",
+        )
+        self.assertIn("Dashboard UI", usage)
+        self.assertIn("filters", usage)
+        self.assertIn("not permission to sum", usage)
+        self.assertIn("read/write/neither partition", usage)
+        self.assertIn("auditor-defined ratio", usage)
+        self.assertIn("OpenAI Organization Usage API", usage)
+
+        contrast = by_id[29]["expected_output"]
+        self.assertRegex(
+            contrast,
+            r"Azure.*references/azure-openai\.md.*endpoint.*deployment/model.*api-version",
+        )
+        self.assertIn("Responses tool_choice schema", contrast)
+        self.assertIn("final wire", contrast)
+        self.assertIn("without claiming universal support", contrast)
+
+    def test_dynamic_trigger_eval_adds_positive_tool_and_dashboard_pressure(self):
+        trigger_eval = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "trigger_eval.json").read_text()
+        )
+        positives = [item["query"] for item in trigger_eval if item["should_trigger"]]
+        self.assertTrue(any("activeTools" in query and "allowedTools" in query for query in positives))
+        self.assertTrue(any("Prompt Caching dashboard" in query for query in positives))
+
+    def test_wire_mapping_is_not_duplicated_outside_vercel_reference(self):
+        root = ROOT / "audit-prompt-caching"
+        vercel = (root / "references" / "vercel-ai-sdk.md").read_text()
+        section = extract_markdown_section(vercel, "OpenAI Responses allowedTools")
+        table_header = "| Tool class | Entry in `allowed_tools.tools` |"
+        self.assertEqual(section.count(table_header), 1)
+        self.assertEqual(vercel.count(table_header), 1)
+        self.assertEqual(
+            parse_markdown_table(section, table_header)[0]["Tool class"],
+            "function",
+        )
+        for path in root.rglob("*"):
+            if path == root / "references" / "vercel-ai-sdk.md":
+                continue
+            if path.suffix not in {".md", ".json"}:
+                continue
+            self.assertNotIn(table_header, path.read_text(), str(path.relative_to(root)))
+
+    def test_azure_responses_capability_gate_has_destination_content(self):
+        azure = (
+            ROOT / "audit-prompt-caching" / "references" / "azure-openai.md"
+        ).read_text()
+        self.assertIn("Last reviewed: 2026-09-12.", azure)
+        section = extract_markdown_section(azure, "Responses endpoint capability gate")
+        normalized = " ".join(section.split())
+        self.assertIn("Section reviewed: 2026-08-23.", normalized)
+        for required in (
+            "Responses endpoint",
+            "endpoint",
+            "deployment/model",
+            "api-version",
+            "Responses `tool_choice` schema",
+            "final request wire",
+            "no universal Azure support claim",
+        ):
+            self.assertIn(required, normalized)
+
+
+    def skill_text(self):
+        return (ROOT / "audit-prompt-caching" / "SKILL.md").read_text()
+
+    def skill_frontmatter_description(self):
+        frontmatter = self.skill_text().split("---", 2)[1]
+        self.assertIn("description:", frontmatter)
+        description_line = next(
+            line for line in frontmatter.splitlines() if line.startswith("description:")
+        )
+        self.assertRegex(description_line, r'^description:\s+".*"$')
+        return json.loads(description_line.split("description:", 1)[1].strip())
+
+    def test_skill_description_is_shorter_but_keeps_trigger_boundaries(self):
+        description = self.skill_frontmatter_description()
+
+        self.assertEqual(
+            PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
+            147,
+            "the trigger ceiling must stay at the smallest measured parsed-description value",
+        )
+        self.assertEqual(
+            BASELINE_DESCRIPTION_CHARS,
+            679,
+            "the historical description baseline must remain a fixed contract",
+        )
+
+        self.assertLessEqual(
+            estimated_plugin_eval_tokens(description),
+            PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET,
+            "frontmatter description exceeds the plugin-eval moderate trigger ceiling",
+        )
+        self.assertLess(
+            len(description),
+            BASELINE_DESCRIPTION_CHARS,
+            "frontmatter description exceeds the historical character baseline",
+        )
+
+        for required in [
+            "Use whenever the user mentions",
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+            "cache_control",
+            "cachePoint",
+            "TTFT",
+            "KV reuse",
+            "LLM cost or speed regressed",
+            "repeated long prompts",
+            "speeding up agents",
+            "LLM request shape",
+            "response_format",
+            "agent loops",
+            "compaction",
+            "Not for generic prompt writing",
+            "RAG",
+            "token counts",
+            "non-LLM perf",
+        ]:
+            self.assertIn(required, description)
+
+    def test_skill_description_keeps_provider_telemetry_anchors(self):
+        description = self.skill_frontmatter_description()
+        body = self.skill_text().split("---", 2)[2]
+
+        for anchor in [
+            "cached_tokens=0",
+            "total_cached_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "cache_write_tokens",
+            "prompt_cache_key",
+            "prompt_cache_options",
+            "prompt_cache_breakpoint",
+            "previous_interaction_id",
+        ]:
+            with self.subTest(anchor=anchor):
+                self.assertIn(
+                    anchor,
+                    description,
+                    f"{anchor} must be a frontmatter trigger anchor, not body-only",
+                )
+
+        self.assertNotIn("description:", body)
+
+    def test_skill_preserves_operational_audit_flow_order_and_classification(self):
+        skill = self.skill_text()
+        required_flow = (
+            "Map prompt structure in order: tools, schemas, system/developer instructions, "
+            "examples, static documents, retrieved context, history, user data, volatile values; "
+            "mark each segment static, semi-static, dynamic, or volatile."
+        )
+        self.assertIn(required_flow, skill)
+        self.assertLess(
+            skill.index("Map prompt structure in order:"),
+            skill.index("Ask for usage logs"),
+        )
+        for required in (
+            "a reported hit rate is not trusted",
+            "cache salts",
+            "tokenizer/chat-template drift",
+            "KV pressure",
+            "OpenAI-compatible wrapper ambiguity",
+        ):
+            self.assertIn(required, skill)
+
+    def test_skill_stays_within_invoked_token_baseline(self):
+        self.assertEqual(
+            PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
+            6761,
+            "the whole-skill baseline must equal the measured content ceiling",
+        )
+        self.assertLessEqual(
+            estimated_plugin_eval_tokens(self.skill_text()),
+            PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
+            "SKILL.md grew above the plugin-eval invoked-token baseline",
+        )
+
+    def test_deferred_references_stay_within_review_round_ceiling(self):
+        deferred_chars = sum(
+            len(path.read_text())
+            for path in (ROOT / "audit-prompt-caching").rglob("*")
+            if path.is_file()
+            and path.name != "SKILL.md"
+            and "__pycache__" not in path.parts
+            and not any(
+                part.startswith(".")
+                for part in path.relative_to(ROOT / "audit-prompt-caching").parts
+            )
+        )
+        self.assertLessEqual(
+            math.ceil(deferred_chars / 4),
+            PLUGIN_EVAL_DEFERRED_TOKEN_CEILING,
+            "deferred references grew above the measured review-round ceiling",
+        )
+
+    def test_package_backticked_references_resolve(self):
+        package = ROOT / "audit-prompt-caching"
+        path_pattern = re.compile(r"`((?:references|scripts|evals)/[^`\s]+)`")
+        bare_json_path_pattern = re.compile(
+            r"(?<![`A-Za-z0-9_])((?:references|scripts|evals)/[\w.-]+(?:/[\w.-]+)*\.(?:md|py|json))"
+        )
+
+        for source in package.rglob("*"):
+            if not source.is_file() or source.suffix not in {".md", ".json"}:
+                continue
+            for target in path_pattern.findall(source.read_text()):
+                with self.subTest(source=source, target=target):
+                    self.assertTrue(
+                        (package / target).is_file(),
+                        f"{source}: missing package reference {target}",
+                    )
+
+        for source in package.rglob("*.json"):
+            for target in bare_json_path_pattern.findall(source.read_text()):
+                with self.subTest(source=source, target=target):
+                    self.assertTrue(
+                        (package / target).is_file(),
+                        f"{source}: missing bare JSON package reference {target}",
+                    )
+
+    def test_evals_json_stays_pretty_printed(self):
+        path = ROOT / "audit-prompt-caching" / "evals" / "evals.json"
+        text = path.read_text()
+        expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n"
+        self.assertEqual(text, expected)
+
+    def test_skill_defines_explicit_cache_plane_gate(self):
+        skill = self.skill_text()
+
+        for required in [
+            "Cache Plane Gate",
+            "gateway_response",
+            "provider_prompt",
+            "engine_kv",
+            "external_kv",
+            "semantic_response",
+            "several planes at once",
+            "Do not infer a plane from provider or model names",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_defines_usage_evidence_contract(self):
+        skill = self.skill_text()
+
+        for required in [
+            "Usage Evidence Contract",
+            "schema_version",
+            "source_fields",
+            "accounting_semantics",
+            "denominator_status",
+            "`warnings`",
+            "decision-grade",
+            "valid",
+            "ambiguous",
+            "invalid",
+            "Do not build a second normalizer",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_defines_no_score_clinic_summary(self):
+        skill = self.skill_text()
+
+        for required in [
+            "Cache Clinic Summary",
+            "applicability",
+            "evidence_quality",
+            "prefix_stability",
+            "usage_accounting",
+            "routing_locality",
+            "economics",
+            "isolation",
+            "pass/warning/fail/unknown/not_applicable",
+            "Leave every unproven dimension `unknown`",
+            "never aggregate them into a score, rank, or grade",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_skill_bounds_prefix_plan_and_isolation_evidence(self):
+        skill = self.skill_text()
+
+        for required in [
+            "observed rendered payload",
+            "request-construction",
+            "universal provider-internal serialization order",
+            "Isolation review is passive",
+            "separate authorization",
+            "out of scope",
+        ]:
+            self.assertIn(required, skill)
+
+    def test_observability_reference_documents_usage_evidence_contract(self):
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "observability.md"
+        ).read_text()
+
+        for required in [
+            "Usage Evidence Contract",
+            "schema_version",
+            "source_fields",
+            "accounting_semantics",
+            "denominator_status",
+            "usage.prompt_tokens_details.cached_tokens",
+            "human-readable dot paths",
+            "not machine-resolvable JSONPath",
+            "dynamic map keys",
+            "Paths never contain leaf values or raw envelopes",
+            "Backward Compatibility",
+            "additive",
+            "strict JSON consumers must allow new event, summary, and report fields",
+            "aggregate and report schema versioning remains deferred",
         ]:
             self.assertIn(required, reference)
 
+    def test_report_template_documents_plane_and_clinic_contract(self):
+        template = (
+            ROOT / "audit-prompt-caching" / "references" / "report-template.md"
+        ).read_text()
+
+        for required in [
+            "Cache Planes",
+            "--cache-plane",
+            "repeatable",
+            "gateway_response",
+            "provider_prompt",
+            "engine_kv",
+            "external_kv",
+            "semantic_response",
+            "Cache Clinic Summary",
+            "applicability",
+            "evidence_quality",
+            "prefix_stability",
+            "usage_accounting",
+            "routing_locality",
+            "economics",
+            "isolation",
+            "pass/warning/fail/unknown/not_applicable",
+            "--usage-accounting",
+            "--evidence-quality",
+            "non-decision-grade",
+            "no aggregate score",
+        ]:
+            self.assertIn(required, template)
+
+    def test_usage_guide_documents_cache_plane_and_clinic_flags(self):
+        guide = (ROOT / "docs" / "usage.md").read_text()
+
+        for required in [
+            "--cache-plane gateway_response",
+            "--cache-plane provider_prompt",
+            "--evidence-quality",
+            "--usage-accounting",
+            "non-decision-grade",
+            "no aggregate score",
+        ]:
+            self.assertIn(required, guide)
+
+    def test_evals_cover_plane_denominator_and_unknown_dimension_pressure(self):
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        combined = "\n".join(
+            item["prompt"] + "\n" + item["expected_output"] for item in evals["evals"]
+        )
+
+        for required in [
+            "gateway response-cache hit rate",
+            "cached_tokens stays 0",
+            "gateway_response",
+            "provider_prompt",
+            "unknown OpenAI-compatible wrapper",
+            "95 percent cache hit rate",
+            "denominator_status",
+            "ambiguous",
+            "no savings claim",
+            "no usage logs",
+            "cache clinic summary",
+            "unknown",
+            "no aggregate score",
+        ]:
+            self.assertIn(required, combined)
 
 if __name__ == "__main__":
     unittest.main()

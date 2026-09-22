@@ -1,0 +1,205 @@
+[
+  {
+    "request_id": "lab-8acef11848f2483596889c04727271c5",
+    "lab_mode": "complete",
+    "request_body": "{\"model\": \"mock-model\", \"stream\": true, \"max_tokens\": 2, \"messages\": [{\"role\": \"user\", \"content\": \"A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. \"}]}",
+    "request_headers": {
+      "Content-Type": "application/json",
+      "x-request-id": "lab-8acef11848f2483596889c04727271c5",
+      "x-lab-mode": "complete"
+    },
+    "stream_complete": true,
+    "http_status": 200,
+    "response_headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.14.3"
+      ],
+      [
+        "date",
+        "Sat, 05 Sep 2026 15:37:25 GMT"
+      ],
+      [
+        "content-type",
+        "text/event-stream"
+      ],
+      [
+        "x-lab-worker",
+        "synthetic-worker-1"
+      ],
+      [
+        "x-request-id",
+        "lab-8acef11848f2483596889c04727271c5"
+      ],
+      [
+        "vary",
+        "origin, access-control-request-method, access-control-request-headers"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "access-control-expose-headers",
+        "*"
+      ],
+      [
+        "transfer-encoding",
+        "chunked"
+      ]
+    ],
+    "headers_ms": 10.22733299760148,
+    "first_content_delta_ms": 70.18112500372808,
+    "eof_ms": 131.39750000846107,
+    "transport_eof": true,
+    "saw_finish_reason": true,
+    "saw_done": true,
+    "sse_lines": [
+      ": keepalive\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n",
+      "\n",
+      "data: [DONE]\n",
+      "\n"
+    ],
+    "error": null
+  },
+  {
+    "request_id": "lab-f8654da545c24925a1491be80281d605",
+    "lab_mode": "complete",
+    "request_body": "{\"model\": \"mock-model\", \"stream\": true, \"max_tokens\": 2, \"messages\": [{\"role\": \"user\", \"content\": \"A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. \"}]}",
+    "request_headers": {
+      "Content-Type": "application/json",
+      "x-request-id": "lab-f8654da545c24925a1491be80281d605",
+      "x-lab-mode": "complete"
+    },
+    "stream_complete": true,
+    "http_status": 200,
+    "response_headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.14.3"
+      ],
+      [
+        "date",
+        "Sat, 05 Sep 2026 15:37:25 GMT"
+      ],
+      [
+        "content-type",
+        "text/event-stream"
+      ],
+      [
+        "x-lab-worker",
+        "synthetic-worker-1"
+      ],
+      [
+        "x-request-id",
+        "lab-f8654da545c24925a1491be80281d605"
+      ],
+      [
+        "vary",
+        "origin, access-control-request-method, access-control-request-headers"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "access-control-expose-headers",
+        "*"
+      ],
+      [
+        "transfer-encoding",
+        "chunked"
+      ]
+    ],
+    "headers_ms": 16.75891700142529,
+    "first_content_delta_ms": 68.38087500364054,
+    "eof_ms": 119.59558400849346,
+    "transport_eof": true,
+    "saw_finish_reason": true,
+    "saw_done": true,
+    "sse_lines": [
+      ": keepalive\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n",
+      "\n",
+      "data: [DONE]\n",
+      "\n"
+    ],
+    "error": null
+  },
+  {
+    "request_id": "lab-3a28806ba51745edb1187d3c0dea683d",
+    "lab_mode": "truncated",
+    "request_body": "{\"model\": \"mock-model\", \"stream\": true, \"max_tokens\": 2, \"messages\": [{\"role\": \"user\", \"content\": \"A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. A stable synthetic prompt. \"}]}",
+    "request_headers": {
+      "Content-Type": "application/json",
+      "x-request-id": "lab-3a28806ba51745edb1187d3c0dea683d",
+      "x-lab-mode": "truncated"
+    },
+    "stream_complete": false,
+    "http_status": 200,
+    "response_headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.14.3"
+      ],
+      [
+        "date",
+        "Sat, 05 Sep 2026 15:37:25 GMT"
+      ],
+      [
+        "content-type",
+        "text/event-stream"
+      ],
+      [
+        "x-lab-worker",
+        "synthetic-worker-1"
+      ],
+      [
+        "x-request-id",
+        "lab-3a28806ba51745edb1187d3c0dea683d"
+      ],
+      [
+        "vary",
+        "origin, access-control-request-method, access-control-request-headers"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "access-control-expose-headers",
+        "*"
+      ],
+      [
+        "transfer-encoding",
+        "chunked"
+      ]
+    ],
+    "headers_ms": 17.249374999664724,
+    "first_content_delta_ms": 68.85433300340082,
+    "eof_ms": 129.6443330065813,
+    "transport_eof": true,
+    "saw_finish_reason": false,
+    "saw_done": false,
+    "sse_lines": [
+      ": keepalive\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n",
+      "\n",
+      "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n",
+      "\n"
+    ],
+    "error": null
+  }
+]

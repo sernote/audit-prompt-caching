@@ -4,348 +4,221 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Stdlib only](https://img.shields.io/badge/scripts-stdlib--only-green)
-![Codex skill](https://img.shields.io/badge/Codex-skill-compatible-black)
 
-`audit-prompt-caching` is a portable Codex/agent skill for finding why LLM cache reuse fails across the request path: prompt/prefix caches, provider cache telemetry, cache-aware routing, agent tool stability, Bedrock checkpoints, OpenRouter routing drift, provider migration risk, and vLLM/SGLang KV reuse.
+**Find what breaks LLM prompt caching in your project.**
 
-## Updates And Field Notes
+`audit-prompt-caching` helps Codex, Claude Code, and compatible agents trace
+cache misses through your request code, provider settings, and routing.
 
-I share practical notes on building AI platforms, agent infrastructure, prompt-cache audits, and production lessons in the [Telegram channel](https://t.me/+ymZhCIjiWyYzZTVi).
+Start with code and configuration. Get findings with evidence and a verification
+step; add exported payloads or telemetry when available.
 
-## Why This Exists
+Read more about cache and routing design on
+[notevskii.tech](https://notevskii.tech/projects/audit-prompt-caching/) and follow
+[engineering notes on Telegram](https://t.me/sergeinotevskii).
 
-LLM cache reuse usually fails silently. A timestamp in the system prompt, shuffled tool schemas, a changed first user message, an OpenRouter fallback, or a new vLLM replica can turn repeated 20k-token requests into cold prefill again.
-
-That failure is expensive because it often looks like a generic "LLM cost went up" or "agents got slower" incident. This skill gives agents a cache-specific audit path: inspect prefix stability, provider semantics, cache telemetry, routing locality, KV pressure, and whether caching is even the right lever.
+[Get started](#quick-start) · [See an example](#see-a-prefix-fix) ·
+[What it audits](#what-it-audits) · [Commands and scenarios](docs/usage.md)
 
 ## Quick Start
 
-Install the skill:
+From the project you want to audit, install the skill for your agent
+with the [skills CLI](https://skills.sh/docs/cli) (requires Node.js/npx):
 
 ```bash
 npx skills add https://github.com/sernote/audit-prompt-caching --skill audit-prompt-caching
 ```
 
-Then start a new Codex session and ask:
+Start a new agent session in that project and ask:
 
 ```text
-Use $audit-prompt-caching to audit this repo for prompt-cache misses, unstable prompt prefixes, dynamic tools/schemas, routing issues, and deployment cache-locality problems.
+Use the audit-prompt-caching skill
+to audit this project's LLM calls.
+Start with code and configuration.
+Show findings, evidence, and checks.
+Explain when no change is justified
+or what evidence is still missing.
 ```
 
-```text
-Use $audit-prompt-caching to audit this OpenAI app. cached_tokens stays at 0 even though the system prompt is 8k tokens.
-```
+Add your symptom and relevant paths. In Codex, you can also invoke the skill as
+`$audit-prompt-caching`. The [first-project guide](docs/first-audit.md) explains
+how to check one conclusion and share optional feedback.
 
-## Local Demo
+<details>
+<summary>Install without Node.js, or choose a custom directory</summary>
 
-Run the fixture audit locally:
+Use the bundled Bash installer from a local checkout:
 
 ```bash
 git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git
 cd audit-prompt-caching
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py \
-  fixtures/openai/repeated_prefix_usage.jsonl
+bash install.sh --source-dir . --agent codex
 ```
 
-Render a report from the same fixture:
+Use `--agent claude` for Claude Code, `--agent both` for both agents, or
+`--dir path/to/skills` for a custom skills directory. Existing installations
+are preserved unless you pass `--force` to replace them. See
+`bash install.sh --help` for all options.
 
-```bash
-python3 audit-prompt-caching/scripts/render_audit_report.py \
-  --usage-log fixtures/openai/repeated_prefix_usage.jsonl \
-  --provider openai \
-  --engine "Responses API" \
-  --finding "fixtures/openai/repeated_prefix_usage.jsonl:1 | low | openai | cold request has zero cached tokens | first request pays full prefill | warm repeated prefix before measuring steady state | confirm warm cached_tokens increase"
+The local audit helpers need Python 3.10+ and use only the standard library.
+The installer itself requires Bash; the command above also uses Git.
+
+</details>
+
+## See a prefix fix
+
+In the bundled example, a changing timestamp and support-ticket context precede
+the shared task instructions. Moving that context later preserves all the
+information and gives repeated requests a longer identical beginning.
+
+The change in block order:
+
+```diff
+- Request context (changes)
+  Task instructions (shared)
++ Request context (changes)
 ```
 
-Lint known-good rendered request fixtures:
-
-```bash
-python3 audit-prompt-caching/scripts/layout_linter.py \
-  fixtures/layout/good_openai_request.json
-python3 audit-prompt-caching/scripts/layout_linter.py \
-  fixtures/layout/good_openai_responses_request.json
-```
-
-`layout_linter.py` accepts Chat-style `messages` payloads and Responses-style
-`input` payloads when checking for volatile early content, unstable tool order,
-and dynamic schema fields.
-
-## Audit Hero Shot
-
-```text
-+------------------------------------------------------------+
-| LLM CACHE AUDIT                                            |
-+------------------------------------------------------------+
-| Provider/API: openai / Responses API                       |
-| Cache hit ratio: 59.62%                                    |
-| Output share: 7.17%                                        |
-| Main blocker: cold request has zero cached tokens           |
-| Cache impact: first request pays full prefill               |
-| Fix: warm repeated prefix before measuring steady state     |
-| Validate: confirm cached-token fields and TTFT improve      |
-+------------------------------------------------------------+
-```
-
-## Fixture Signal
-
-The bundled OpenAI fixture is synthetic and safe to share, but it is still executable evidence:
-
-| Signal | Value |
+| Compared request pair | Common UTF-8 prefix |
 |---|---:|
-| Records reviewed | 3 |
-| Input tokens | 15,600 |
-| Cached tokens | 9,300 |
-| Cache hit ratio | 59.62% |
-| Output share | 7.17% |
+| Before reordering | 43 bytes |
+| After reordering | 254 bytes |
 
-Example ROI model for 1,000 requests with 9k static input tokens, 300 dynamic input tokens, 2k output tokens, 71% cache hit rate, and explicit sample prices:
+These are measured local text comparisons from a small synthetic example.
+They show prefix stability; provider eligibility, cache hits, latency and
+savings still require their own checks.
 
-```text
-Total cost: $34.60 -> $23.10
-Total savings: 33.24%
-Input savings: 61.84%
+<details>
+<summary>Reproduce the comparison with Python — no API key needed</summary>
+
+Clone this repository, or use your existing checkout. Run from its root:
+
+```bash
+git clone --depth 1 https://github.com/sernote/audit-prompt-caching.git
+cd audit-prompt-caching
+python3 audit-prompt-caching/scripts/prefix_stability_check.py --json \
+  examples/first-audit/before-a.txt examples/first-audit/before-b.txt
+python3 audit-prompt-caching/scripts/prefix_stability_check.py --json \
+  examples/first-audit/after-a.txt examples/first-audit/after-b.txt
 ```
 
-These are fixture numbers, not a production guarantee. Always validate with your provider usage fields and billing export.
+Both comparisons intentionally return exit status `1`: the complete requests
+still differ. Read `stable_prefix_bytes` in each result. The
+[walkthrough](examples/first-audit/README.md) includes the exact output and
+shows how to compare two renders from your own application.
 
-## Cache Flow
+</details>
 
-```mermaid
-flowchart LR
-  A["stable tools / schemas"] --> B["stable system / developer instructions"]
-  B --> C["few-shot examples / static docs"]
-  C --> D["append-only conversation anchor"]
-  D --> E["late dynamic user data"]
-  A --> H["prefix + tool + schema hash"]
-  H --> I["provider cache read/write fields"]
-  I --> J["TTFT / cost / route metrics"]
-```
+## What you get
 
-## Positioning
+An audit connects its conclusion to the active request path and a verification
+step. It can produce:
 
-This project is a static audit skill plus dependency-free local scripts. It complements runtime observability and gateway tools rather than replacing them.
+- **A finding with evidence:** where the prefix changes, usage is lost or
+  miscounted, or routing/cache state needs attention; what to change and how to
+  check the result.
+- **A supported no-change result:** the layout is already appropriate, the
+  workload rarely repeats, or output generation and tools dominate the cost.
+- **A specific missing measurement:** the request, usage field, route or worker
+  observation needed to resolve the question.
 
-| Project | Primary job | Static cache-path audit | Portable agent skill | Stdlib-only local scripts |
-|---|---|---:|---:|---:|
-| `audit-prompt-caching` | Cross-provider prompt/prefix/KV cache audit | yes | yes | yes |
-| [ussumant/cache-audit](https://github.com/ussumant/cache-audit) | Claude Code cache-rules skill | Claude-focused | Claude Code-focused | single skill |
-| [Helicone](https://github.com/Helicone/helicone) | LLM observability and gateway | runtime-oriented | no | no |
-| [Langfuse](https://github.com/langfuse/langfuse) | LLM observability, evals, prompt management | runtime-oriented | no | no |
-| [LiteLLM](https://github.com/BerriAI/litellm) | LLM gateway/proxy | runtime/gateway-oriented | no | no |
-
-## Who It Is For
-
-- AI engineers debugging prompt-cache misses or long TTFT.
-- Backend engineers building LLM request paths.
-- Agent developers working with tools, MCP, compaction, or coding assistants.
-- Platform/SRE engineers running vLLM, SGLang, or multi-replica inference.
-- Teams comparing providers or estimating effective LLM cost.
+For a longer handoff, the [report format](audit-prompt-caching/references/report-template.md)
+keeps applicability, evidence, prefix stability, accounting, routing, economics
+and isolation separate. Unproven dimensions remain `unknown`.
 
 ## What It Audits
 
-- Prompt-cache applicability before recommending changes.
-- Stable prompt prefix layout.
-- Volatile data in system prompts and early messages.
-- Non-deterministic tool/schema serialization.
-- Dynamic tool sets inside agent loops.
-- History truncation, compaction, and summarization.
-- Cache-aware routing for managed and self-hosted inference.
-- OpenRouter sticky routing, provider fallback, and cache read/write fields.
-- Amazon Bedrock cache checkpoints and read/write fields.
-- Prefill vs decode latency and output-token cost share.
-- KV-cache budget, eviction, and deployment config.
-- Provider-specific usage fields and docs freshness.
-- ROI assumptions across static, dynamic, and output tokens.
-- CI/smoke-test readiness for stable prefix drift.
+| Your question | What the audit inspects |
+|---|---|
+| Why do repeated prompts miss? | Request builders, early variable content, serialization and the first prefix divergence |
+| Why did an agent become more expensive? | Tool/MCP registries, schemas, history, compaction and per-step configuration changes |
+| Can I trust these cached-token numbers? | Actual provider/API path, raw usage fields, wrapper accounting and missing telemetry |
+| Why is a warm request still slow? | Prefill vs. decode, client timings, route selection, queue/load signals and retries |
+| Why did reuse drop after deployment or scaling? | vLLM/SGLang versions, effective configuration, replica locality, KV pressure, retention and offload |
+| Is caching worth changing here? | Prefix length and repeat cadence, input/output costs, cache read/write prices and tenant boundaries |
 
-## Primary Workflow: Audit A Project
+The skill covers code reviews, agent loops, provider migrations and self-hosted
+deployment audits. It can also guide an investigation without a repository.
+See the [scenario prompts](docs/usage.md#example-prompts) for concrete starting
+points.
 
-The main use case is an agent working inside a project repository. The skill should first inspect source code and configuration, then use logs or rendered payloads as evidence when they are available.
+## Provider and framework references
 
-The agent should start with project artifacts such as:
+Provider-specific checks live in selectively loaded references:
 
-- prompt builders, prompt templates, and request renderers
-- provider SDK calls and cache-control parameters
-- tool registries, JSON schemas, structured-output definitions, and serialization code
-- conversation history, compaction, truncation, and agent-loop logic
-- environment config, feature flags, router/gateway config, and provider selection
-- Docker Compose, Kubernetes, Helm, vLLM, SGLang, or other inference deployment files
+- **APIs and gateways:** [OpenAI](audit-prompt-caching/references/openai.md),
+  [Azure OpenAI](audit-prompt-caching/references/azure-openai.md),
+  [Anthropic](audit-prompt-caching/references/anthropic.md),
+  [Amazon Bedrock](audit-prompt-caching/references/bedrock.md),
+  [Gemini](audit-prompt-caching/references/gemini.md),
+  [OpenRouter](audit-prompt-caching/references/openrouter.md).
+- **Agents and frameworks:** [tools, MCP and agent loops](audit-prompt-caching/references/agent-tools.md),
+  [Vercel AI SDK](audit-prompt-caching/references/vercel-ai-sdk.md),
+  [Mastra](audit-prompt-caching/references/mastra.md).
+- **Self-hosted inference:** [vLLM](audit-prompt-caching/references/vllm.md),
+  [SGLang](audit-prompt-caching/references/sglang.md),
+  [routing evidence](audit-prompt-caching/references/routing-evidence.md).
 
-Usage logs, billing exports, rendered JSON request payloads, prefix hashes, traces, and latency data are supporting evidence. They help confirm symptoms, compare before/after prefixes, calculate cache read/write ratios, and estimate ROI, but they are not the primary entry point for the skill.
+<details>
+<summary>More provider references</summary>
 
-## Bundled Scripts
+[DeepSeek](audit-prompt-caching/references/deepseek.md) ·
+[Qwen](audit-prompt-caching/references/qwen.md) ·
+[Moonshot](audit-prompt-caching/references/moonshot.md) ·
+[MiniMax](audit-prompt-caching/references/minimax.md) ·
+[Mistral](audit-prompt-caching/references/mistral.md) ·
+[xAI](audit-prompt-caching/references/xai.md) ·
+[YandexGPT](audit-prompt-caching/references/yandexgpt.md) ·
+[Z.AI](audit-prompt-caching/references/zai.md) ·
+[Tencent](audit-prompt-caching/references/tencent.md) ·
+[Xiaomi](audit-prompt-caching/references/xiaomi.md)
 
-The skill includes small dependency-free helpers for repeatable audits:
+</details>
 
-```bash
-python3 audit-prompt-caching/scripts/extract_llm_calls.py .
-python3 audit-prompt-caching/scripts/layout_linter.py path/to/rendered_request.json
-python3 audit-prompt-caching/scripts/prefix_stability_check.py before.json after.json
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py usage.jsonl
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py --jsonl-normalized usage.jsonl
-python3 audit-prompt-caching/scripts/estimate_cache_roi.py \
-  --static-tokens 9000 \
-  --dynamic-tokens 300 \
-  --output-tokens 2000 \
-  --requests 100 \
-  --hit-rate 0.8 \
-  --input-price-per-mtok 2.0 \
-  --cached-input-price-per-mtok 0.2 \
-  --output-price-per-mtok 8.0
-python3 audit-prompt-caching/scripts/render_audit_report.py \
-  --usage-log path/to/usage.jsonl \
-  --provider openai \
-  --engine "Responses API" \
-  --finding "src/llm/request.py:42 | high | openai | dynamic timestamp in system prompt | timestamp changes the cacheable prefix on every call | move volatile metadata after the stable prefix | compare rendered request bytes across repeated calls"
-python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
-python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
-```
+The agent verifies current official documentation before exact claims about
+model support, cache controls, TTL, pricing or usage fields. Bundled references
+are a starting point for that check.
 
-`layout_linter.py` accepts rendered Chat-style `messages` payloads and
-Responses-style `input` payloads.
+## Examples and local tools
 
-`prefix_stability_check.py` compares raw bytes by default so JSON key-order drift is visible. Use `--canonical-json` only when sorted-key normalization is intentional.
+| Start here | What it demonstrates |
+|---|---|
+| [Prefix-layout walkthrough](examples/first-audit/README.md) | Reorder a rendered prompt and inspect its first divergence |
+| [Recorded vllm-router observations](examples/router-observation/recorded/2026-09-05/README.md) | A session-ID routing input and HTTP success that does not guarantee a complete stream; real router, synthetic worker, no GPU |
+| [Usage and ROI examples](docs/usage.md#synthetic-usage-and-roi) | Run the helpers on synthetic records and explicit sample prices |
+| [Script reference](docs/usage.md#bundled-scripts) | Locate calls, lint payloads, compare prefixes, analyze usage and render a report |
+| [Routing capture guide](docs/routing-capture.md) | Collect evidence for a self-hosted routing investigation |
 
-Provider usage metadata and billing exports remain authoritative; these scripts are audit aids.
+The scripts run locally with Python's standard library. The agent uses them as
+needed; a first audit does not require running every helper.
 
-## Evidence Artifacts
+The routing analyzer is **experimental**. It consumes a
+[normalized JSONL export](audit-prompt-caching/references/routing-evidence.md)
+and has no bundled native-router-log adapter. End-to-end capture and analysis
+still need validation on a real deployment. Request/attempt joins and measured
+worker/client outcomes are necessary before drawing routing conclusions.
 
-Fixtures are not required for a real audit. They are bundled demo and regression-test data that show expected file shapes without needing a production project or production logs.
+## Working with evidence
 
-When evidence is needed, point the scripts at exported artifacts from the user's system:
+Use the skill alongside your existing telemetry: request payloads, provider
+usage, billing exports, traces and per-replica metrics. It does not capture live
+traffic by itself. The [usage guide](docs/usage.md#evidence-artifacts) describes
+useful inputs and how the helpers preserve uncertain accounting.
 
-```bash
-python3 audit-prompt-caching/scripts/analyze_usage_logs.py path/to/real_usage.jsonl
-python3 audit-prompt-caching/scripts/layout_linter.py path/to/rendered_request.json
-python3 audit-prompt-caching/scripts/prefix_stability_check.py request_a.json request_b.json
-```
+A gateway response-cache hit, a provider prompt-cache read and self-hosted KV
+reuse are different observations. A stable local prefix alone establishes none
+of them. Each finding should name the cache layer and the evidence behind it.
 
-Good real inputs are:
+## Contributing and feedback
 
-- provider usage logs or billing exports with cache read/write fields
-- one or more rendered JSON request payloads from the hot path, such as Chat-style `messages` or Responses-style `input`
-- normalized per-step agent logs with model, route, prefix hash, tools hash, token usage, and latency
-- deployment or router config when cache locality or self-hosted KV reuse is part of the issue
+Tried it on a project? [Share an audit result](https://github.com/sernote/audit-prompt-caching/issues/new?template=audit-result.md):
+what helped, what was unclear, or what evidence was missing. Feedback is optional;
+keep credentials and private project contents out of public issues.
 
-The skill does not capture live traffic by itself. Export or redact representative records first when telemetry evidence is needed. Keep bundled fixtures for demos, tests, and examples of the expected schema.
-
-## Example Prompts
-
-Use these as pressure scenarios, not generic smoke tests.
-
-OpenAI-compatible wrapper ambiguity:
-
-```text
-Use $audit-prompt-caching to review this app. It imports the OpenAI SDK, but base_url points to https://openrouter.ai/api/v1. We added prompt_cache_key, provider.order, and openrouter/auto; cache_write_tokens appears, but cached_tokens stays zero. Decide whether this is an OpenAI issue or a router/cache-locality issue.
-```
-
-Claude automatic caching writes every request:
-
-```text
-Use $audit-prompt-caching to audit our Claude layout. We added top-level cache_control to an 18k-token policy prompt, then append timestamp and user question as the final content block. usage.cache_creation_input_tokens increments every request, but cache_read_input_tokens stays zero.
-```
-
-Bedrock Converse cross-region cachePoint:
-
-```text
-Use $audit-prompt-caching to review this Bedrock Converse request. cachePoint is placed after a user-specific intro, tools differ by route, CacheWriteInputTokens is high, CacheReadInputTokens is near zero, and some traffic uses cross-region inference.
-```
-
-MCP tool registry drift:
-
-```text
-Use $audit-prompt-caching to audit our coding agent. The MCP tool registry is queried every step, tool order changes with plugin load timing, read-only mode removes write tools, and compaction rewrites the first user turn. Costs rose even though each step sends fewer tools.
-```
-
-vLLM/SGLang multi-replica KV:
-
-```text
-Use $audit-prompt-caching to inspect this self-hosted deployment. vLLM/SGLang replicas sit behind a generic gateway, p99 prompt length is 12k, max_model_len is 128k, prefix hashes look stable, but TTFT spikes after scaling and prefix-cache metrics vary by replica.
-```
-
-High cached tokens, low savings:
-
-```text
-Use $audit-prompt-caching to explain why this workload still costs too much. cached_tokens is high and TTFT improved, but responses average 4k output tokens, tool calls add seconds, TPM errors did not improve, and finance wants to know whether prompt caching is the wrong lever.
-```
-
-## Structure
-
-```text
-audit-prompt-caching/
-  SKILL.md
-  agents/openai.yaml
-  references/
-    openai.md
-    openrouter.md
-    azure-openai.md
-    anthropic.md
-    bedrock.md
-    agent-tools.md
-    sglang.md
-    vllm.md
-    deepseek.md
-    economics.md
-    gemini.md
-    mechanics.md
-    predeploy-checklist.md
-    report-template.md
-    qwen.md
-    yandexgpt.md
-    zai.md
-    use-cases.md
-  scripts/
-    analyze_usage_logs.py
-    estimate_cache_roi.py
-    extract_llm_calls.py
-    layout_linter.py
-    prefix_stability_check.py
-    render_audit_report.py
-    validate_skill_package.py
-    run_trigger_eval.py
-  evals/
-    evals.json
-    trigger_eval.json
-fixtures/
-  layout/
-  openai/
-  anthropic/
-  bedrock/
-  openrouter/
-  vllm/
-  expected/
-```
-
-## Validation
-
-Validate the skill package with the bundled validator:
-
-```bash
-python3 audit-prompt-caching/scripts/validate_skill_package.py audit-prompt-caching
-python3 audit-prompt-caching/scripts/run_trigger_eval.py audit-prompt-caching
-```
-
-The repository also includes JSON eval prompts:
-
-- `audit-prompt-caching/evals/evals.json`: behavioral audit scenarios.
-- `audit-prompt-caching/evals/trigger_eval.json`: should-trigger and should-not-trigger queries.
-
-Run the local script/package tests:
-
-```bash
-python3 -m unittest tests/test_prompt_cache_scripts.py
-```
-
-These evals are a starting point. A full proof cycle should still compare baseline agent behavior against behavior with the skill enabled.
-
-## Project Quality Gates
-
-CI runs the unittest suite, package validator, trigger eval, Python syntax compile, whitespace check, and generated-bytecode guard. Keep new scripts stdlib-only and add fixture-backed tests for behavior changes.
-
-## Freshness Policy
-
-Provider cache behavior changes. The skill treats bundled provider references as heuristics and instructs the agent to verify official docs before exact claims about pricing, TTL, model support, field names, cache-control semantics, or routing hints.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers tests, package validation and change
+guidelines. The [validation notes](docs/usage.md#validation) distinguish script
+tests, trigger-dataset checks and agent behavior evaluations.
 
 ## License
 
-MIT. See `LICENSE`.
+[MIT](LICENSE).

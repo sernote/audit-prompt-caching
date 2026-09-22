@@ -6,13 +6,29 @@
 - Engine/API surface: Responses API
 - Records reviewed: 3
 - Cache hit ratio: 0.5962
+- Cache read tokens: 9300
+- Cache write tokens: 0
+- Cache write/read ratio: 0.0
 - Output share: 0.0717
+- Cost impact: unknown (no pricing supplied)
 - Measurement change: unknown
 - Prompt behavior change: unknown
 - Provider/routing change: unknown
 - Confidence: low
 - Do first: analyze usage logs and validate prefix stability
 - Do not do yet: make provider/routing changes without telemetry
+
+## Cache Clinic Summary
+
+- Cache planes: unknown
+- Applicability: unknown
+- Evidence quality: unknown
+- Prefix stability: unknown
+- Usage accounting: unknown
+- Routing locality: unknown
+- Economics: unknown
+- Isolation: unknown
+- Usage denominator status: valid
 
 ## Findings
 

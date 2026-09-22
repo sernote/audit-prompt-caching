@@ -13,15 +13,13 @@ Use this reference for cost, migration, or "high hit rate but no savings" questi
 - `Pi`: uncached input price.
 - `Po`: output price.
 
-Input-only baseline: `(S + D) * Pi`.
-With cache: `(1-h) * S * Pi + h * S * Pr + D * Pi`, plus write/storage premiums when applicable.
-Total cost must add `O * Po`; output often dominates after good input caching.
+Input baseline: `(S + D) * Pi`. With cache: `(1-h) * S * Pi + h * S * Pr + D * Pi`, plus write premiums and `O * Po` output cost.
 
-For GPT-5.6+ OpenAI and Claude, writes are a separate billing category. When actual usage fields exist, prefer `ordinary_input * Pi + cache_write * Pw + cache_read * Pr + output * Po` over a hit-rate approximation. OpenAI's `input_tokens` includes read and write tokens; Anthropic's `input_tokens` excludes them. The bundled ROI estimator accepts total `--cache-write-tokens` and `--cache-write-price-per-mtok` so a 1.25× or 2× write price is included without guessing the number of writes from a hit rate.
+For GPT-5.6+ OpenAI and Claude, use measured `ordinary_input * Pi + write * Pw + read * Pr + output * Po`. OpenAI's `input_tokens` includes reads/writes; Claude's excludes them. Without usage, the ROI helper accepts assumed `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
 
 ## Cache Write Break-Even
 
-For a stream of otherwise equivalent input tokens that are either written or read from cache, let `R` be the read fraction, `w = Pw/Pi`, and `r = Pr/Pi`. The cached stream beats ordinary input only when `w*(1-R) + r*R < 1`, or `R > (w-1)/(w-r)`. This excludes output, uncached suffixes, capacity effects, and setup work; use measured token categories for a real workload.
+For equivalent tokens either written or read, let `R` be the read fraction, `w = Pw/Pi`, `r = Pr/Pi`. Cache saves input cost when `R > (w-1)/(w-r)`. This excludes output, uncached suffixes, and capacity effects.
 
 | Cache policy | Write multiplier | Read multiplier | Minimum read fraction to save input cost |
 | --- | ---: | ---: | ---: |
@@ -29,7 +27,7 @@ For a stream of otherwise equivalent input tokens that are either written or rea
 | Claude Opus 5.5, 5m | 1.25× | 0.05× | Above 20.8% |
 | Claude Opus 5.5, 1h | 2× | 0.05× | Above 51.3% |
 
-These thresholds are derived from the documented multipliers, not observed cache-hit rates. A cold write still pays for input on earlier OpenAI models; the GPT-5.6+ change is the **additional 25% write premium**. Longer TTL can improve reuse, but its higher write price must be weighed against the actual read fraction.
+These are theoretical token fractions, not observed hit rates. Earlier OpenAI writes already paid ordinary input; GPT-5.6+ adds a 25% premium. Compare 1h TTL's higher write cost with measured reads.
 
 ## Checklist
 

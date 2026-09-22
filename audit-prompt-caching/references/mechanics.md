@@ -48,6 +48,22 @@ Some providers still count cached tokens in total prompt/input fields. Do not tr
 
 For vLLM/SGLang, a prefix hit can still leave bottlenecks in dynamic prefill, decode, KV memory pressure, replica routing, CPU/GPU transfer, or scheduler behavior. Inspect TTFT, decode throughput, KV block pressure, and per-route concurrency together.
 
+## Routing Outcome Gate
+
+Before applying this gate, distinguish unchanged continued operation, an unrelated release, or emergency rollback to a previously running policy from a candidate change. For unchanged continued operation or an unrelated release, a current production policy may be no-change when its stated performance, capacity, and cost outcomes are met and no unresolved safety or correctness concern exists. An emergency rollback to a previously running policy is not a candidate rollout and may proceed without this gate; verify rollback safety/correctness and observe outcomes. This status-quo carve-out does not apply to a routing-policy or replica/KV-topology change, including scale-out; that change is a candidate under evaluation and uses this gate. A cited policy, checklist, standard, or ticket is an intent claim, not itself an outcome gap. For an unchanged policy with evidenced stated outcomes, a cited policy-name rule alone does not create a measured outcome gap or justify migration, waiver, or a candidate canary.
+
+For a candidate under evaluation, baseline is current production and candidate is proposed; either may be cache-aware. Round robin, prefix-aware, sticky, and hash policies are candidates, not defaults or defects. Hit/locality/affinity/cached-token share are mechanism evidence only.
+
+Require:
+
+- **matched-workload comparison:** same open-loop arrivals, prefix families, lengths, model/tokenizer, replicas/KV, equal warmup/window/cache state at arm start; compare p95/p99 TTFT/e2e, queue, replica/KV skew, errors/retries/fallbacks; repeated arms with enough p99 samples/arm. Closed-loop requires concurrency/throughput/latency together; use `references/observability.md`.
+- **capacity at SLO:** separate open-loop arrival-rate sweep for maximum sustainable throughput while latency/error SLOs hold; never infer it from one point or hit rate.
+- **rewarm:** restart, scale, and failover tests measuring cache/route loss, recovery time, and SLO violations.
+
+For a candidate under evaluation, state the primary objective, SLO guardrails, and rollback trigger. Accept conditionally only when the objective improves, the comparison/capacity/rewarm gates and guardrails pass, and the isolation decision is approved with no unreviewed trust-boundary broadening. For a candidate under evaluation, missing evidence is pilot/canary only; guardrail failure is reject/rollback even with hit/locality gains.
+
+CacheRoute ([arXiv:2608.19677](https://arxiv.org/abs/2608.19677)) supports: hit/locality and capacity are separate; residual imbalance can erase affinity gains; matched replay beats workload statistics. Transplant no algorithm, threshold, or number.
+
 ## Observability
 
 For latency audits, collect:

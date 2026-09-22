@@ -1,0 +1,22 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning": {"effort": "medium"},
+  "prompt_cache_key": "policy-classifier-v3",
+  "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
+  "input": [
+    {
+      "role": "developer",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Stable reusable policy: apply the same compliance policy and output taxonomy for every request in this workflow.",
+          "prompt_cache_breakpoint": {"mode": "explicit"}
+        }
+      ]
+    },
+    {"role": "user", "content": "Classify the first customer question."},
+    {"role": "assistant", "content": "Category: billing."},
+    {"type": "configuration_update", "reasoning": {"effort": "high"}},
+    {"role": "user", "content": "This one spans three policies. Classify it carefully."}
+  ]
+}

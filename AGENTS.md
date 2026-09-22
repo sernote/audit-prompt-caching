@@ -11,6 +11,7 @@ This repository maintains the portable `audit-prompt-caching` Codex/agent skill.
 - `audit-prompt-caching/scripts/`: dependency-free Python audit helpers.
 - `audit-prompt-caching/evals/`: behavioral and trigger eval prompts.
 - `tests/test_prompt_cache_scripts.py`: unittest coverage for bundled scripts and package checks.
+- `tests/test_routing_logs.py`: normalized routing evidence and CLI coverage.
 - `docs/superpowers/plans/`: implementation plans for multi-step changes.
 
 ## Development Rules
@@ -24,10 +25,10 @@ This repository maintains the portable `audit-prompt-caching` Codex/agent skill.
 
 ## Verification Commands
 
-Run the script test suite:
+Run all script tests, including normalized routing evidence:
 
 ```bash
-python3 -m unittest tests/test_prompt_cache_scripts.py
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 Validate the skill package:
