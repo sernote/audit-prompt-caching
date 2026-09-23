@@ -33,7 +33,7 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
 # docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
 # references and the labeled OpenAI-compatible usage adapter).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 77677
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 77687
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -1560,6 +1560,26 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("write price", missing_price.stderr)
         self.assertEqual(excess_rate.returncode, 2)
         self.assertIn("sum", excess_rate.stderr)
+
+    def test_estimate_cache_roi_writes_only_uncached_static_prefix(self):
+        common = (
+            "--static-tokens", "1000", "--dynamic-tokens", "1000",
+            "--output-tokens", "0", "--requests", "1",
+            "--hit-rate", "0.8", "--input-price-per-mtok", "1",
+            "--cached-input-price-per-mtok", "0.1",
+            "--cache-write-input-price-per-mtok", "1.25",
+            "--output-price-per-mtok", "0",
+        )
+        valid = run_script("estimate_cache_roi.py", *common, "--cache-write-rate", "0.2")
+        excess = run_script("estimate_cache_roi.py", *common, "--cache-write-rate", "0.5")
+
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        output = json.loads(valid.stdout)
+        self.assertEqual(output["cache_read_input_tokens"], 800)
+        self.assertEqual(output["cache_write_input_tokens"], 200)
+        self.assertEqual(output["ordinary_input_tokens"], 1000)
+        self.assertEqual(excess.returncode, 2)
+        self.assertIn("sum", excess.stderr)
 
     def test_render_audit_report_outputs_markdown_from_usage_fixture(self):
         result = run_script(
@@ -3794,6 +3814,14 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
         self.assertIn("AP-15", output["clean_checks"])
+
+    def test_ap15_rule_and_agent_playbook_match_supported_effort_models(self):
+        rules = json.loads((ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text())
+        ap15 = next(rule for rule in rules["rules"] if rule["id"] == "AP-15")
+        playbook = (ROOT / "audit-prompt-caching" / "references" / "agent-tools.md").read_text()
+        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "claude-opus-5-5"):
+            self.assertIn(model, ap15["fix"], model)
+            self.assertIn(model, playbook, model)
 
     def test_layout_linter_flags_anthropic_per_message_effort_on_unsupported_model(
         self,
