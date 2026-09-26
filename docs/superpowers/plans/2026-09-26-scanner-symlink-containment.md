@@ -13,4 +13,4 @@ Prevent `extract_llm_calls.py` from reading files outside the selected scan root
 
 ## Package budget
 
-The package guard measures all deferred skill files, including scripts. After rebasing on the latest `main`, the secured file-opening path raises the measured estimate from 77,687 to 78,447 tokens; update the test ceiling to that measured value after verification.
+The package guard measures all deferred skill files, including scripts. After rebasing on the latest `main`, the secured file-opening path raises the measured estimate from 77,687 to 78,471 tokens; update the test ceiling to that measured value after verification.

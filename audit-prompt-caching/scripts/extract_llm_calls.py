@@ -363,8 +363,10 @@ def read_source_lines(root, path, root_fd):
         finally:
             os.close(directory_fd)
     else:
-        # Platforms without dir_fd/O_NOFOLLOW still reject symlink aliases and
-        # verify that the opened file is the regular file checked inside root.
+        # Platforms without dir_fd/O_NOFOLLOW reject symlink aliases and check
+        # file identity. These checks cannot fully close concurrent path races.
+        if root.resolve() != root:
+            return None
         before = path.lstat()
         if not stat.S_ISREG(before.st_mode):
             return None
@@ -378,6 +380,7 @@ def read_source_lines(root, path, root_fd):
             return None
         if root_fd is None and (
             (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+            or root.resolve() != root
             or not path.resolve().is_relative_to(root.resolve())
         ):
             return None

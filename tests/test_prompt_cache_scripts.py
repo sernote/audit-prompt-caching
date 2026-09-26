@@ -31,11 +31,11 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # references, AP-15 rule, linter branch, and evals 34-36.
 # Includes executable/eval source, not just references loaded by an agent.
 # The symlink-containment fix adds descriptor-anchored file reads; remeasured
-# at 78,447 tokens. See docs/superpowers/plans/2026-09-26-scanner-symlink-containment.md.
+# at 78,471 tokens. See docs/superpowers/plans/2026-09-26-scanner-symlink-containment.md.
 # See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
 # docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
 # references and the labeled OpenAI-compatible usage adapter).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 78447
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 78471
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -2566,6 +2566,31 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertTrue(swapped)
         self.assertEqual(output["files_scanned"], 0)
         self.assertEqual(output["findings"], [])
+
+    def test_extract_llm_calls_portable_open_rejects_swapped_root(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp).resolve()
+            root = tmp_path / "project"
+            root.mkdir()
+            source = root / "app.py"
+            source.write_text("from openai import OpenAI\n")
+            self.assertEqual(
+                module.read_source_lines(root, source, None),
+                ["from openai import OpenAI"],
+            )
+            outside = tmp_path / "outside"
+            outside.mkdir()
+            (outside / "app.py").write_text("OPENROUTER_API_KEY=outside-secret\n")
+            try:
+                root.rename(tmp_path / "retired-project")
+                root.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            lines = module.read_source_lines(root, source, None)
+
+        self.assertIsNone(lines)
 
     def test_extract_llm_calls_elides_arbitrary_source_shapes_from_json(self):
         cases = {
