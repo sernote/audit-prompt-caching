@@ -30,10 +30,12 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # Remeasured corpus after the Claude 5 family / GPT-6 Astra effort-continuity
 # references, AP-15 rule, linter branch, and evals 34-36.
 # Includes executable/eval source, not just references loaded by an agent.
+# The symlink-containment fix adds descriptor-anchored file reads; remeasured
+# at 78,471 tokens. See docs/superpowers/plans/2026-09-26-scanner-symlink-containment.md.
 # See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
 # docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
 # references and the labeled OpenAI-compatible usage adapter).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 77687
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 78471
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -2399,6 +2401,196 @@ class PromptCacheScriptsTest(unittest.TestCase):
             self.assertEqual(output["matches"], 2)
             self.assertEqual(output["providers"]["openai"], 2)
             self.assertEqual(output["findings"][0]["path"], "src/llm.py")
+
+    def test_extract_llm_calls_does_not_read_symlink_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = tmp_path / "project"
+            outside = tmp_path / "outside"
+            (root / "src").mkdir(parents=True)
+            outside.mkdir()
+            (root / "src" / "llm.py").write_text("from openai import OpenAI\n")
+            (root / "Makefile").write_text("serve: # vllm\n")
+            (root / ".env").write_text("OPENROUTER_API_KEY=internal-secret\n")
+            (outside / "private.py").write_text("OPENROUTER_API_KEY=outside-secret\n")
+            (outside / "private.env").write_text("cache_control=outside-env\n")
+            (outside / "nested.py").write_text("import anthropic\n")
+            try:
+                (root / "config.py").symlink_to(outside / "private.py")
+                (root / "Dockerfile").symlink_to(outside / "private.env")
+                (root / "settings.py").symlink_to(root / ".env")
+                (root / "broken.py").symlink_to(outside / "missing.py")
+                (root / "linked-dir").symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            result = run_script("extract_llm_calls.py", root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["files_scanned"], 2)
+        self.assertEqual(output["providers"], {"openai": 1, "vllm": 1})
+        self.assertEqual(
+            {finding["path"] for finding in output["findings"]},
+            {"src/llm.py", "Makefile"},
+        )
+        self.assertNotIn("outside-secret", result.stdout)
+        self.assertNotIn("internal-secret", result.stdout)
+
+    def test_extract_llm_calls_rejects_file_replaced_after_discovery(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = tmp_path / "project"
+            root.mkdir()
+            outside = tmp_path / "outside.py"
+            outside.write_text("OPENROUTER_API_KEY=outside-secret\n")
+            candidate = root / "config.py"
+            candidate.write_text("from openai import OpenAI\n")
+            try:
+                probe = root / "probe.py"
+                probe.symlink_to(outside)
+                probe.unlink()
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            discovered = module.iter_files
+
+            def replace_after_discovery(scan_root):
+                for path in discovered(scan_root):
+                    path.unlink()
+                    path.symlink_to(outside)
+                    yield path
+
+            module.iter_files = replace_after_discovery
+            output = module.find_matches(root)
+
+        self.assertEqual(output["files_scanned"], 0)
+        self.assertEqual(output["findings"], [])
+
+    def test_extract_llm_calls_rejects_parent_replaced_after_discovery(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = tmp_path / "project"
+            source_dir = root / "src"
+            source_dir.mkdir(parents=True)
+            (source_dir / "llm.py").write_text("from openai import OpenAI\n")
+            outside = tmp_path / "outside"
+            outside.mkdir()
+            (outside / "llm.py").write_text("OPENROUTER_API_KEY=outside-secret\n")
+            try:
+                probe = root / "probe.py"
+                probe.symlink_to(outside / "llm.py")
+                probe.unlink()
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            discovered = module.iter_files
+
+            def replace_parent_after_discovery(scan_root):
+                for path in discovered(scan_root):
+                    source_dir.rename(root / "retired-src")
+                    source_dir.symlink_to(outside, target_is_directory=True)
+                    yield path
+
+            module.iter_files = replace_parent_after_discovery
+            output = module.find_matches(root)
+
+        self.assertEqual(output["files_scanned"], 0)
+        self.assertEqual(output["findings"], [])
+
+    def test_extract_llm_calls_rejects_root_replaced_before_open(self):
+        module = load_script_module("extract_llm_calls.py")
+        if not (hasattr(module.os, "O_NOFOLLOW") and module.os.open in module.os.supports_dir_fd):
+            self.skipTest("descriptor-anchored opens unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = tmp_path / "project"
+            root.mkdir()
+            (root / "app.py").write_text("from openai import OpenAI\n")
+            outside = tmp_path / "outside"
+            outside.mkdir()
+            (outside / "app.py").write_text("OPENROUTER_API_KEY=outside-secret\n")
+            original_open_root = module.open_root_directory
+            swapped = False
+
+            def replace_root_on_open(path):
+                nonlocal swapped
+                swapped = True
+                root.rename(tmp_path / "retired-project")
+                root.symlink_to(outside, target_is_directory=True)
+                return original_open_root(path)
+
+            module.open_root_directory = replace_root_on_open
+            try:
+                output = module.find_matches(root)
+            finally:
+                module.open_root_directory = original_open_root
+
+        self.assertTrue(swapped)
+        self.assertEqual(output["files_scanned"], 0)
+        self.assertEqual(output["findings"], [])
+
+    def test_extract_llm_calls_rejects_ancestor_replaced_before_open(self):
+        module = load_script_module("extract_llm_calls.py")
+        if not (hasattr(module.os, "O_NOFOLLOW") and module.os.open in module.os.supports_dir_fd):
+            self.skipTest("descriptor-anchored opens unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            base = tmp_path / "base"
+            root = base / "project"
+            root.mkdir(parents=True)
+            (root / "app.py").write_text("from openai import OpenAI\n")
+            outside = tmp_path / "outside"
+            (outside / "project").mkdir(parents=True)
+            (outside / "project" / "app.py").write_text(
+                "OPENROUTER_API_KEY=outside-secret\n"
+            )
+            original_open_root = module.open_root_directory
+            swapped = False
+
+            def replace_ancestor_on_open(path):
+                nonlocal swapped
+                swapped = True
+                base.rename(tmp_path / "retired-base")
+                base.symlink_to(outside, target_is_directory=True)
+                return original_open_root(path)
+
+            module.open_root_directory = replace_ancestor_on_open
+            try:
+                output = module.find_matches(root)
+            finally:
+                module.open_root_directory = original_open_root
+
+        self.assertTrue(swapped)
+        self.assertEqual(output["files_scanned"], 0)
+        self.assertEqual(output["findings"], [])
+
+    def test_extract_llm_calls_portable_open_rejects_swapped_root(self):
+        module = load_script_module("extract_llm_calls.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp).resolve()
+            root = tmp_path / "project"
+            root.mkdir()
+            source = root / "app.py"
+            source.write_text("from openai import OpenAI\n")
+            self.assertEqual(
+                module.read_source_lines(root, source, None),
+                ["from openai import OpenAI"],
+            )
+            outside = tmp_path / "outside"
+            outside.mkdir()
+            (outside / "app.py").write_text("OPENROUTER_API_KEY=outside-secret\n")
+            try:
+                root.rename(tmp_path / "retired-project")
+                root.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            lines = module.read_source_lines(root, source, None)
+
+        self.assertIsNone(lines)
 
     def test_extract_llm_calls_elides_arbitrary_source_shapes_from_json(self):
         cases = {
