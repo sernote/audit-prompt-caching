@@ -23,9 +23,12 @@ For equivalent tokens either written or read, let `R` be the read fraction, `w =
 
 | Cache policy | Write multiplier | Read multiplier | Minimum read fraction to save input cost |
 | --- | ---: | ---: | ---: |
-| GPT-5.6+ OpenAI, 30m | 1.25× | 0.10× | Above 21.7% |
+| GPT-5.6+ OpenAI (most models), 30m | 1.25× | 0.10× | Above 21.7% |
+| GPT-6.1 Sol OpenAI, 30m | 1.25× | 0.05× | Above 20.8% |
 | Claude Opus 5.5, 5m | 1.25× | 0.05× | Above 20.8% |
 | Claude Opus 5.5, 1h | 2× | 0.05× | Above 51.3% |
+
+Percentages are rounded; for a borderline read fraction, compare it with the exact `(w-1)/(w-r)` value.
 
 These are theoretical token fractions, not observed hit rates. Earlier OpenAI writes already paid ordinary input; GPT-5.6+ adds a 25% premium. Compare 1h TTL's higher write cost with measured reads.
 

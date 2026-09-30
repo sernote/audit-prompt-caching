@@ -39,7 +39,7 @@ STABLE_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 GPT56_MODELS = {"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
-GPT6_MODELS = {"gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}
+GPT6_MODELS = {"gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"}
 EXPLICIT_CACHE_MODELS = GPT56_MODELS | GPT6_MODELS
 # Direct OpenAI models documented for the positional `configuration_update`
 # input item (standard, single-agent mode only). Verify current docs.
