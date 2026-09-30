@@ -219,6 +219,11 @@ keep credentials and private project contents out of public issues.
 guidelines. The [validation notes](docs/usage.md#validation) distinguish script
 tests, trigger-dataset checks and agent behavior evaluations.
 
+Maintainers keep provider and engine references current with a daily
+[cache source watch](maintenance/cache-watch/README.md): a curated official
+source registry, a triage runbook and a small state ledger. It is not part
+of the installed skill.
+
 ## License
 
 [MIT](LICENSE).

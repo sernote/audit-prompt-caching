@@ -12,6 +12,8 @@ This repository maintains the portable `audit-prompt-caching` Codex/agent skill.
 - `audit-prompt-caching/evals/`: behavioral and trigger eval prompts.
 - `tests/test_prompt_cache_scripts.py`: unittest coverage for bundled scripts and package checks.
 - `tests/test_routing_logs.py`: normalized routing evidence and CLI coverage.
+- `maintenance/cache-watch/`: daily source-watch registry, runbooks and stdlib ledger CLI (not installed with the skill).
+- `tests/test_cache_watch.py`: ledger, coverage, dispatch and registry coverage for the source watch.
 - `docs/superpowers/plans/`: implementation plans for multi-step changes.
 
 ## Development Rules

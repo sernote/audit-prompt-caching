@@ -1,0 +1,27 @@
+{
+  "schedule": {"time": "09:00", "timezone": "Europe/Kaliningrad"},
+  "repository": "sernote/audit-prompt-caching",
+  "base_branch": "main",
+  "runtime_dir": "<runtime-root>/<reviewed-commit>",
+  "ledger_dir": "<state-dir-outside-any-checkout>",
+  "coordinator_thread": "<coordinator thread id>",
+  "limits": {
+    "max_active": 2,
+    "max_attempts": 2,
+    "lease_hours": 4,
+    "overlap_hours": 6,
+    "max_catchup_days": 14,
+    "fetch_attempts_per_source": 2
+  },
+  "implementation": {
+    "model_rule": "latest available Codex Sol model supporting xhigh, resolved from the app catalog at dispatch",
+    "effort": "xhigh",
+    "reviewer": "Porch claude-b Opus 5.5 high",
+    "porch_env": {"PORCH_BIN_CLAUDE": "claude-b", "CLAUDE_MODEL": "claude-opus-5-5", "CLAUDE_EFFORT": "high"}
+  },
+  "skills": {
+    "orchestration_skill": "<path to pragmatic-orchestration SKILL.md>",
+    "evaluate_skill": "<path to plugin-eval evaluate-skill SKILL.md>",
+    "plugin_eval_cli": "<path to plugin-eval scripts/plugin-eval.js>"
+  }
+}

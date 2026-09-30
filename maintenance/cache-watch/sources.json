@@ -1,0 +1,700 @@
+{
+  "schema": 1,
+  "updated": "2026-09-30",
+  "notes": "One monitored URL per entry. verified.method: curl (HTTP 200 with content check), webfetch (curl blocked; fetched through a web fetch tool), gh-api (GitHub REST). A failed verification is kept on purpose so daily runs report it.",
+  "sources": [
+    {
+      "id": "openai-prompt-caching", "group": "openai", "priority": "p0", "type": "contract-doc",
+      "url": "https://developers.openai.com/api/docs/guides/prompt-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/openai.md", "audit-prompt-caching/references/rules.json"],
+      "cache_relevance": "prompt_cache_key, prompt_cache_options/ttl, prompt_cache_retention, minimum prefix, cached_tokens and cache_write_tokens",
+      "extraction": "Headings and body from 'how it works' through usage fields, retention/TTL, and requirements; drop navigation and feedback widgets",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; curl 403 (bot block)"}
+    },
+    {
+      "id": "openai-pricing", "group": "openai", "priority": "p1", "type": "pricing",
+      "url": "https://developers.openai.com/api/docs/pricing",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/openai.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "cached-input and cache-write prices per model and tier (ROI math)",
+      "extraction": "Rows for current flagship and cache-relevant models: input, cached input, cache write, output",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; curl 403; openai.com/api/pricing 403 to both methods, not used"}
+    },
+    {
+      "id": "openai-changelog", "group": "openai", "priority": "p0", "type": "changelog",
+      "url": "https://developers.openai.com/api/docs/changelog",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/openai.md"],
+      "cache_relevance": "dated API changes: new models, cache parameters, usage fields, deprecations",
+      "extraction": "Entries dated inside the window; keep entries mentioning cache, prompt_cache, usage, reasoning/effort, or new models",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; explicit dates (latest 2026-09-29); curl 403; no feed"}
+    },
+    {
+      "id": "openai-models", "group": "openai", "priority": "p1", "type": "contract-doc",
+      "url": "https://developers.openai.com/api/docs/models/all",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/openai.md"],
+      "cache_relevance": "model availability that gates cache controls (GPT-5.6+ options, GPT-6 family)",
+      "extraction": "Model ID list only",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; curl 403"}
+    },
+    {
+      "id": "openai-news-feed", "group": "openai", "priority": "p2", "type": "release-feed",
+      "url": "https://openai.com/news/rss.xml",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/openai.md"],
+      "cache_relevance": "launch announcements that precede contract-doc updates",
+      "extraction": "Items with pubDate in window whose title mentions API, model launch, or caching; follow to contract docs",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 RSS XML"}
+    },
+    {
+      "id": "anthropic-prompt-caching", "group": "anthropic", "priority": "p0", "type": "contract-doc",
+      "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/anthropic.md", "audit-prompt-caching/references/rules.json"],
+      "cache_relevance": "cache_control breakpoints, TTL options, minimum cacheable length per model, cache_creation/cache_read usage fields, invalidation rules",
+      "extraction": "Fetch the .md variant (URL + '.md' returns text/markdown); keep the whole guide body without the sidebar",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; self-canonical"}
+    },
+    {
+      "id": "anthropic-pricing", "group": "anthropic", "priority": "p0", "type": "pricing",
+      "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/anthropic.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "cache write (5m/1h) and cache read multipliers per model",
+      "extraction": "Model pricing table rows: base input, cache writes, cache hits, output",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "anthropic-release-notes", "group": "anthropic", "priority": "p0", "type": "changelog",
+      "url": "https://platform.claude.com/docs/en/release-notes/overview",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/anthropic.md"],
+      "cache_relevance": "dated platform changes: models, caching, effort/thinking, diagnostics",
+      "extraction": "Dated entries in window (the .md variant is easiest to parse); /release-notes/api redirects here",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; explicit dates (latest 2026-09-28); no feed (anthropic.com/rss.xml 404)"}
+    },
+    {
+      "id": "anthropic-engineering", "group": "anthropic", "priority": "p2", "type": "blog",
+      "url": "https://www.anthropic.com/engineering",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/anthropic.md", "audit-prompt-caching/references/agent-tools.md"],
+      "cache_relevance": "agent/context-engineering posts that may precede contract changes",
+      "extraction": "Post titles and dates in window; follow to contract docs before triage",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "gemini-caching", "group": "google-gemini", "priority": "p0", "type": "contract-doc",
+      "url": "https://ai.google.dev/gemini-api/docs/caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/gemini.md"],
+      "cache_relevance": "implicit vs explicit caching, minimum tokens per model, TTL, cached_content_token_count / total_cached_tokens",
+      "extraction": "Guide body: implicit caching, explicit caching, minimums, TTL, usage metadata",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "gemini-pricing", "group": "google-gemini", "priority": "p1", "type": "pricing",
+      "url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/gemini.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "context caching price and storage price per model",
+      "extraction": "Per-model 'context caching' and 'storage' rows",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "gemini-changelog", "group": "google-gemini", "priority": "p0", "type": "changelog",
+      "url": "https://ai.google.dev/gemini-api/docs/changelog",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/gemini.md"],
+      "cache_relevance": "dated Gemini API releases, model launches, caching and Interactions API changes",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; explicit dates (latest 2026-09-22); curl body hits a cookie redirect loop; changelog.rss redirects to sign-in, not a feed"}
+    },
+    {
+      "id": "vertex-context-cache", "group": "google-vertex", "priority": "p0", "type": "contract-doc",
+      "url": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/context-cache/context-cache-overview",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/gemini.md"],
+      "cache_relevance": "Vertex/Gemini Enterprise implicit and explicit caching, discounts, regional and ZDR constraints",
+      "extraction": "Overview body: supported models, minimums, pricing discount statements, limitations",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "vertex-release-notes", "group": "google-vertex", "priority": "p1", "type": "changelog",
+      "url": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/release-notes",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/gemini.md"],
+      "cache_relevance": "dated platform changes, including context cache and model availability",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; explicit dates (latest 2026-09-28)"}
+    },
+    {
+      "id": "vertex-release-notes-feed", "group": "google-vertex", "priority": "p1", "type": "release-feed",
+      "url": "https://docs.cloud.google.com/feeds/gemini-enterprise-agent-platform-release-notes.xml",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/gemini.md"],
+      "cache_relevance": "machine-readable dates for the release notes above",
+      "extraction": "Atom entries updated in window; entry links 404, so cite the HTML release notes page as evidence",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 Atom XML (updated 2026-09-28); legacy vertex-ai-release-notes.xml is stale since 2026-03-16 and not used"}
+    },
+    {
+      "id": "bedrock-prompt-caching", "group": "aws-bedrock", "priority": "p0", "type": "contract-doc",
+      "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/bedrock.md"],
+      "cache_relevance": "cachePoint placement, supported models and minimum tokens per checkpoint, TTL, cacheRead/cacheWrite usage fields",
+      "extraction": "Guide body and the supported-models table",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "bedrock-doc-history", "group": "aws-bedrock", "priority": "p0", "type": "changelog",
+      "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-ug-doc-history.html",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/bedrock.md"],
+      "cache_relevance": "dated user-guide changes, including prompt caching and model cards",
+      "extraction": "Rows dated in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; doc-history.html redirects here; explicit dates (latest 2026-09-21)"}
+    },
+    {
+      "id": "bedrock-doc-feed", "group": "aws-bedrock", "priority": "p0", "type": "release-feed",
+      "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-ug.rss",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/bedrock.md"],
+      "cache_relevance": "machine-readable dates for the doc history above",
+      "extraction": "RSS items with pubDate in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 RSS 2.0 XML (lastBuildDate 2026-09-29)"}
+    },
+    {
+      "id": "bedrock-pricing", "group": "aws-bedrock", "priority": "p1", "type": "pricing",
+      "url": "https://aws.amazon.com/bedrock/pricing/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/bedrock.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "cache write and cache read prices per model",
+      "extraction": "Cache write/read rows for Anthropic and other caching-capable models",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; curl flaky (000 by default, 200 once over IPv4)"}
+    },
+    {
+      "id": "azure-prompt-caching", "group": "azure-openai", "priority": "p0", "type": "contract-doc",
+      "url": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/prompt-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/azure-openai.md"],
+      "cache_relevance": "supported models/API versions, minimum tokens, retention, cached_tokens reporting, deployment-type differences",
+      "extraction": "Article body without the feedback and TOC chrome",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "azure-foundry-whats-new", "group": "azure-openai", "priority": "p1", "type": "changelog",
+      "url": "https://learn.microsoft.com/en-us/azure/foundry/whats-new-foundry",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/azure-openai.md"],
+      "cache_relevance": "monthly model and API changes",
+      "extraction": "Month sections; entries are month-granular, so treat a new month section as in-window when first observed",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; replaces /azure/foundry/openai/whats-new (404); foundry-classic page is stale since 2025-12-15"}
+    },
+    {
+      "id": "azure-openai-pricing", "group": "azure-openai", "priority": "p1", "type": "pricing",
+      "url": "https://azure.microsoft.com/en-us/pricing/details/azure-openai/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/azure-openai.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "cached-input prices by deployment type",
+      "extraction": "Cached input rows for current models",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; old cognitive-services/openai-service URL redirects here"}
+    },
+    {
+      "id": "openrouter-prompt-caching", "group": "openrouter", "priority": "p0", "type": "contract-doc",
+      "url": "https://openrouter.ai/docs/guides/best-practices/prompt-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/openrouter.md"],
+      "cache_relevance": "per-provider cache_control passthrough, sticky routing, cached_tokens and cache_write_tokens",
+      "extraction": "Guide body per provider section",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "openrouter-usage-accounting", "group": "openrouter", "priority": "p1", "type": "contract-doc",
+      "url": "https://openrouter.ai/docs/cookbook/administration/usage-accounting",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/openrouter.md"],
+      "cache_relevance": "usage object fields and cost accounting for cached tokens",
+      "extraction": "Usage response schema and field descriptions",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "openrouter-changelog", "group": "openrouter", "priority": "p1", "type": "changelog",
+      "url": "https://openrouter.ai/docs/changelog",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/openrouter.md"],
+      "cache_relevance": "dated routing, caching, and usage changes",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; explicit dates (latest 2026-08-24); /rss.xml is an HTML SPA page, not a feed"}
+    },
+    {
+      "id": "openrouter-blog", "group": "openrouter", "priority": "p2", "type": "blog",
+      "url": "https://openrouter.ai/blog/",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/openrouter.md"],
+      "cache_relevance": "router and caching announcements",
+      "extraction": "Post titles and dates in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; /announcements redirects here"}
+    },
+    {
+      "id": "deepseek-kv-cache", "group": "deepseek", "priority": "p0", "type": "contract-doc",
+      "url": "https://api-docs.deepseek.com/guides/kv_cache/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/deepseek.md"],
+      "cache_relevance": "automatic disk KV cache, prompt_cache_hit_tokens / prompt_cache_miss_tokens, unit sizes",
+      "extraction": "Guide body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "deepseek-pricing", "group": "deepseek", "priority": "p1", "type": "pricing",
+      "url": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/deepseek.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "cache hit vs miss input prices",
+      "extraction": "Pricing table",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 with trailing slash; without it returned 400 once"}
+    },
+    {
+      "id": "deepseek-updates", "group": "deepseek", "priority": "p1", "type": "changelog",
+      "url": "https://api-docs.deepseek.com/updates/",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/deepseek.md"],
+      "cache_relevance": "dated model and API changes",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; explicit dates (latest 2026-09-14); no feed"}
+    },
+    {
+      "id": "qwen-context-cache", "group": "qwen", "priority": "p0", "type": "contract-doc",
+      "url": "https://www.alibabacloud.com/help/en/model-studio/context-cache",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/qwen.md"],
+      "cache_relevance": "implicit/explicit cache modes, cache_control, minimums, TTL, cached_tokens fields (international site)",
+      "extraction": "Guide body: modes, supported models, billing, usage fields",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; self-canonical"}
+    },
+    {
+      "id": "qwen-context-cache-cn-en", "group": "qwen", "priority": "p1", "type": "contract-doc",
+      "url": "https://help.aliyun.com/en/model-studio/context-cache",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/qwen.md"],
+      "cache_relevance": "China-site English variant with more models; can diverge from the international page",
+      "extraction": "Guide body: modes, supported models, billing, usage fields",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; self-canonical; no cross-canonical with the international page"}
+    },
+    {
+      "id": "qwen-model-pricing", "group": "qwen", "priority": "p1", "type": "pricing",
+      "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/qwen.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "cached input prices",
+      "extraction": "Rows for cache-capable Qwen models",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "qwen-new-models", "group": "qwen", "priority": "p1", "type": "changelog",
+      "url": "https://www.alibabacloud.com/help/en/model-studio/newly-released-models",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/qwen.md"],
+      "cache_relevance": "dated model releases that change cache support",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; explicit dates (latest 2026-09-28)"}
+    },
+    {
+      "id": "zai-cache", "group": "zai", "priority": "p0", "type": "contract-doc",
+      "url": "https://docs.z.ai/guides/capabilities/cache",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/zai.md"],
+      "cache_relevance": "automatic context caching, cached_tokens reporting, supported models",
+      "extraction": "Guide body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "zai-pricing", "group": "zai", "priority": "p1", "type": "pricing",
+      "url": "https://docs.z.ai/guides/overview/pricing",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/zai.md", "audit-prompt-caching/references/economics.md"],
+      "cache_relevance": "cached input prices",
+      "extraction": "Cached input columns",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "zai-release-notes", "group": "zai", "priority": "p1", "type": "changelog",
+      "url": "https://docs.z.ai/release-notes/new-released",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/zai.md"],
+      "cache_relevance": "dated model and API releases",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; explicit dates (latest 2026-08-28)"}
+    },
+    {
+      "id": "yandex-pricing", "group": "yandex", "priority": "p0", "type": "pricing",
+      "url": "https://aistudio.yandex.ru/docs/en/ai-studio/pricing",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/yandexgpt.md"],
+      "cache_relevance": "de facto cache contract: automatic, best-effort caching statement and cached-token price",
+      "extraction": "Caching paragraph and cached-token price rows",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; curl gets a SmartCaptcha page with status 200, so a curl 200 is not a successful check; no dedicated caching doc found (tokens.html covers tokenization only)"}
+    },
+    {
+      "id": "yandex-release-notes", "group": "yandex", "priority": "p1", "type": "changelog",
+      "url": "https://aistudio.yandex.ru/docs/en/ai-studio/release-notes/",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/yandexgpt.md"],
+      "cache_relevance": "dated AI Studio releases, including caching and API changes",
+      "extraction": "Entries dated DD/MM/YYYY in window",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; explicit dates (latest 2026-08-03); curl gets captcha"}
+    },
+    {
+      "id": "moonshot-context-caching", "group": "moonshot", "priority": "p1", "type": "contract-doc",
+      "url": "https://platform.kimi.com/docs/guide/context-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/moonshot.md"],
+      "cache_relevance": "Kimi automatic/explicit context caching and cached token fields",
+      "extraction": "Guide body (Chinese)",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; platform.kimi.ai and platform.moonshot.ai returned 521 (origin down)"}
+    },
+    {
+      "id": "moonshot-pricing", "group": "moonshot", "priority": "p2", "type": "pricing",
+      "url": "https://platform.kimi.com/docs/pricing/chat",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/moonshot.md"],
+      "cache_relevance": "cache hit input prices",
+      "extraction": "Price rows mentioning cache",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "minimax-prompt-caching", "group": "minimax", "priority": "p1", "type": "contract-doc",
+      "url": "https://platform.minimax.io/docs/api-reference/text-prompt-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/minimax.md"],
+      "cache_relevance": "Anthropic-style cache usage fields and automatic caching",
+      "extraction": "Reference body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "minimax-release-notes", "group": "minimax", "priority": "p2", "type": "changelog",
+      "url": "https://platform.minimax.io/docs/release-notes/models",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/minimax.md"],
+      "cache_relevance": "dated model releases",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; explicit dates (latest 2026-07-31)"}
+    },
+    {
+      "id": "mistral-prompt-caching", "group": "mistral", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.mistral.ai/studio/conversations/advanced/prompt-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mistral.md"],
+      "cache_relevance": "prompt_cache_key, block size, cached token billing",
+      "extraction": "Rendered guide body (JS-rendered; use a fetch tool that renders)",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; curl 200 but content is JS-rendered; old studio-api path redirects here"}
+    },
+    {
+      "id": "mistral-changelog", "group": "mistral", "priority": "p2", "type": "changelog",
+      "url": "https://docs.mistral.ai/resources/changelogs",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mistral.md"],
+      "cache_relevance": "dated API changes",
+      "extraction": "Dated entries in window",
+      "verified": {"on": "2026-09-30", "method": "webfetch", "result": "ok; explicit dates (latest 2026-08-31); about 1.5 MB, curl timed out at 25s"}
+    },
+    {
+      "id": "xai-prompt-caching", "group": "xai", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.x.ai/developers/advanced-api-usage/prompt-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/xai.md"],
+      "cache_relevance": "automatic caching, cache routing hints, cached token usage and pricing",
+      "extraction": "Guide body plus the maximizing-cache-hits and usage-and-pricing subpages when they change",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 (site title now 'SpaceXAI Docs')"}
+    },
+    {
+      "id": "xai-release-notes", "group": "xai", "priority": "p2", "type": "changelog",
+      "url": "https://docs.x.ai/developers/release-notes",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/xai.md"],
+      "cache_relevance": "API changes; recent entries carry month only, so they are snapshot-diffed rather than date-filtered",
+      "extraction": "Newest ten entries",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200; month-only dates"}
+    },
+    {
+      "id": "tencent-hy-api", "group": "tencent", "priority": "p2", "type": "contract-doc",
+      "url": "https://www.tencentcloud.com/document/product/1300/80695",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/tencent.md"],
+      "cache_relevance": "Tencent Hy/TokenHub cache usage fields",
+      "extraction": "Cache and usage sections",
+      "verified": {"on": "2026-09-30", "method": "curl+webfetch", "result": "unverified: DNS resolved to 0.0.0.1 from this host and web fetch failed; record failed until reachable"}
+    },
+    {
+      "id": "xiaomi-openai-api", "group": "xiaomi", "priority": "p2", "type": "contract-doc",
+      "url": "https://mimo.mi.com/docs/en-US/api/chat/openai-api",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/xiaomi.md"],
+      "cache_relevance": "usage.prompt_tokens_details.cached_tokens",
+      "extraction": "Usage object section; verify content, because the site returns 200 for any path",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 with content check (soft-404 site)"}
+    },
+    {
+      "id": "xiaomi-pricing", "group": "xiaomi", "priority": "p2", "type": "pricing",
+      "url": "https://mimo.mi.com/docs/en-US/price/pay-as-you-go",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/xiaomi.md"],
+      "cache_relevance": "cache hit prices",
+      "extraction": "Cache Hit rows",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 with content check"}
+    },
+    {
+      "id": "vllm-releases", "group": "vllm", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/vllm-project/vllm/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/vllm.md", "audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "APC/prefix-cache semantics, hash algorithm, KV connector and metrics changes per version",
+      "extraction": "Stable releases in window; scan notes for prefix cache, KV, hash, connector, metrics. gh api 'repos/vllm-project/vllm/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest v0.30.0 published 2026-09-22; releases.atom verified Atom XML"}
+    },
+    {
+      "id": "vllm-apc-docs", "group": "vllm", "priority": "p0", "type": "contract-doc",
+      "url": "https://docs.vllm.ai/en/stable/features/automatic_prefix_caching/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/vllm.md"],
+      "cache_relevance": "automatic prefix caching behavior and limitations",
+      "extraction": "Page body without navigation",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 with full body (title 'Automatic Prefix Caching - vLLM')"}
+    },
+    {
+      "id": "vllm-prefix-caching-design", "group": "vllm", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.vllm.ai/en/stable/design/prefix_caching/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/vllm.md", "audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "block hashing, eviction, hybrid/SWA handling",
+      "extraction": "Design page body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 (the .html path redirects here)"}
+    },
+    {
+      "id": "vllm-metrics", "group": "vllm", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.vllm.ai/en/stable/usage/metrics/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/vllm.md", "audit-prompt-caching/references/observability.md"],
+      "cache_relevance": "prefix cache hit/query metrics and KV usage gauges",
+      "extraction": "Metric names and descriptions related to prefix cache and KV",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "vllm-router-tags", "group": "vllm", "priority": "p1", "type": "release-feed",
+      "url": "https://github.com/vllm-project/router/releases.atom",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/routing-evidence.md", "audit-prompt-caching/references/vllm.md"],
+      "cache_relevance": "cache-aware routing policy and session-affinity changes",
+      "extraction": "Atom entries updated in window; entries are tags, not releases, so compare the tag diff for routing policy files",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200 Atom XML; tags only (latest v0.1.15, 2026-07-13); releases API is empty"}
+    },
+    {
+      "id": "vllm-blog", "group": "vllm", "priority": "p2", "type": "blog",
+      "url": "https://vllm.ai/blog",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/vllm.md"],
+      "cache_relevance": "engine posts that precede documented behavior",
+      "extraction": "Post titles and dates in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "unverified: blog.vllm.ai 301 to this URL, then connection timeout (3 attempts across agents)"}
+    },
+    {
+      "id": "sglang-releases", "group": "sglang", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/sgl-project/sglang/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/sglang.md", "audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "RadixAttention, HiCache, router/model-gateway and metrics changes per version",
+      "extraction": "Releases in window; scan notes for radix, cache, hicache, router, gateway. gh api 'repos/sgl-project/sglang/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest v0.5.20 published 2026-09-18; releases.atom verified"}
+    },
+    {
+      "id": "sglang-hicache-docs", "group": "sglang", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.sglang.io/docs/advanced_features/hicache",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/sglang.md"],
+      "cache_relevance": "hierarchical KV cache tiers, prefetch and eviction semantics",
+      "extraction": "HiCache design body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "partial: old docs.sglang.ai and .html paths 308 to this URL; body transfer timed out (Mintlify); docs.sglang.io is canonical"}
+    },
+    {
+      "id": "lmsys-blog", "group": "sglang", "priority": "p2", "type": "blog",
+      "url": "https://www.lmsys.org/blog/",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/sglang.md"],
+      "cache_relevance": "SGLang engineering posts",
+      "extraction": "Post titles and dates in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 (bare lmsys.org timed out)"}
+    },
+    {
+      "id": "lmcache-releases", "group": "lmcache", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/LMCache/LMCache/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mechanics.md", "audit-prompt-caching/references/vllm.md", "audit-prompt-caching/references/observability.md"],
+      "cache_relevance": "KV offload/sharing semantics, connector compatibility, storage backends",
+      "extraction": "Non-prerelease releases in window (daily nightly-* prereleases are noise). gh api 'repos/LMCache/LMCache/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest entries are nightly prereleases (2026-09-29); filter prerelease=false"}
+    },
+    {
+      "id": "lmcache-docs", "group": "lmcache", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.lmcache.ai/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mechanics.md", "audit-prompt-caching/references/observability.md"],
+      "cache_relevance": "KV cache sharing, offload and observability docs",
+      "extraction": "Table of contents plus the distributed KV cache and configuration pages",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "partial: 200 with title 'Welcome to LMCache! | LMCache', body transfer timed out; subpages returned 200 status"}
+    },
+    {
+      "id": "lmcache-blog", "group": "lmcache", "priority": "p2", "type": "blog",
+      "url": "https://blog.lmcache.ai/en/",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "KV reuse engineering posts and benchmarks (benchmarks are not contracts)",
+      "extraction": "Post titles and dates in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "partial: 200 with blog title, body transfer timed out"}
+    },
+    {
+      "id": "dynamo-releases", "group": "nvidia-dynamo", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/ai-dynamo/dynamo/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/routing-evidence.md", "audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "KV-aware routing, KV block manager and disaggregated serving changes",
+      "extraction": "Stable releases in window; model-specific -post prereleases are low signal. gh api 'repos/ai-dynamo/dynamo/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest stable v1.5.0 published 2026-09-21"}
+    },
+    {
+      "id": "dynamo-docs", "group": "nvidia-dynamo", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.nvidia.com/dynamo/latest/",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/routing-evidence.md", "audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "KV-aware routing and KV block manager contracts",
+      "extraction": "Navigation entries for router/KV pages, then those pages; deep-page URLs are not yet verified",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 with full body (title 'Dynamo | NVIDIA Dynamo Documentation'); six guessed KV router/KVBM subpaths were 404"}
+    },
+    {
+      "id": "nvidia-inference-blog", "group": "nvidia-dynamo", "priority": "p2", "type": "blog",
+      "url": "https://developer.nvidia.com/blog/tag/inference-performance/",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "NVIDIA engineering posts on KV reuse, routing and inference serving",
+      "extraction": "Post titles and dates in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "tensorrt-llm-releases", "group": "tensorrt-llm", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/NVIDIA/TensorRT-LLM/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "KV cache reuse, block reuse and offload semantics per version",
+      "extraction": "Releases in window; weekly rc prereleases are included but a stable release is needed before implement. gh api 'repos/NVIDIA/TensorRT-LLM/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest v1.3.0rc29 (prerelease) 2026-09-29"}
+    },
+    {
+      "id": "tensorrt-llm-kv-reuse", "group": "tensorrt-llm", "priority": "p1", "type": "contract-doc",
+      "url": "https://nvidia.github.io/TensorRT-LLM/advanced/kv-cache-reuse.html",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mechanics.md"],
+      "cache_relevance": "KV cache reuse requirements and limits",
+      "extraction": "Page body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200"}
+    },
+    {
+      "id": "llm-d-releases", "group": "llm-d", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/llm-d/llm-d/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/routing-evidence.md", "audit-prompt-caching/references/vllm.md"],
+      "cache_relevance": "precise prefix-cache-aware scheduling and KV event changes",
+      "extraction": "Releases in window. gh api 'repos/llm-d/llm-d/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest v0.10.0 published 2026-09-29"}
+    },
+    {
+      "id": "llm-d-kv-cache-releases", "group": "llm-d", "priority": "p1", "type": "release-page",
+      "url": "https://github.com/llm-d/llm-d-kv-cache/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/routing-evidence.md"],
+      "cache_relevance": "KV indexer/cache manager semantics used for prefix-aware routing",
+      "extraction": "Releases in window (the llm-d-kv-cache-manager repo redirects here). gh api 'repos/llm-d/llm-d-kv-cache/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest v0.9.0 published 2026-06-14"}
+    },
+    {
+      "id": "llm-d-prefix-routing-docs", "group": "llm-d", "priority": "p1", "type": "contract-doc",
+      "url": "https://llm-d.ai/docs/architecture/advanced/kv-management/prefix-cache-aware-routing",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/routing-evidence.md"],
+      "cache_relevance": "prefix-cache-aware routing contract",
+      "extraction": "Page body",
+      "verified": {"on": "2026-09-30", "method": "sitemap", "result": "listed in the llm-d.ai sitemap; host returned 200; page not fetched individually"}
+    },
+    {
+      "id": "llm-d-blog", "group": "llm-d", "priority": "p2", "type": "blog",
+      "url": "https://llm-d.ai/blog",
+      "dating": "dated-entries", "cadence": "daily", "discovery_only": true,
+      "affects": ["audit-prompt-caching/references/routing-evidence.md"],
+      "cache_relevance": "llm-d engineering posts",
+      "extraction": "Post titles and dates in window",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 with full body"}
+    },
+    {
+      "id": "litellm-releases", "group": "litellm", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/BerriAI/litellm/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/observability.md", "audit-prompt-caching/references/agent-tools.md"],
+      "cache_relevance": "gateway cache_control passthrough and usage normalization per provider",
+      "extraction": "Stable releases in window (dev/rc builds are noise); scan notes for cache, cached_tokens, cache_control. gh api 'repos/BerriAI/litellm/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; latest stable v1.103.0 2026-09-28; very high release frequency"}
+    },
+    {
+      "id": "litellm-prompt-caching", "group": "litellm", "priority": "p1", "type": "contract-doc",
+      "url": "https://docs.litellm.ai/docs/completion/prompt_caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/observability.md"],
+      "cache_relevance": "which providers pass cache controls and how usage is normalized",
+      "extraction": "Page body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "200 (docs/caching/prompt_caching is 404; not used)"}
+    },
+    {
+      "id": "vercel-ai-releases", "group": "vercel-ai-sdk", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/vercel/ai/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/vercel-ai-sdk.md"],
+      "cache_relevance": "providerOptions cache controls and usage mapping in provider packages",
+      "extraction": "Releases in window whose tag starts with @ai-sdk/openai, @ai-sdk/anthropic, @ai-sdk/amazon-bedrock, @ai-sdk/google or ai@ (monorepo; releases.atom holds only 10 entries). gh api 'repos/vercel/ai/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; per-package releases, very high frequency"}
+    },
+    {
+      "id": "vercel-ai-anthropic-provider", "group": "vercel-ai-sdk", "priority": "p1", "type": "contract-doc",
+      "url": "https://ai-sdk.dev/providers/ai-sdk-providers/anthropic",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/vercel-ai-sdk.md"],
+      "cache_relevance": "cacheControl provider options and cache usage metadata",
+      "extraction": "Cache control section",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "partial: 200 status, body transfer timed out"}
+    },
+    {
+      "id": "vercel-ai-openai-provider", "group": "vercel-ai-sdk", "priority": "p1", "type": "contract-doc",
+      "url": "https://ai-sdk.dev/providers/ai-sdk-providers/openai",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/vercel-ai-sdk.md"],
+      "cache_relevance": "promptCacheKey/retention provider options and cached token metadata",
+      "extraction": "Prompt caching section",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "partial: 200 status, body transfer timed out"}
+    },
+    {
+      "id": "mastra-releases", "group": "mastra", "priority": "p0", "type": "release-page",
+      "url": "https://github.com/mastra-ai/mastra/releases",
+      "dating": "dated-entries", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mastra.md"],
+      "cache_relevance": "memory/processor ordering and response caching changes in @mastra/core and @mastra/memory",
+      "extraction": "Releases in window whose tag starts with @mastra/core or @mastra/memory. gh api 'repos/mastra-ai/mastra/releases?per_page=30' (published_at, prerelease); page back to window_start",
+      "verified": {"on": "2026-09-30", "method": "curl+gh-api", "result": "200; per-package releases, high frequency"}
+    },
+    {
+      "id": "mastra-response-caching", "group": "mastra", "priority": "p1", "type": "contract-doc",
+      "url": "https://mastra.ai/docs/agents/response-caching",
+      "dating": "undated-doc", "cadence": "daily",
+      "affects": ["audit-prompt-caching/references/mastra.md"],
+      "cache_relevance": "response caching vs provider prompt caching",
+      "extraction": "Page body",
+      "verified": {"on": "2026-09-30", "method": "curl", "result": "partial: 200 status, body transfer timed out"}
+    }
+  ]
+}
