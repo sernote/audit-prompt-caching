@@ -7,6 +7,7 @@ Official sources:
 - Cache diagnostics: https://developers.openai.com/api/docs/guides/prompt-caching/diagnostics
 - GPT-6 Sol model and current prices: https://developers.openai.com/api/docs/models/gpt-6-sol
 - GPT-6 Sol launch and caching note: https://openai.com/index/introducing-gpt-6-sol-and-luna/
+- GPT-6.1 Sol model and Standard prices: https://developers.openai.com/api/docs/models/gpt-6.1-sol
 - GPT-5.6 guidance: https://developers.openai.com/api/docs/guides/latest-model
 - GPT-6 Astra guide: https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md
 - Reasoning guide (change reasoning mid-conversation): https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation
@@ -62,6 +63,14 @@ In standard single-agent Responses, keep request-level effort constant and appen
 For Responses, read `cached_tokens` and `cache_write_tokens` under `usage.input_tokens_details`; for Chat Completions, use `usage.prompt_tokens_details`. Both are breakdowns of the reported input total, so do not add them to `input_tokens` or `prompt_tokens`.
 
 Keep data-control layers separate. Cache entries are organization-scoped. ZDR, response storage, cache application state, and Regional Inference have different contracts; encrypted GPU-local storage is not a Regional processing guarantee. Re-check the data-controls guide before making a residency or ZDR claim.
+
+## GPT-6.1 Sol Snapshot
+
+Verified 2026-09-30 against the changelog, pricing, model, caching, and reasoning pages. Direct `gpt-6.1-sol` (released 2026-09-29 on Responses and Chat Completions) uses the GPT-5.6+ cache contract: implicit or explicit `prompt_cache_options`, `"30m"` as the only TTL, a strict 1,024 visible tokens minimum, and `cached_tokens` at the exact eligible boundary. `prompt_cache_key` is optional for separate accounting, not needed for routing. Apply this to the exact direct ID only; Bedrock, wrapper, and future IDs need their own evidence.
+
+Standard prices per MTok (ordinary/read/write/output): $2/$0.10/$2.50/$10 through 272K input tokens; above 272K the entire request uses $4/$0.20/$5/$15, not only the excess. Reads are 0.05x ordinary input, not the usual GPT-5.6+ 0.10x; writes are 1.25x. `cached_tokens` and `cache_write_tokens` are breakdowns of the reported input total; do not add them again. `prompt_cache_options.prewarm: true` prepares a stable prefix without output but bills writes; include every prewarm write charge in ROI, even without later reuse, and verify later reads in `cached_tokens`.
+
+`configuration_update` is supported only as a Responses input item in standard single-agent Responses, not Chat Completions, based on the GPT-6 family contract rather than a 6.1-specific statement or live test. AP-15 flags pro mode and non-effort fields, but `layout_linter.py` cannot establish single-agent mode and does not inspect Chat `messages` for a misplaced update; verify both separately before relying on the update.
 
 ## Audit Checklist
 

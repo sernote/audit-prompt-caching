@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from fractions import Fraction
 from pathlib import Path
 
 
@@ -35,7 +36,11 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
 # docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
 # references and the labeled OpenAI-compatible usage adapter).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 78471
+# Direct gpt-6.1-sol cache contract (OpenAI snapshot, economics row and rounding
+# caveat, AP-15 fix and playbook list, linter allowlist, prewarm ROI and
+# Responses-only configuration_update phrasing, Chat messages linter blind
+# spot) remeasured on top of that: 78471 -> 78941 (+470; 313883 -> 315763 chars).
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 78941
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
@@ -56,6 +61,42 @@ def run_script(script_name, *args):
 
 def load_jsonl(path):
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def lint_payload(payload):
+    """Run layout_linter.py on a temporary JSON payload; return (status, output)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        request_path = Path(tmp) / "request.json"
+        request_path.write_text(json.dumps(payload))
+        result = run_script("layout_linter.py", request_path)
+    return result.returncode, json.loads(result.stdout)
+
+
+def gpt61_sol_payload(surface="responses", **overrides):
+    """Direct gpt-6.1-sol request with one explicit marker on a stable block."""
+    block_type = "input_text" if surface == "responses" else "text"
+    stable = {
+        "role": "developer",
+        "content": [
+            {
+                "type": block_type,
+                "text": "Stable shared policy",
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }
+        ],
+    }
+    payload = {
+        "model": "gpt-6.1-sol",
+        "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
+    }
+    if surface == "responses":
+        payload["reasoning"] = {"effort": "medium"}
+        payload["input"] = [stable, {"role": "user", "content": "Question"}]
+    else:
+        payload["reasoning_effort"] = "medium"
+        payload["messages"] = [stable, {"role": "user", "content": "Question"}]
+    payload.update(overrides)
+    return payload
 
 
 def load_script_module(script_name):
@@ -3879,6 +3920,131 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
         self.assertIn("AP-15", output["clean_checks"])
 
+    def test_layout_linter_validates_direct_gpt61_sol_cache_controls(self):
+        # OpenAI prompt-caching guide (verified 2026-09-30) documents the
+        # GPT-5.6+ controls on direct gpt-6.1-sol for Chat and Responses.
+        implicit_options = {"prompt_cache_options": {"mode": "implicit", "ttl": "30m"}}
+        for surface in ("responses", "chat"):
+            for overrides in ({}, implicit_options):
+                payload = gpt61_sol_payload(surface, **overrides)
+                with self.subTest(surface=surface, options=payload["prompt_cache_options"]):
+                    status, output = lint_payload(payload)
+
+                    self.assertEqual(status, 0, output["findings"])
+                    policy = output["cache_policy"]
+                    self.assertEqual(policy["model_support"], "gpt-6")
+                    self.assertEqual(policy["api_surface"], surface)
+                    self.assertTrue(policy["validated"])
+                    self.assertTrue(policy["valid"])
+                    self.assertEqual(policy["explicit_breakpoints"], 1)
+                    self.assertIn("AP-11", output["clean_checks"])
+
+    def test_layout_linter_flags_invalid_gpt61_sol_cache_controls(self):
+        def without_marker(surface):
+            payload = gpt61_sol_payload(surface)
+            root = "input" if surface == "responses" else "messages"
+            del payload[root][0]["content"][0]["prompt_cache_breakpoint"]
+            return payload
+
+        def malformed_marker(surface):
+            payload = gpt61_sol_payload(surface)
+            root = "input" if surface == "responses" else "messages"
+            payload[root][0]["content"][0]["prompt_cache_breakpoint"] = {"mode": "implicit"}
+            return payload
+
+        cases = []
+        for surface in ("responses", "chat"):
+            root = "input" if surface == "responses" else "messages"
+            marker_path = f"$.{root}[0].content[0].prompt_cache_breakpoint"
+            cases.extend([
+                (surface, gpt61_sol_payload(surface, prompt_cache_options={"mode": "automatic"}),
+                 "prompt_cache_options.mode", "implicit or explicit"),
+                (surface, gpt61_sol_payload(surface, prompt_cache_options={"mode": "explicit", "ttl": "24h"}),
+                 "prompt_cache_options.ttl", "must be 30m"),
+                (surface, gpt61_sol_payload(surface, prompt_cache_retention="24h"),
+                 "prompt_cache_retention", "deprecated"),
+                (surface, without_marker(surface),
+                 "prompt_cache_options.mode", "cache writes are disabled"),
+                (surface, malformed_marker(surface), marker_path, "must be exactly"),
+            ])
+        for surface, payload, evidence, issue in cases:
+            with self.subTest(surface=surface, evidence=evidence, issue=issue):
+                status, output = lint_payload(payload)
+
+                self.assertEqual(status, 1, output)
+                ap11 = [item for item in output["findings"] if item["rule_id"] == "AP-11"]
+                self.assertTrue(
+                    any(item["evidence"] == evidence and issue in item["issue"] for item in ap11),
+                    ap11,
+                )
+                self.assertTrue(output["cache_policy"]["validated"])
+                self.assertFalse(output["cache_policy"]["valid"])
+                self.assertNotIn("AP-11", output["clean_checks"])
+
+    def test_layout_linter_accepts_gpt61_sol_configuration_update(self):
+        # Reasoning guide (verified 2026-09-30): configuration_update is a GPT-6
+        # family feature in standard single-agent mode; no 6.1-specific page
+        # contradicts it. This relies on the family contract, not a live call.
+        payload = gpt61_sol_payload()
+        payload["input"].insert(
+            1, {"type": "configuration_update", "reasoning": {"effort": "high"}}
+        )
+
+        status, output = lint_payload(payload)
+
+        self.assertEqual(status, 0, output["findings"])
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertEqual(output["effort_policy"]["request_effort"], "medium")
+        self.assertEqual(output["effort_policy"]["per_message_effort_items"], 1)
+        self.assertIn("AP-11", output["clean_checks"])
+        self.assertIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_keeps_gpt61_sol_configuration_update_limits(self):
+        payload = gpt61_sol_payload(reasoning={"effort": "high", "mode": "pro"})
+        payload["input"].insert(
+            1,
+            {
+                "type": "configuration_update",
+                "reasoning": {"effort": "low"},
+                "instructions": "not allowed here",
+            },
+        )
+
+        status, output = lint_payload(payload)
+
+        self.assertEqual(status, 1, output)
+        issues = [item["issue"] for item in output["findings"] if item["rule_id"] == "AP-15"]
+        self.assertTrue(any("pro" in issue for issue in issues), issues)
+        self.assertTrue(any("only reasoning.effort" in issue for issue in issues), issues)
+        # The model itself is supported; only the incompatible usage is flagged.
+        self.assertFalse(any("documented only" in issue for issue in issues), issues)
+        self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+        self.assertNotIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_excludes_gpt61_sol_aliases_from_direct_contract(self):
+        # Exact direct IDs only: Bedrock, wrapper, and future variants need
+        # their own evidence before the direct OpenAI contract applies.
+        for model in (
+            "openai.gpt-6.1-sol",
+            "openai/gpt-6.1-sol",
+            "gpt-6.1-sol-2026-12-01",
+            "gpt-6.1",
+            "gpt-6.2-sol",
+        ):
+            payload = gpt61_sol_payload(model=model)
+            payload["input"].insert(
+                1, {"type": "configuration_update", "reasoning": {"effort": "high"}}
+            )
+            with self.subTest(model=model):
+                status, output = lint_payload(payload)
+
+                self.assertEqual(status, 1, output)
+                self.assertEqual(output["cache_policy"]["model_support"], "unknown")
+                self.assertFalse(output["cache_policy"]["validated"])
+                self.assertNotIn("AP-11", output["clean_checks"])
+                self.assertFalse(output["effort_policy"]["per_message_effort_supported"])
+                self.assertIn("AP-15", {item["rule_id"] for item in output["findings"]})
+
     def test_layout_linter_flags_configuration_update_outside_gpt6(self):
         with tempfile.TemporaryDirectory() as tmp:
             request_path = Path(tmp) / "request.json"
@@ -4014,6 +4180,18 @@ class PromptCacheScriptsTest(unittest.TestCase):
         for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "claude-opus-5-5"):
             self.assertIn(model, ap15["fix"], model)
             self.assertIn(model, playbook, model)
+        # The playbook's direct OpenAI configuration_update list must name
+        # exactly the linter's exact-ID allowlist (no wildcard or Bedrock ID).
+        listed = re.search(
+            r"`configuration_update` on standard single-agent ((?:`[^`]+`/)*`[^`]+`)",
+            playbook,
+        )
+        self.assertIsNotNone(listed, "playbook configuration_update model list")
+        self.assertEqual(
+            set(re.findall(r"`([^`]+)`", listed.group(1))),
+            load_script_module("layout_linter.py").CONFIGURATION_UPDATE_MODELS,
+        )
+        self.assertIn("gpt-6.1-sol", re.findall(r"`([^`]+)`", listed.group(1)))
 
     def test_layout_linter_flags_anthropic_per_message_effort_on_unsupported_model(
         self,
@@ -5206,6 +5384,114 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, reference)
         self.assertNotIn("prompt_cache_key` is required", reference)
+
+    def test_openai_reference_gpt61_sol_prices_keep_model_specific_ratios(self):
+        # Changelog, pricing, and model pages (verified 2026-09-30): Standard
+        # $2/$0.10/$2.50/$10 per MTok through 272K input tokens and
+        # $4/$0.20/$5/$15 for the entire request above it. Reads are 0.05x
+        # ordinary input, unlike the usual GPT-5.6+ 0.10x; writes are 1.25x.
+        reference = (
+            ROOT / "audit-prompt-caching" / "references" / "openai.md"
+        ).read_text()
+        section = " ".join(
+            extract_markdown_section(reference, "GPT-6.1 Sol Snapshot").split()
+        )
+
+        tiers = re.findall(
+            r"\$(\d+(?:\.\d+)?)/\$(\d+(?:\.\d+)?)/\$(\d+(?:\.\d+)?)/\$(\d+(?:\.\d+)?)",
+            section,
+        )
+        self.assertEqual(
+            tiers, [("2", "0.10", "2.50", "10"), ("4", "0.20", "5", "15")]
+        )
+        for ordinary, read, write, _output in tiers:
+            self.assertAlmostEqual(float(read) / float(ordinary), 0.05)
+            self.assertAlmostEqual(float(write) / float(ordinary), 1.25)
+        for required in (
+            "`gpt-6.1-sol`",
+            "Standard",
+            "272K",
+            "entire request",
+            "0.05x",
+            "1,024 visible tokens",
+            "exact eligible boundary",
+            "prewarm",
+            "configuration_update",
+            "GPT-6 family",
+            "standard single-agent",
+            "`layout_linter.py` cannot establish single-agent mode",
+            "optional",
+            "breakdowns of the reported input total",
+        ):
+            self.assertIn(required, section)
+        self.assertNotIn("openai.gpt-6.1-sol", reference)
+
+    def test_economics_gpt61_sol_break_even_matches_formula(self):
+        # Break-even read fraction R > (w-1)/(w-r) for equivalent tokens written
+        # or read. OpenAI GPT-5.6+ writes are 1.25x; gpt-6.1-sol reads are
+        # 0.05x (5/24) while most GPT-5.6+ models read at 0.10x (5/23).
+        economics = (
+            ROOT / "audit-prompt-caching" / "references" / "economics.md"
+        ).read_text()
+        rows = parse_markdown_table(
+            economics,
+            "| Cache policy | Write multiplier | Read multiplier | "
+            "Minimum read fraction to save input cost |",
+        )
+        parsed = {}
+        for row in rows:
+            w = Fraction(row["Write multiplier"].rstrip("×"))
+            r = Fraction(row["Read multiplier"].rstrip("×"))
+            threshold = re.fullmatch(
+                r"Above (\d+\.\d)%", row["Minimum read fraction to save input cost"]
+            )
+            self.assertIsNotNone(threshold, row)
+            break_even = (w - 1) / (w - r)
+            with self.subTest(policy=row["Cache policy"]):
+                self.assertEqual(f"{float(break_even) * 100:.1f}", threshold.group(1))
+            parsed[row["Cache policy"]] = (w, r, break_even)
+
+        sol = [value for key, value in parsed.items() if key.startswith("GPT-6.1 Sol OpenAI")]
+        usual = [value for key, value in parsed.items() if key.startswith("GPT-5.6+ OpenAI")]
+        self.assertEqual(len(sol), 1, parsed)
+        self.assertEqual(len(usual), 1, parsed)
+        self.assertEqual(sol[0], (Fraction(5, 4), Fraction(1, 20), Fraction(5, 24)))
+        self.assertEqual(usual[0], (Fraction(5, 4), Fraction(1, 10), Fraction(5, 23)))
+        self.assertTrue(
+            any("most" in key for key in parsed if key.startswith("GPT-5.6+ OpenAI")),
+            "the 0.10x row must stay qualified as the usual GPT-5.6+ rate",
+        )
+
+        # Rounded thresholds hide borderline cases: a 20.8% read fraction is
+        # below 6.1 Sol's exact 5/24 (20.8333%) and does not save input cost.
+        self.assertLess(Fraction("0.208"), sol[0][2])
+        table_end = economics.index("| Claude Opus 5.5, 1h |")
+        caveat = economics[table_end:].split("\n\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("rounded", caveat)
+        self.assertIn("borderline", caveat)
+        self.assertIn("`(w-1)/(w-r)`", caveat)
+
+        # A 21% read / 79% write token mix, normalized to ordinary input cost:
+        # the generic 0.10x row loses money while 6.1 Sol's 0.05x saves.
+        reads = Fraction(21, 100)
+        def normalized_cost(write, read):
+            return reads * read + (1 - reads) * write
+        self.assertEqual(normalized_cost(*usual[0][:2]), Fraction("1.0085"))
+        self.assertEqual(normalized_cost(*sol[0][:2]), Fraction("0.998"))
+
+    def test_ap15_rule_names_gpt61_sol_configuration_update(self):
+        rules = json.loads(
+            (ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text()
+        )
+        ap15 = next(rule for rule in rules["rules"] if rule["id"] == "AP-15")
+        linter = load_script_module("layout_linter.py")
+
+        self.assertIn("gpt-6.1-sol", ap15["fix"])
+        self.assertNotIn("openai.gpt-6.1-sol", ap15["fix"])
+        self.assertIn("standard single-agent", ap15["fix"])
+        self.assertIn("pro mode", ap15["avoid"])
+        for model in linter.CONFIGURATION_UPDATE_MODELS:
+            self.assertIn(model, ap15["fix"], model)
 
     def test_vercel_allowed_tools_contract_is_responses_only_and_version_aware(self):
         reference = (
