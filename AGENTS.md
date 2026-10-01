@@ -12,14 +12,18 @@ This repository maintains the portable `audit-prompt-caching` Codex/agent skill.
 - `audit-prompt-caching/evals/`: behavioral and trigger eval prompts.
 - `tests/test_prompt_cache_scripts.py`: unittest coverage for bundled scripts and package checks.
 - `tests/test_routing_logs.py`: normalized routing evidence and CLI coverage.
-- `docs/superpowers/plans/`: implementation plans for multi-step changes.
+- `docs/`: product guides for users of the skill and its helpers.
+- `examples/`: curated examples, including recorded observation data.
+- `fixtures/`: redacted reproducible test and audit inputs.
 
 ## Development Rules
 
 - Keep scripts dependency-free and Python stdlib-only unless the user explicitly approves otherwise.
 - Use `apply_patch` for manual edits.
 - Preserve provider-specific behavior in references; avoid broad rewrites unless the task asks for them.
-- For multi-step work, create a plan in `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` before implementation.
+- Curated user guides, examples, and fixtures are repository deliverables, including any logs or snapshots needed by those examples and fixtures.
+- For multi-step work, create a plan before implementation in an artifact directory outside every checkout of this repository, for example `$HOME/.codex/artifacts/<repository>/<run-id>/`.
+- Keep ephemeral agent working materials in that external artifact directory and do not commit them: plans, design drafts, agent journals, review and eval reports, execution logs, and source snapshots.
 - Use TDD for script behavior changes: add or update a failing test, verify RED, implement minimal code, verify GREEN.
 - Do not claim completion without fresh verification output.
 
