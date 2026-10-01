@@ -40,7 +40,9 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # caveat, AP-15 fix and playbook list, linter allowlist, prewarm ROI and
 # Responses-only configuration_update phrasing, Chat messages linter blind
 # spot) remeasured on top of that: 78471 -> 78941 (+470; 313883 -> 315763 chars).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 78941
+# The Bedrock GPT-6.1 Sol exact-model exception remeasured on top of that:
+# 78941 -> 79460 (+519; 315763 -> 317838 chars).
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 79460
 # Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
