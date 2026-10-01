@@ -1,1 +1,5 @@
 .DS_Store
+
+# Agent working materials belong outside the worktree; backstop for accidental recreation.
+/docs/superpowers/
+/docs/tmp/

@@ -7,6 +7,7 @@ This repository keeps `audit-prompt-caching` portable: scripts must stay depende
 - Add or update tests before changing script behavior.
 - Keep provider-specific rules in the relevant `references/*.md` file.
 - Use `fixtures/` for redacted reproducible examples.
+- Curated guides, examples, and fixtures intended for users are repository deliverables, including their required logs and snapshots. Keep ephemeral agent working materials (plans, design drafts, journals, review and eval reports, execution logs, and source snapshots) in an artifact directory outside every checkout of this repository; do not commit them.
 - Run the full local verification suite before submitting changes:
 
 ```bash

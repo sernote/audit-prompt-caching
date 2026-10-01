@@ -26,16 +26,14 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # The optional normalized-routing helper hook added 53 estimated tokens to the
 # 6341 baseline; the AP-15 effort-continuity trigger, playbook, and linter
 # description add 282 more. Provider guidance and the Routing Outcome Gate are
-# preserved. See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md.
+# preserved.
 PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # Remeasured corpus after the Claude 5 family / GPT-6 Astra effort-continuity
 # references, AP-15 rule, linter branch, and evals 34-36.
 # Includes executable/eval source, not just references loaded by an agent.
 # The symlink-containment fix adds descriptor-anchored file reads; remeasured
-# at 78,471 tokens. See docs/superpowers/plans/2026-09-26-scanner-symlink-containment.md.
-# See docs/superpowers/plans/2026-09-11-effort-change-prefix-cache.md and
-# docs/superpowers/plans/2026-09-12-provider-prefix-cache-refresh.md (vendor
-# references and the labeled OpenAI-compatible usage adapter).
+# at 78,471 tokens, including vendor references and the labeled
+# OpenAI-compatible usage adapter.
 # Direct gpt-6.1-sol cache contract (OpenAI snapshot, economics row and rounding
 # caveat, AP-15 fix and playbook list, linter allowlist, prewarm ROI and
 # Responses-only configuration_update phrasing, Chat messages linter blind
@@ -43,7 +41,8 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # The Bedrock GPT-6.1 Sol exact-model exception remeasured on top of that:
 # 78941 -> 79460 (+519; 315763 -> 317838 chars).
 PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 79460
-# Future wording changes must remeasure and update this ceiling and plan, not compress established guidance.
+# Future wording changes must remeasure and update this ceiling; include the
+# before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
 
 
