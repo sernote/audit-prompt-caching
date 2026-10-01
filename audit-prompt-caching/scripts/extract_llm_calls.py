@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -316,7 +317,7 @@ SOURCE_SNIPPET_TEXT = "[SOURCE_SNIPPET_ELIDED]"
 
 
 def should_scan(path):
-    if path.name.startswith(".env"):
+    if path.name.startswith(".env") or path.is_symlink():
         return False
     return path.is_file() and (
         path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_FILENAMES
@@ -340,40 +341,132 @@ def iter_files(root):
                 yield path
 
 
+def read_source_lines(root, path, root_fd):
+    """Read a regular file without following a scanned path outside root."""
+    if root_fd is not None:
+        directory_fd = os.dup(root_fd)
+        try:
+            relative = path.relative_to(root)
+            for component in relative.parts[:-1]:
+                next_fd = os.open(
+                    component,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=directory_fd,
+                )
+                os.close(directory_fd)
+                directory_fd = next_fd
+            file_fd = os.open(
+                relative.name,
+                os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0),
+                dir_fd=directory_fd,
+            )
+        finally:
+            os.close(directory_fd)
+    else:
+        # Platforms without dir_fd/O_NOFOLLOW reject symlink aliases and check
+        # file identity. These checks cannot fully close concurrent path races.
+        if root.resolve() != root:
+            return None
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode):
+            return None
+        if not path.resolve().is_relative_to(root.resolve()):
+            return None
+        file_fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+
+    try:
+        opened = os.fstat(file_fd)
+        if not stat.S_ISREG(opened.st_mode):
+            return None
+        if root_fd is None and (
+            (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+            or root.resolve() != root
+            or not path.resolve().is_relative_to(root.resolve())
+        ):
+            return None
+        source = os.fdopen(file_fd, "r", errors="replace")
+        file_fd = None
+        with source:
+            return source.read().splitlines()
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+
+
+def open_root_directory(root):
+    """Anchor the resolved scan root without following swapped path components."""
+    directory_fd = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in root.parts[1:]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        return directory_fd
+    except OSError:
+        os.close(directory_fd)
+        raise
+
+
 def find_matches(root):
+    root = Path(root).resolve()
     findings = []
     providers = {provider: 0 for provider in PROVIDER_PATTERNS}
     files_scanned = 0
-    for path in iter_files(root):
-        files_scanned += 1
+    anchored = (
+        hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+        and os.open in os.supports_dir_fd
+    )
+    root_fd = None
+    if anchored:
         try:
-            lines = path.read_text(errors="replace").splitlines()
+            root_fd = open_root_directory(root)
         except OSError:
-            continue
-        for lineno, line in enumerate(lines, 1):
-            for provider, patterns in PROVIDER_PATTERNS.items():
-                matched_patterns = [
-                    pattern
-                    for pattern in patterns
-                    if re.search(pattern, line, flags=re.IGNORECASE)
-                ]
-                if not matched_patterns:
-                    continue
-                providers[provider] += 1
-                signals = list(
-                    dict.fromkeys(SIGNAL_LABELS[pattern] for pattern in matched_patterns)
-                )
-                finding = {
-                    "path": str(path.relative_to(root)),
-                    "line": lineno,
-                    "provider": provider,
-                    "pattern": LEGACY_PATTERN_ALIASES.get(
-                        matched_patterns[0], matched_patterns[0]
-                    ),
-                    "text": SOURCE_SNIPPET_TEXT,
-                    "signals": signals,
-                }
-                findings.append(finding)
+            paths = ()
+        else:
+            paths = iter_files(root)
+    else:
+        paths = iter_files(root)
+    try:
+        for path in paths:
+            try:
+                lines = read_source_lines(root, path, root_fd)
+            except OSError:
+                continue
+            if lines is None:
+                continue
+            files_scanned += 1
+            for lineno, line in enumerate(lines, 1):
+                for provider, patterns in PROVIDER_PATTERNS.items():
+                    matched_patterns = [
+                        pattern
+                        for pattern in patterns
+                        if re.search(pattern, line, flags=re.IGNORECASE)
+                    ]
+                    if not matched_patterns:
+                        continue
+                    providers[provider] += 1
+                    signals = list(
+                        dict.fromkeys(SIGNAL_LABELS[pattern] for pattern in matched_patterns)
+                    )
+                    finding = {
+                        "path": str(path.relative_to(root)),
+                        "line": lineno,
+                        "provider": provider,
+                        "pattern": LEGACY_PATTERN_ALIASES.get(
+                            matched_patterns[0], matched_patterns[0]
+                        ),
+                        "text": SOURCE_SNIPPET_TEXT,
+                        "signals": signals,
+                    }
+                    findings.append(finding)
+    finally:
+        if root_fd is not None:
+            os.close(root_fd)
     providers = {name: count for name, count in providers.items() if count}
     return {
         "root": str(root),
