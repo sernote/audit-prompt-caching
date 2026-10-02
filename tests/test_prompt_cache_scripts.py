@@ -40,7 +40,10 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # spot) remeasured on top of that: 78471 -> 78941 (+470; 313883 -> 315763 chars).
 # The Bedrock GPT-6.1 Sol exact-model exception remeasured on top of that:
 # 78941 -> 79460 (+519; 315763 -> 317838 chars).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 79460
+# The Mastra core 1.72.0 retry-feedback, tool-search activation, and OM
+# resource-scope contracts plus evals 38-40 remeasured on top of that:
+# 79460 -> 81476 (+2016; 317838 -> 325903 chars).
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 81476
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
