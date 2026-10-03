@@ -13,6 +13,7 @@ Official sources:
 - API reference: https://docs.anthropic.com/en/api/messages
 - Pricing: https://www.anthropic.com/pricing
 - Opus 5.5: https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5
+- Sonnet 5.5: https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5
 
 ## Mechanics
 
@@ -41,7 +42,7 @@ Verified 2026-09-11 against the pages above; re-check before quoting.
 
 The thinking configuration and the resolved effort level are rendered into the prompt. Changing top-level `output_config.effort`, `thinking.type`, or `budget_tokens` between requests always invalidates message-level breakpoints, and invalidates tool and system breakpoints too on models that render the configuration ahead of them. Setting a value explicitly to the model default (`effort: "high"`) is equivalent to omitting it and does not invalidate.
 
-**Per-message effort (beta)** on Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, and Claude Opus 5 keeps the cache: append `{"role": "system", "content": [], "output_config": {"effort": "<level>"}}` to `messages` and send the `mid-conversation-output-config-2026-07-01` beta header. The level applies from the next `user` turn until a later message changes it; everything before it is unchanged, so the cached prefix still matches. Check surface support before using it; Claude Code documents that the cache-preserving path does not apply on Amazon Bedrock, Google Cloud's Agent Platform, gateways, or HIPAA configurations. Models without per-message effort, including Claude Fable 5, return 400 `output_config.effort requires a model that supports per-turn effort`. Levels are `low`, `medium`, `high`, `xhigh`, `max`; `xhigh`/`max` availability is per model.
+**Per-message effort (beta)** on Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 5, and Claude Sonnet 5.5 (see its `between_tools` limit below) keeps the cache: append `{"role": "system", "content": [], "output_config": {"effort": "<level>"}}` to `messages` and send the `mid-conversation-output-config-2026-07-01` beta header. The level applies from the next `user` turn until a later message changes it; everything before it is unchanged, so the cached prefix still matches. Check surface support before using it; Claude Code documents that the cache-preserving path does not apply on Amazon Bedrock, Google Cloud's Agent Platform, gateways, or HIPAA configurations. Models without per-message effort, including Claude Fable 5, return 400 `output_config.effort requires a model that supports per-turn effort`. Levels are `low`, `medium`, `high`, `xhigh`, `max`; `xhigh`/`max` availability is per model.
 
 ## Claude Opus 5.5 Cache Snapshot
 
@@ -53,6 +54,18 @@ Opus 5.5 binds thinking blocks to the prefix. Replaying after prefix edits retur
 
 Audit rule AP-15: a per-step effort router on a cached conversation is a repeated write-without-read pattern unless it uses per-message effort on a supported model and surface. `layout_linter.py` reports `effort_policy` and validates the message shape and model; it cannot see request headers, so confirm the beta header in the SDK call or gateway config.
 
+## Claude Sonnet 5.5 Cache Snapshot
+
+Verified 2026-10-02 against the Sonnet 5.5, effort, prompt caching, mid-conversation system message, and pricing pages; only this section was re-verified.
+
+`claude-sonnet-5-5` (launched 2026-09-28) has a 512-token cache minimum, a 5-minute default TTL, and a 1-hour option. Claude Sonnet 5 lacks per-message effort, mid-conversation system messages, and mid-conversation tool changes, and keeps a 1,024-token minimum. Prices per million tokens match Sonnet 5: $2 input, $2.50 for a 5-minute write, $4 for a 1-hour write, $0.20 for a read, and $10 output. The tokenizer matches Sonnet 5; effort levels are recalibrated.
+
+- Adaptive thinking is on by default (omitting `thinking` equals `{"type": "adaptive"}`), and effort defaults to `high` on the Claude API. Per-message effort (beta `mid-conversation-output-config-2026-07-01`) varies effort per turn without changing the cached prefix.
+- `thinking: {"type": "between_tools"}` replaces `disabled` (which returns 400) and is accepted at `low`, `medium`, and `high`. With it, effort cannot change mid-conversation: a per-message `output_config.effort` that differs from the level in effect (explicit top-level effort, else `high`) returns 400; repeating that level is accepted. Use adaptive thinking to vary effort per turn. Top-level effort or thinking changes between requests still invalidate message caches.
+- Mid-conversation system messages (no beta) and tool changes (`inline-tools-2026-09-15` on the Claude API; `mid-conversation-tool-changes-2026-07-01` for by-reference changes) keep `system` and `tools` unchanged. Forced tool use returns 400.
+- Thinking blocks are bound to model, conversation, and account. Sonnet 5.5 reads its own blocks and those from Sonnet 5, Opus 4.8, Haiku 4.5, and earlier; the only other model that reads Sonnet 5.5 blocks is Opus 5.5 on the Claude API and Google Cloud. Unreadable blocks are dropped and the request succeeds, but the cached prefix changes from that block onward: after a model switch (the `thinking-binding-controls-2026-08-01` beta reports drops in `input_transformations`), or when sent from an unlinked account (on the Claude API and Google Cloud, the same beta lists them with `reason: "organization_binding_mismatch"`). Replaying a block after editing `system`, `tools`, or an earlier message returns 400 by default for accounts created from 2026-08-31 on the Claude API, Amazon Bedrock, and Google Cloud; to drop the affected blocks instead, use adaptive thinking with the same beta and `thinking.block_binding.prefix_mismatch_behavior: "drop_block"` (older accounts opt in to the check by setting that field). Keep history append-only.
+- Available on the Claude API, Amazon Bedrock (`anthropic.claude-sonnet-5-5`; AWS lists 512 tokens, 4 checkpoints, 5m/1h TTL), Claude Platform on AWS, Google Cloud, and Microsoft Foundry. Check per-message effort and other beta support on each surface independently; Cache Diagnostics remains a Claude API beta. `layout_linter.py` applies this contract only to the exact `claude-sonnet-5-5` ID and reports `effort_policy.between_tools_effort`; it cannot see headers or the served surface.
+
 ## Audit Checklist
 
 - Both `cache_read_input_tokens` and `cache_creation_input_tokens` zero: check missing `cache_control`, below-threshold prompt, unsupported model/surface, or no eligible block.
@@ -60,9 +73,9 @@ Audit rule AP-15: a per-step effort router on a cached conversation is a repeate
 - Automatic caching can write every request when the final eligible block contains changing user text, timestamp, or request context; use an explicit breakpoint at the end of the stable prefix.
 - Explicit cache breakpoints belong on the last block whose full prefix should remain identical.
 - For long conversations, add additional breakpoints before the active breakpoint moves more than 20 blocks past a prior write.
-- Mid-conversation `{"role": "system"}` messages preserve the top-level system prefix on supported routes (see the Claude 5 Family Snapshot); Claude Sonnet 5 is excluded.
-- Effort or thinking configuration changed between requests: message breakpoints miss by design (AP-15). On Fable 5.1, Mythos 5.1, Opus 5.5, and Opus 5 check for the per-message effort form and beta header; on other models recommend holding effort constant within a cached conversation.
-- Model switch, fallback, or router mid-conversation on a Fable 5.1 history: the API drops thinking blocks the target model cannot read and the prefix changes from that block onward; check `input_transformations` before blaming prompt drift.
+- Mid-conversation `{"role": "system"}` messages preserve the top-level system prefix on supported routes (see the Claude 5 Family Snapshot and the Claude Sonnet 5.5 Cache Snapshot); Claude Sonnet 5 is excluded.
+- Effort or thinking configuration changed between requests: message breakpoints miss by design (AP-15). On Fable 5.1, Mythos 5.1, Opus 5.5, Opus 5, and Sonnet 5.5 check for the per-message effort form and beta header (Sonnet 5.5 `between_tools` requires the level in effect); on other models recommend holding effort constant within a cached conversation.
+- Model switch, fallback, or router mid-conversation on a Fable 5.1 or Sonnet 5.5 history: the API drops thinking blocks the target model cannot read and the prefix changes from that block onward; check `input_transformations` before blaming prompt drift.
 - Fable 5.1 route with `cache_read_input_tokens` high but cost estimates off: confirm the 0.025x read multiplier and the Opus 4.7+ tokenizer before comparing with older routes.
 - longer TTL entries must appear before shorter TTL entries when mixing 1h and 5m breakpoints. Syntax includes `"ttl": "1h"`.
 - Thinking blocks cannot be directly marked with cache control, but thinking blocks passed back can be cached as part of surrounding content. On Opus 4.5+ and Sonnet 4.6+ thinking blocks are preserved by default and stay cached; on earlier Opus/Sonnet and all Haiku models a non-tool-result user message strips prior thinking blocks and the messages after them leave the cache.
