@@ -25,10 +25,13 @@ For equivalent tokens either written or read, let `R` be the read fraction, `w =
 | --- | ---: | ---: | ---: |
 | GPT-5.6+ OpenAI (most models), 30m | 1.25× | 0.10× | Above 21.7% |
 | GPT-6.1 Sol OpenAI, 30m | 1.25× | 0.05× | Above 20.8% |
+| Azure GPT-6.1 Sol, Global/Data Zone short/long | 1.25× | 0.05× | Above 20.8% |
 | Claude Opus 5.5, 5m | 1.25× | 0.05× | Above 20.8% |
 | Claude Opus 5.5, 1h | 2× | 0.05× | Above 51.3% |
 
 Percentages are rounded; for a borderline read fraction, compare it with the exact `(w-1)/(w-r)` value.
+
+The Azure row is Azure's own pricing (observed 2026-10-04; see `references/azure-openai.md`), not direct OpenAI, and carries no TTL. At R = 21% its input cost is `0.79*1.25 + 0.21*0.05 = 0.998` of baseline, a 0.2% saving just above `5/24`.
 
 These are theoretical token fractions, not observed hit rates. Earlier OpenAI writes already paid ordinary input; GPT-5.6+ adds a 25% premium. Compare 1h TTL's higher write cost with measured reads.
 

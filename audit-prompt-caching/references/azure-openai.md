@@ -3,6 +3,7 @@
 ## Documentation Freshness
 
 Last reviewed: 2026-09-12.
+Only the GPT-6.1 Sol pricing exception was observed 2026-10-04; that is an observation date, not the price change's publication or effective date (unknown).
 
 Verify before exact claims:
 - supported Azure OpenAI models and deployment types
@@ -15,7 +16,7 @@ Verify before exact claims:
 Official sources:
 - Azure OpenAI prompt caching (canonical Foundry path; the old `ai-services/openai` path redirects here): https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/prompt-caching
 - Azure OpenAI docs: https://learn.microsoft.com/en-us/azure/foundry/openai/
-- Azure OpenAI pricing: https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/
+- Azure OpenAI pricing (the old `cognitive-services/openai-service` path redirects here): https://azure.microsoft.com/en-us/pricing/details/azure-openai/
 
 ## Stable Mechanics
 
@@ -48,7 +49,15 @@ Azure documents a rate cap: above roughly 15 requests per minute for one prefix 
 
 On Standard GPT-5.6+ deployments, `prompt_cache_options.mode` is `implicit` (default: automatic breakpoint on the latest message plus any explicit ones) or `explicit` (only marked blocks; with no marks the request neither caches nor pays writes, which is also the documented way to disable caching). `prompt_cache_options.ttl` accepts only `30m` and does not select the retention tier. `prompt_cache_breakpoint: {"mode": "explicit"}` goes on `input_text`/`input_image`/`input_file` (Responses) or `text`/`image_url`/`input_audio`/`file` (Chat) blocks. Each request can create up to four new writes (three explicit in implicit mode), reads consider up to the latest 50 breakpoints, and earlier-turn breakpoints are read-only.
 
-Cache writes on GPT-5.6+ are billed in addition to discounted reads (published launch tables show writes at about 1.25x input and reads at about 0.1x); treat those multipliers as pricing-page facts to re-verify, not constants. Do not send these parameters to pre-5.6 models or PTU-M deployments.
+Cache writes on GPT-5.6+ are billed in addition to discounted reads (published launch tables show writes at about 1.25x input and reads at about 0.1x, except GPT-6.1 Sol below); treat those multipliers as pricing-page facts to re-verify, not constants. Do not send these parameters to pre-5.6 models or PTU-M deployments.
+
+### GPT-6.1 Sol Pricing Exception
+
+Azure's own pricing page, not direct OpenAI pricing, showed on 2026-10-04 that all four GPT-6.1 Sol rows (short and long context, each Global and Data Zone) price cached input at 0.05x and cache writes at 1.25x of that row's input price across 42 priced regional entries per row. Use these ratios rather than an absolute regional price matrix, apply `references/economics.md`, and re-verify the current page and the deployment's billed rates.
+
+- The Data Zone/Global price multiplier is region-specific (observed entries ranged from 1.0x to 1.2x); never assume a universal 10% premium.
+- A priced entry does not prove model availability, eligible regions, API/endpoint features, minimum tokens, TTL/retention, or the numeric short/long context boundary.
+- The how-to covers GPT-5.6 and later without naming GPT-6.1 Sol; verify features on the actual deployment. Do not import direct OpenAI or Bedrock GPT-6.1 Sol capability claims.
 
 ### Tools, Images, And Schemas
 

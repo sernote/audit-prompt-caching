@@ -185,6 +185,16 @@
       "id": 37,
       "prompt": "Our agent calls Moonshot Kimi via the OpenAI SDK. usage.cached_tokens is nonzero on the direct API, but the Anthropic-compatible Messages route shows cache_creation_input_tokens=0 and OpenRouter shows cached_tokens=0. We also vary reasoning effort per step. Is the cache broken?",
       "expected_output": "Treat the top-level cached_tokens as an inclusive subset of prompt_tokens and label records provider: moonshot; cache_creation_input_tokens=0 on the Messages route reflects implicit writes, not a missing cache. Check that the prior prompt exceeded 256 tokens, that effort changes are not splitting the prefix, and join OpenRouter usage with the served provider and sticky session before comparing. No cache_id or legacy /v1/caching port for kimi-k2 models."
+    },
+    {
+      "id": 38,
+      "prompt": "We run Azure OpenAI GPT-6.1 Sol on a Data Zone deployment. In one prefix cohort, cache_write_tokens and cached_tokens cover the same cacheable span: 79% of those tokens are writes and 21% are reads. Finance applied the generic Azure GPT-5.6+ 1.25x write / 0.1x read figures and says caching loses money. Ignoring output and the dynamic suffix, are they right?",
+      "expected_output": "No for this cohort. Use Azure's own observed GPT-6.1 Sol ratios (1.25x write, 0.05x read), not the generic 0.1x read or direct OpenAI prices. Break-even is R > (1.25-1)/(1.25-0.05) = 5/24 (20.83%); 0.79*1.25 + 0.21*0.05 = 0.998 of ordinary input, a 0.2% saving, versus 1.0085 with 0.1x. Charge each write token once at 1.25x, do not treat a workload hit rate as R, and reverify current pricing and billed rates."
+    },
+    {
+      "id": 39,
+      "prompt": "Azure's pricing page lists GPT-6.1 Sol short- and long-context rows for Global and Data Zone across dozens of regions. A teammate concludes Data Zone is always 10% above Global, the model is deployable on Responses with a 30m cache TTL in every listed region, and today's observation date is the price launch date. Bedrock and direct OpenAI docs already describe GPT-6.1 Sol; can we reuse those for the Azure audit?",
+      "expected_output": "Supportable: the observed rows share 0.05x read and 1.25x write ratios to each row's input price. The Data Zone/Global multiplier varies by region, not a universal 1.1x. Price entries do not prove availability, eligible regions, Responses or endpoint features, minimum tokens, TTL/retention, or the short/long context boundary; the publication date is unknown and observation is not release. The Azure how-to names GPT-5.6 and later, not GPT-6.1 Sol; verify the actual deployment and keep direct OpenAI and Bedrock claims out."
     }
   ]
 }

@@ -43,7 +43,10 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # The claude-sonnet-5-5 contract (Anthropic snapshot, AP-15 rule and playbook,
 # linter between_tools fixed-effort check) remeasured on top of that:
 # 79460 -> 80787 (+1327; 317838 -> 323146 chars).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 80787
+# The Azure GPT-6.1 Sol pricing exception (Azure reference section, economics
+# row and note, evals 38-39) remeasured on top of that:
+# 80787 -> 81633 (+846; 323146 -> 326529 chars).
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 81633
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
