@@ -43,10 +43,17 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # The claude-sonnet-5-5 contract (Anthropic snapshot, AP-15 rule and playbook,
 # linter between_tools fixed-effort check) remeasured on top of that:
 # 79460 -> 80787 (+1327; 317838 -> 323146 chars).
-# The Azure GPT-6.1 Sol pricing exception (Azure reference section, economics
-# row and note, evals 38-39) remeasured on top of that:
-# 80787 -> 81633 (+846; 323146 -> 326529 chars).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 81633
+# The Mastra core 1.72.0 retry-feedback, tool-search activation, and OM
+# resource-scope contracts plus evals 38-40 (+8065 chars against the common
+# 79460 baseline) remeasured as the full merged corpus on top of that:
+# 80787 -> 82803 (+2016; 323146 -> 331211 chars). The per-file rounded sum
+# for the same corpus is 82816; this ceiling uses the aggregate estimate.
+# PR36's verified-rate economics/Azure guidance and generic evals 41-44 (its
+# earlier branch-only Azure GPT-6.1 Sol price exception and evals 38-39 were
+# dropped, not merged) remeasured as the full merged corpus on top of main:
+# 82803 -> 84304 (+1501; 331211 -> 337216 chars). The per-file rounded sum
+# for the same corpus is 84318; this ceiling uses the aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 84304
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679

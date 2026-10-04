@@ -8,32 +8,37 @@ Use this reference for cost, migration, or "high hit rate but no savings" questi
 - `D`: dynamic uncached input tokens.
 - `O`: output tokens.
 - `h`: cache hit rate on `S`.
-- `Pw`: cache-write price or premium when provider charges for creation.
+- `Pw`: full price per cache-write token when provider charges for creation; if a source quotes only a premium over input, use `Pi` plus that premium.
 - `Pr`: cache-read/cached-token price.
 - `Pi`: uncached input price.
 - `Po`: output price.
 
-Input baseline: `(S + D) * Pi`. With cache: `(1-h) * S * Pi + h * S * Pr + D * Pi`, plus write premiums and `O * Po` output cost.
+Input baseline: `(S + D) * Pi`. With cache: `(1-h) * S * Pi + h * S * Pr + D * Pi`, plus `Pw - Pi` per miss token actually written and `O * Po` output cost.
 
-For GPT-5.6+ OpenAI and Claude, use measured `ordinary_input * Pi + write * Pw + read * Pr + output * Po`. OpenAI's `input_tokens` includes reads/writes; Claude's excludes them. Without usage, the ROI helper accepts assumed `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
+For GPT-5.6+ OpenAI and Claude, use measured `ordinary_input * Pi + write * Pw + read * Pr + output * Po`, where `ordinary_input` excludes write and read tokens, so each write is charged once at full `Pw`. OpenAI's `input_tokens` includes reads/writes; Claude's excludes them. Without usage, the ROI helper accepts assumed `--cache-write-rate` and `--cache-write-input-price-per-mtok`.
+
+## Verified Rate Inputs
+
+A real audit records primary rates scoped to provider, exact model/version, region, currency, deployment type, and service tier, with the source URL or billing export identity, retrieval/observation date, and effective date; an unknown effective or publication date stays unknown. Verify ordinary input, cached-read, full write, and output prices, plus storage/TTL fees where actually charged. A model family, shared API usage fields, or an older model's rates do not establish another model's ratios. With missing or unverified rates, report the token mix and formula but no numeric ROI verdict; bundled multipliers are not defaults. Clearly hypothetical inputs support conditional arithmetic labeled as such, never a current price claim. A price entry proves no availability, region eligibility, endpoint support, minimum tokens, TTL/retention, context threshold, or release date.
+
+References track billing mechanics (paid writes, storage/TTL fees, usage accounting) and invalid generalized rules, not price lists; a rate change alone does not justify a new model-specific exception.
 
 ## Cache Write Break-Even
 
-For equivalent tokens either written or read, let `R` be the read fraction, `w = Pw/Pi`, `r = Pr/Pi`. Cache saves input cost when `R > (w-1)/(w-r)`. This excludes output, uncached suffixes, and capacity effects.
+For equivalent tokens either written or read, let `R` be the read fraction, `w = Pw/Pi`, `r = Pr/Pi`. Cache saves input cost when `(1-R)*w + R*r < 1`, which for `w > r` is `R > (w-1)/(w-r)`; equality is neutral. This excludes output, uncached suffixes, and capacity effects; separately verified storage/TTL fees can make this threshold incomplete.
+
+Historical illustrative configurations from earlier reviews, not current rate, TTL, or support defaults:
 
 | Cache policy | Write multiplier | Read multiplier | Minimum read fraction to save input cost |
 | --- | ---: | ---: | ---: |
 | GPT-5.6+ OpenAI (most models), 30m | 1.25× | 0.10× | Above 21.7% |
 | GPT-6.1 Sol OpenAI, 30m | 1.25× | 0.05× | Above 20.8% |
-| Azure GPT-6.1 Sol, Global/Data Zone short/long | 1.25× | 0.05× | Above 20.8% |
 | Claude Opus 5.5, 5m | 1.25× | 0.05× | Above 20.8% |
 | Claude Opus 5.5, 1h | 2× | 0.05× | Above 51.3% |
 
 Percentages are rounded; for a borderline read fraction, compare it with the exact `(w-1)/(w-r)` value.
 
-The Azure row is Azure's own pricing (observed 2026-10-04; see `references/azure-openai.md`), not direct OpenAI, and carries no TTL. At R = 21% its input cost is `0.79*1.25 + 0.21*0.05 = 0.998` of baseline, a 0.2% saving just above `5/24`.
-
-These are theoretical token fractions, not observed hit rates. Earlier OpenAI writes already paid ordinary input; GPT-5.6+ adds a 25% premium. Compare 1h TTL's higher write cost with measured reads.
+These are theoretical token fractions, not observed hit rates. Earlier OpenAI writes already paid ordinary input; for paid-write models take `w` from the verified full write price. Compare 1h TTL's higher write cost with measured reads.
 
 ## Checklist
 
@@ -42,7 +47,7 @@ These are theoretical token fractions, not observed hit rates. Earlier OpenAI wr
 - Check traffic cadence against TTL/retention; sparse traffic may write repeatedly and read rarely.
 - Include migration risk: new provider threshold, prefix ordering, usage fields, routing, TTL, and write premium.
 - Compare by prompt family, not blended global averages.
-- State assumptions when pricing is unverified.
+- When pricing is unverified, name the missing rate scope and withhold a numeric ROI verdict.
 
 ## Useful Conclusions
 
