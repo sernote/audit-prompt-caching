@@ -3,7 +3,8 @@
 
 Covers volatile prefixes, tool/schema drift, GPT-5.6/GPT-6 cache controls
 (AP-11), and mid-conversation effort continuity (AP-15): OpenAI
-`configuration_update` items and Claude per-message `output_config.effort`.
+`configuration_update` items and Claude per-message `output_config.effort`,
+including Sonnet 5.5's fixed effort under `thinking.type: "between_tools"`.
 Request headers are not visible in a payload, so the Claude beta header is
 reported as a requirement rather than validated.
 """
@@ -51,8 +52,13 @@ PER_MESSAGE_EFFORT_MODELS = {
     "claude-mythos-5-1",
     "claude-opus-5-5",
     "claude-opus-5",
+    "claude-sonnet-5-5",
 }
 PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
+# Models where `thinking: {"type": "between_tools"}` fixes effort for the whole
+# conversation (a differing per-message level returns 400), mapped to the
+# documented Claude API default used when top-level effort is omitted.
+BETWEEN_TOOLS_DEFAULT_EFFORT = {"claude-sonnet-5-5": "high"}
 SUPPORTED_CACHE_BLOCKS = {
     "chat": {"text", "image_url", "input_audio", "file", "refusal"},
     "responses": {"input_text", "input_image", "input_file"},
@@ -466,6 +472,7 @@ def lint_anthropic_per_message_effort(payload, policy):
     if not isinstance(messages, list):
         return findings
     model = payload.get("model")
+    fixed_effort = policy["between_tools_effort"]
     for index, message in enumerate(messages):
         if not isinstance(message, dict) or message.get("role") != "system":
             continue
@@ -477,14 +484,31 @@ def lint_anthropic_per_message_effort(payload, policy):
             findings.append(
                 effort_issue(
                     "per-message effort in a system message is documented only "
-                    "for Claude Fable 5.1, Claude Mythos 5.1, Opus 5.5, and Opus 5; "
-                    "other models return 400 or restart the cache",
+                    "for Claude Fable 5.1, Claude Mythos 5.1, Opus 5.5, Opus 5, "
+                    "and Sonnet 5.5; other models return 400 or restart the cache",
                     path,
                     "hold top-level output_config.effort constant for this model "
                     "or move the route to a supported model",
                 )
             )
         config = message.get("output_config")
+        if (
+            fixed_effort is not None
+            and isinstance(config, dict)
+            and "effort" in config
+            and config["effort"] != fixed_effort
+        ):
+            findings.append(
+                effort_issue(
+                    "thinking between_tools fixes effort for the conversation; "
+                    f"per-message effort {config['effort']!r} differs from the "
+                    f"level in effect {fixed_effort!r} and returns 400",
+                    path,
+                    "keep per-message effort equal to the level in effect, or use "
+                    "adaptive thinking (omit thinking or send type adaptive) to "
+                    "vary effort per turn",
+                )
+            )
         if not isinstance(config, dict) or set(config) != {"effort"}:
             findings.append(
                 effort_issue(
@@ -505,6 +529,7 @@ def lint_effort_continuity(payload):
         "per_message_effort_items": 0,
         "per_message_effort_supported": False,
         "beta_header": None,
+        "between_tools_effort": None,
         "validated": False,
         "valid": None,
     }
@@ -519,6 +544,16 @@ def lint_effort_continuity(payload):
         )
         if policy["per_message_effort_supported"]:
             policy["beta_header"] = PER_MESSAGE_EFFORT_BETA
+        thinking = payload.get("thinking")
+        model = payload.get("model")
+        if (
+            model in BETWEEN_TOOLS_DEFAULT_EFFORT
+            and isinstance(thinking, dict)
+            and thinking.get("type") == "between_tools"
+        ):
+            policy["between_tools_effort"] = (
+                policy["request_effort"] or BETWEEN_TOOLS_DEFAULT_EFFORT[model]
+            )
         findings = lint_anthropic_per_message_effort(payload, policy)
     else:
         return policy, []

@@ -40,10 +40,15 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # spot) remeasured on top of that: 78471 -> 78941 (+470; 313883 -> 315763 chars).
 # The Bedrock GPT-6.1 Sol exact-model exception remeasured on top of that:
 # 78941 -> 79460 (+519; 315763 -> 317838 chars).
+# The claude-sonnet-5-5 contract (Anthropic snapshot, AP-15 rule and playbook,
+# linter between_tools fixed-effort check) remeasured on top of that:
+# 79460 -> 80787 (+1327; 317838 -> 323146 chars).
 # The Mastra core 1.72.0 retry-feedback, tool-search activation, and OM
-# resource-scope contracts plus evals 38-40 remeasured on top of that:
-# 79460 -> 81476 (+2016; 317838 -> 325903 chars).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 81476
+# resource-scope contracts plus evals 38-40 (+8065 chars against the common
+# 79460 baseline) remeasured as the full merged corpus on top of that:
+# 80787 -> 82803 (+2016; 323146 -> 331211 chars). The per-file rounded sum
+# for the same corpus is 82816; this ceiling uses the aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 82803
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
@@ -100,6 +105,27 @@ def gpt61_sol_payload(surface="responses", **overrides):
         payload["reasoning_effort"] = "medium"
         payload["messages"] = [stable, {"role": "user", "content": "Question"}]
     payload.update(overrides)
+    return payload
+
+
+def claude_effort_payload(levels, thinking=None, effort=None, model="claude-sonnet-5-5"):
+    """Claude request with effort-only system messages; None omits a field."""
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": "Plan the migration."},
+            {"role": "assistant", "content": "Three steps."},
+            *(
+                {"role": "system", "content": [], "output_config": {"effort": level}}
+                for level in levels
+            ),
+            {"role": "user", "content": "Summarize it."},
+        ],
+    }
+    if thinking is not None:
+        payload["thinking"] = {"type": thinking}
+    if effort is not None:
+        payload["output_config"] = {"effort": effort}
     return payload
 
 
@@ -4176,6 +4202,158 @@ class PromptCacheScriptsTest(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
         self.assertIn("AP-15", output["clean_checks"])
+
+    def assert_effort_json_matches_exit(self, status, output):
+        ap15 = [item for item in output["findings"] if item["rule_id"] == "AP-15"]
+        self.assertEqual(status, 1 if output["findings"] else 0, output)
+        self.assertEqual(output["status"], "findings" if output["findings"] else "ok")
+        self.assertEqual(output["effort_policy"]["valid"], not ap15)
+        self.assertEqual("AP-15" in output["clean_checks"], not ap15)
+
+    def test_layout_linter_accepts_sonnet_5_5_adaptive_per_message_effort(self):
+        # Adaptive thinking may be explicit or omitted (equivalent on Sonnet 5.5);
+        # either way per-message effort may change freely.
+        for thinking in ("adaptive", None):
+            for effort in ("high", None):
+                with self.subTest(thinking=thinking, effort=effort):
+                    status, output = lint_payload(
+                        claude_effort_payload(["low", "max"], thinking, effort)
+                    )
+
+                    self.assertEqual(status, 0, output)
+                    self.assert_effort_json_matches_exit(status, output)
+                    policy = output["effort_policy"]
+                    self.assertTrue(policy["per_message_effort_supported"])
+                    self.assertEqual(policy["per_message_effort_items"], 2)
+                    self.assertIsNone(policy["between_tools_effort"])
+                    self.assertEqual(
+                        policy["beta_header"], "mid-conversation-output-config-2026-07-01"
+                    )
+
+    def test_layout_linter_flags_sonnet_5_5_between_tools_effort_change(self):
+        # Explicit request effort sets the level in effect; omitted means the
+        # documented Sonnet 5.5 Claude API default, high.
+        for effort, levels, in_effect, changed in (
+            ("medium", ["low"], "medium", [2]),
+            ("low", ["high"], "low", [2]),
+            (None, ["medium"], "high", [2]),
+            ("medium", ["medium", "low", "medium"], "medium", [3]),
+        ):
+            with self.subTest(effort=effort, levels=levels):
+                status, output = lint_payload(
+                    claude_effort_payload(levels, "between_tools", effort)
+                )
+
+                self.assertEqual(status, 1, output)
+                self.assert_effort_json_matches_exit(status, output)
+                findings = [
+                    item for item in output["findings"] if item["rule_id"] == "AP-15"
+                ]
+                self.assertEqual(
+                    [item["evidence"] for item in findings],
+                    [f"$.messages[{index}]" for index in changed],
+                )
+                self.assertTrue(all(item["severity"] == "high" for item in findings))
+                self.assertIn("between_tools", findings[0]["issue"])
+                self.assertIn(in_effect, findings[0]["issue"])
+                self.assertIn("adaptive", findings[0]["fix"])
+                policy = output["effort_policy"]
+                self.assertTrue(policy["per_message_effort_supported"])
+                self.assertEqual(policy["between_tools_effort"], in_effect)
+                self.assertFalse(policy["valid"])
+
+    def test_layout_linter_accepts_sonnet_5_5_between_tools_unchanged_effort(self):
+        for effort, levels in (
+            ("medium", ["medium"]),
+            ("low", ["low", "low"]),
+            (None, ["high"]),
+            ("high", ["high", "high"]),
+        ):
+            with self.subTest(effort=effort, levels=levels):
+                status, output = lint_payload(
+                    claude_effort_payload(levels, "between_tools", effort)
+                )
+
+                self.assertEqual(status, 0, output)
+                self.assert_effort_json_matches_exit(status, output)
+                self.assertEqual(
+                    output["effort_policy"]["between_tools_effort"], effort or "high"
+                )
+
+    def test_layout_linter_keeps_sonnet_5_5_contract_exact(self):
+        # Sonnet 5 has no per-message effort; Bedrock-style and dated IDs need
+        # their own evidence before the direct contract applies.
+        for model in (
+            "claude-sonnet-5",
+            "anthropic.claude-sonnet-5-5",
+            "claude-sonnet-5-5-20260928",
+        ):
+            with self.subTest(model=model):
+                status, output = lint_payload(
+                    claude_effort_payload(["low"], "adaptive", "high", model=model)
+                )
+
+                self.assertEqual(status, 1, output)
+                self.assert_effort_json_matches_exit(status, output)
+                policy = output["effort_policy"]
+                self.assertFalse(policy["per_message_effort_supported"])
+                self.assertIsNone(policy["beta_header"])
+                self.assertIsNone(policy["between_tools_effort"])
+                issue = next(
+                    item["issue"]
+                    for item in output["findings"]
+                    if item["rule_id"] == "AP-15"
+                )
+                self.assertIn("Sonnet 5.5", issue)
+
+    def test_layout_linter_limits_between_tools_check_to_sonnet_5_5(self):
+        # The fixed-effort restriction is documented only for Sonnet 5.5; prior
+        # supported models keep their existing per-message behavior.
+        for model in ("claude-opus-5-5", "claude-fable-5-1", "claude-opus-5"):
+            with self.subTest(model=model):
+                status, output = lint_payload(
+                    claude_effort_payload(["low"], "between_tools", "high", model=model)
+                )
+
+                self.assertEqual(status, 0, output)
+                self.assert_effort_json_matches_exit(status, output)
+                self.assertIsNone(output["effort_policy"]["between_tools_effort"])
+        linter = load_script_module("layout_linter.py")
+        self.assertIn("claude-sonnet-5-5", linter.PER_MESSAGE_EFFORT_MODELS)
+        self.assertNotIn("claude-sonnet-5", linter.PER_MESSAGE_EFFORT_MODELS)
+
+    def test_sonnet_5_5_effort_contract_is_documented(self):
+        refs = ROOT / "audit-prompt-caching" / "references"
+        ap15 = next(
+            rule
+            for rule in json.loads((refs / "rules.json").read_text())["rules"]
+            if rule["id"] == "AP-15"
+        )
+        self.assertIn("claude-sonnet-5-5", ap15["fix"])
+        self.assertIn("between_tools", ap15["avoid"])
+        playbook = (refs / "agent-tools.md").read_text()
+        self.assertIn("claude-sonnet-5-5", playbook)
+        self.assertIn("between_tools", playbook)
+        reference = (refs / "anthropic.md").read_text()
+        section = reference.split("## Claude Sonnet 5.5 Cache Snapshot", 1)[1]
+        section = section.split("\n## ", 1)[0]
+        for required in (
+            "Verified 2026-10-02",
+            "`claude-sonnet-5-5`",
+            "512-token",
+            "1-hour",
+            "mid-conversation-output-config-2026-07-01",
+            "between_tools",
+            "defaults to `high`",
+            "2026-08-31",
+            "400",
+            "organization_binding_mismatch",
+            "input_transformations",
+            "Claude Sonnet 5 lacks",
+            "surface",
+        ):
+            self.assertIn(required, section, required)
+        self.assertIn("https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5", reference)
 
     def test_ap15_rule_and_agent_playbook_match_supported_effort_models(self):
         rules = json.loads((ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text())
