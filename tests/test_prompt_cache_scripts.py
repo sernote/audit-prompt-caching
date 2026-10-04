@@ -48,7 +48,12 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # 79460 baseline) remeasured as the full merged corpus on top of that:
 # 80787 -> 82803 (+2016; 323146 -> 331211 chars). The per-file rounded sum
 # for the same corpus is 82816; this ceiling uses the aggregate estimate.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 82803
+# PR36's verified-rate economics/Azure guidance and generic evals 41-44 (its
+# earlier branch-only Azure GPT-6.1 Sol price exception and evals 38-39 were
+# dropped, not merged) remeasured as the full merged corpus on top of main:
+# 82803 -> 84304 (+1501; 331211 -> 337216 chars). The per-file rounded sum
+# for the same corpus is 84318; this ceiling uses the aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 84304
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679

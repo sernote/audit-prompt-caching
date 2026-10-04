@@ -200,6 +200,26 @@
       "id": 40,
       "prompt": "We run Mastra Observational Memory with scope 'resource' across several threads per user. After thread A is observed, thread B shows fewer cache reads. Someone says resource scope was removed in @mastra/memory 1.33.0 (released with @mastra/core 1.72.0) and that dropping the setting moves existing observations into thread scope. Is that right, and how do we switch safely?",
       "expected_output": "No. In the release shipping @mastra/core 1.72.0 and @mastra/memory 1.33.0, resource scope is deprecated with a one-time warning, not removed, and runtime is unchanged; check installed versions. Threads share one observation record, so observing A can change B's early injected context and prefix, a plausible but unproven cause; compare B's rendered prefix hashes and raw per-call cache reads on comparable workloads. Switching to default thread scope needs a valid threadId, does not migrate resource-scoped observations, and does not re-observe already observed messages. Plan continuity with retrieval and/or resource-scoped working memory, which have different semantics, before switching."
+    },
+    {
+      "id": 41,
+      "prompt": "We audit a GPT-5.6+ deployment on Azure OpenAI billed in EUR. Usage shows cache_write_tokens and cached_tokens per request, but nobody has pulled pricing for our exact model version, region, deployment type, or service tier; we only have the bundled economics table and an old launch post. Give us the numeric caching ROI verdict.",
+      "expected_output": "Withhold a numeric ROI verdict: bundled or launch-post multipliers are illustrations, not this deployment's rates. Report the measured ordinary/write/read token mix (cached_tokens and cache_write_tokens are inclusive subsets of the input total) and the formula, mark cost unknown, and request Azure's own or billed rates scoped to exact model/version, region, currency, deployment type, and service tier, recording the exact source URL or billing export, observation date, and effective date; an unknown effective date stays unknown. Verify ordinary input, cached-read, full write, output, and any storage/TTL fees actually charged before computing break-even."
+    },
+    {
+      "id": 42,
+      "prompt": "Purely hypothetical, not any provider's rates: a cache write costs 1.5x ordinary input in total and a cached read 0.2x. For equivalent cacheable tokens, 40% are reads. Finance charged each written token as ordinary input plus 1.5x and reported a loss. A dashboard shows break-even rounded to 38.46% and marks another cohort at R=0.3846 as break-even or better. Who is right?",
+      "expected_output": "Treat 1.5x as the full write price and charge each write once: (1-R)*1.5 + R*0.2 < 1 gives R > 0.5/1.3 = 5/13. At R=0.40 the cohort costs 0.6*1.5 + 0.4*0.2 = 0.98 of ordinary input, a 2% conditional input saving; adding ordinary input again double-charges writes. R=0.3846 is below exact 5/13 (cost about 1.00002, a slight loss) and exactly 5/13 is neutral, so compare exact values before rounded displays. Label the result hypothetical and input-only: no output, uncached suffix, capacity, or storage/TTL fees, no workload hit rate, and no current price claim."
+    },
+    {
+      "id": 43,
+      "prompt": "A reviewer says a newly listed GPT-5.6+ model must share an older model's cached-read discount and write multiplier because the family, API shape, and usage fields are the same. Separately, a pricing page changed one model's cached-read rate, and they want a new model-specific price exception added to the skill references. How should we handle both?",
+      "expected_output": "Family, shared usage fields, API shape, or an older model's rates do not establish a new model's ratios; verify primary rates for the exact model/version, region, currency, deployment type, and tier, or withhold a numeric verdict. A rate change alone is not reference maintenance: keep audits parameterized with verified inputs. Update references only for billing mechanics such as paid writes, storage/TTL fees, or usage accounting, or for a generalized audit rule that is wrong."
+    },
+    {
+      "id": 44,
+      "prompt": "An Azure pricing page lists a model in a region we have not used. A teammate concludes it is deployable there, supports the Responses endpoint, has a fixed minimum cacheable length and long-context boundary, and launched on the day we looked. They also want to fill gaps from direct OpenAI and Bedrock docs. What does the price row prove?",
+      "expected_output": "Only that a priced entry existed when observed. It does not prove availability or deployability in that region, Responses or other endpoint support, minimum tokens, TTL/retention, a context boundary, or a release or effective date; record the observation date and keep an unknown publication date unknown. Verify capabilities in current Azure docs and on the actual deployment (endpoint, model/version, api-version, wire capture), and do not import direct OpenAI or Bedrock claims into Azure."
     }
   ]
 }

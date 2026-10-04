@@ -15,7 +15,7 @@ Verify before exact claims:
 Official sources:
 - Azure OpenAI prompt caching (canonical Foundry path; the old `ai-services/openai` path redirects here): https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/prompt-caching
 - Azure OpenAI docs: https://learn.microsoft.com/en-us/azure/foundry/openai/
-- Azure OpenAI pricing: https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/
+- Azure OpenAI pricing (the old `cognitive-services/openai-service` path redirects here): https://azure.microsoft.com/en-us/pricing/details/azure-openai/
 
 ## Stable Mechanics
 
@@ -48,7 +48,7 @@ Azure documents a rate cap: above roughly 15 requests per minute for one prefix 
 
 On Standard GPT-5.6+ deployments, `prompt_cache_options.mode` is `implicit` (default: automatic breakpoint on the latest message plus any explicit ones) or `explicit` (only marked blocks; with no marks the request neither caches nor pays writes, which is also the documented way to disable caching). `prompt_cache_options.ttl` accepts only `30m` and does not select the retention tier. `prompt_cache_breakpoint: {"mode": "explicit"}` goes on `input_text`/`input_image`/`input_file` (Responses) or `text`/`image_url`/`input_audio`/`file` (Chat) blocks. Each request can create up to four new writes (three explicit in implicit mode), reads consider up to the latest 50 breakpoints, and earlier-turn breakpoints are read-only.
 
-Cache writes on GPT-5.6+ are billed in addition to discounted reads (published launch tables show writes at about 1.25x input and reads at about 0.1x); treat those multipliers as pricing-page facts to re-verify, not constants. Do not send these parameters to pre-5.6 models or PTU-M deployments.
+Cache writes on GPT-5.6+ are billed in addition to discounted reads. Do not assume a family-wide read or write ratio: take ordinary input, cached-read, and full write prices from Azure's own pricing or billed rates for the exact model/version, region, currency, deployment type, and service tier, then apply `references/economics.md`; without verified rates, give no numeric ROI verdict. A price entry does not prove availability, eligible regions, API/endpoint features, minimum tokens, TTL/retention, context boundaries, or a release date; verify those in current Azure docs and on the actual deployment, never from direct OpenAI or Bedrock claims. Do not send these parameters to pre-5.6 models or PTU-M deployments.
 
 ### Tools, Images, And Schemas
 
