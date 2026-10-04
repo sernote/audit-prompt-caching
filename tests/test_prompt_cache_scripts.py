@@ -43,7 +43,12 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # The claude-sonnet-5-5 contract (Anthropic snapshot, AP-15 rule and playbook,
 # linter between_tools fixed-effort check) remeasured on top of that:
 # 79460 -> 80787 (+1327; 317838 -> 323146 chars).
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 80787
+# The Mastra core 1.72.0 retry-feedback, tool-search activation, and OM
+# resource-scope contracts plus evals 38-40 (+8065 chars against the common
+# 79460 baseline) remeasured as the full merged corpus on top of that:
+# 80787 -> 82803 (+2016; 323146 -> 331211 chars). The per-file rounded sum
+# for the same corpus is 82816; this ceiling uses the aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 82803
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
