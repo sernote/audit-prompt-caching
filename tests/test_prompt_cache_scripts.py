@@ -53,7 +53,12 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # dropped, not merged) remeasured as the full merged corpus on top of main:
 # 82803 -> 84304 (+1501; 331211 -> 337216 chars). The per-file rounded sum
 # for the same corpus is 84318; this ceiling uses the aggregate estimate.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 84304
+# The Chinese-platform Moonshot paid-write/TTL contract (moonshot.md +7727
+# chars, corrected eval 37 plus evals 45-46 +3090 chars) remeasured as the
+# full corpus on top of that: 84304 -> 87009 (+2705; 337216 -> 348033 chars).
+# The per-file rounded sum for the same corpus is 87022; this ceiling uses the
+# aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 87009
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
@@ -5333,7 +5338,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         root = ROOT / "audit-prompt-caching"
         reference = (root / "references" / "moonshot.md").read_text()
         for required in (
-            "Last reviewed: 2026-09-12.",
+            "Last reviewed: 2026-10-05",
             "256 tokens",
             "`usage.cached_tokens`",
             "`cache_read_input_tokens`",
