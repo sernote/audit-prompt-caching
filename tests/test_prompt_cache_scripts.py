@@ -63,7 +63,14 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # as the full corpus on top of that: 87009 -> 89341 (+2332; 348033 -> 357361
 # chars). The per-file rounded sum for the same corpus is 89355; this ceiling
 # uses the aggregate estimate.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 89341
+# The Bedrock GPT-6.1 Sol correction (implicit/explicit surfaces, Converse
+# cachePoint exclusion, input_text/text placement, global. profile, pricebook
+# removal, 30m minimum-retention gap wording; bedrock.md +1204 chars, evals
+# 49-50 +3348 chars), merged onto that main, remeasured as the full merged
+# corpus: 89341 -> 90479 (+1138; 357361 -> 361913 chars).
+# The per-file rounded sum for the same corpus is 90493; this ceiling uses the
+# aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 90479
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
