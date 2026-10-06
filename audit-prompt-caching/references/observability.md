@@ -34,6 +34,11 @@ pythonhashseed_present
 pythonhashseed_match_status
 kv_tier_type
 cache_salt_boundary_fingerprint
+extra_key_schema_status
+lora_key_path_status
+lora_identity_status
+lora_identity_fingerprint
+salt_adapter_collision_status
 ```
 
 Raw seed is prohibited. `seed_compatibility_status` and `pythonhashseed_match_status` use safe values
@@ -49,6 +54,27 @@ must not contain raw salt, tenant ID, or user identity, and it is primarily a
 trace/log dimension. Metrics require bounded cardinality; never create an
 unbounded metric cardinality label per tenant or salt. The
 fingerprint records the isolation boundary and does not replace `cache_salt`.
+
+For LoRA-serving vLLM, record the extra-key and adapter identity evidence from
+the `cache_salt` and LoRA extra-key namespace section of
+`references/vllm.md` next to `engine_version` and `engine_commit`:
+
+- `extra_key_schema_status`: `source_tagged`, `untagged`, or `unknown`, from
+  source at the deployed SHA, never from KV event shape;
+- `lora_key_path_status`: `included`, `excluded`, or `unknown`, whether the
+  deployed LoRA block-hash key contains the adapter path, from source at the
+  deployed SHA; a `source_tagged` build can still key LoRA by name only;
+- `lora_identity_status`: `matched`, `mismatched`, or `unknown` for adapter
+  name plus path across workers sharing a tier;
+- `lora_identity_fingerprint`: keyed fingerprint of name and path, for traces
+  and deployment evidence only;
+- `salt_adapter_collision_status`: `not_applicable` (tagged schema),
+  `excluded` (server-derived salts cannot equal an adapter name), `open`, or
+  `unknown`, from passive source/config review, not a cross-tenant probe.
+
+Keep the statuses as bounded metric labels; never use a fingerprint, salt,
+adapter path, or tenant ID as a metric label. KV event `extra_keys` can carry
+bare salt values and adapter names, so redact event payloads before logging.
 
 ## Usage Evidence Contract
 

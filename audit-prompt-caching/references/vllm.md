@@ -13,6 +13,9 @@ Official sources:
 - Retention promotion/default change (`017e9f4`, 2026-08-17): https://github.com/vllm-project/vllm/commit/017e9f4448b700e85ee16023287b025693c72b9e
 - Deterministic cryptographic hash default (`ef47a897`, 2026-08-18): https://github.com/vllm-project/vllm/commit/ef47a897e2ad9a404cce9c9e7df15934deb8ffbe
 - KV spec classes and validator: https://github.com/vllm-project/vllm/blob/main/vllm/v1/kv_cache_interface.py and https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_coordinator.py
+- Stable `v0.31.0` release (2026-10-05): https://github.com/vllm-project/vllm/releases/tag/v0.31.0
+- Block-hash extra keys at tags: https://github.com/vllm-project/vllm/blob/v0.30.0/vllm/v1/core/kv_cache_utils.py and https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/core/kv_cache_utils.py
+- Source-tagged extra keys (#51899): https://github.com/vllm-project/vllm/pull/51899; LoRA path in block hashes (#59335): https://github.com/vllm-project/vllm/pull/59335
 
 ## Version and capability gate
 
@@ -143,7 +146,9 @@ Separate the three axes in an audit:
 
 - hash algorithm: how a block key is calculated;
 - effective seed: whether the block-hash chain can match across processes;
-- `cache_salt`: an intentional request-level trust-boundary isolation mechanism.
+- `cache_salt`: an intentional request-level trust-boundary isolation
+  mechanism, effective only if its block-hash extra key cannot equal another
+  source's key (see `cache_salt` and LoRA extra-key namespace).
 
 ## Compatibility is not isolation
 
@@ -151,7 +156,9 @@ Matching hash settings only permits a sharing group to use a common key space;
 it does not authorize cross-tenant reuse. Preserve `cache_salt` as the
 separate isolation boundary and choose its scope from the trust model. Do not
 replace it with `PYTHONHASHSEED`, and do not recommend a shared hash seed as a
-tenant-isolation mechanism.
+tenant-isolation mechanism. On a LoRA-serving deployment, accept `cache_salt`
+isolation only after the extra-key namespace check below at the deployed
+version/SHA.
 
 For `xxhash` and `xxhash_cbor`, the effective seed is secret and unpredictable:
 pass it only through protected secret configuration. Reports, telemetry, and
@@ -161,11 +168,86 @@ default is public and is not a secret. vLLM/runtime logs or a handshake may
 still reveal an effective value; the audit must check that separate redaction
 risk rather than promise that the runtime never emits it.
 
+### `cache_salt` and LoRA extra-key namespace
+
+Source check: 2026-10-06, `vllm/v1/core/kv_cache_utils.py` at tags `v0.30.0`
+and `v0.31.0`. `generate_block_hash_extra_keys()` puts LoRA, multimodal,
+`cache_salt`, and prompt-embeds keys into one tuple that is hashed with the
+parent hash and block tokens. The LoRA key is added to every block; the salt
+only to the first block, and it reaches later blocks through the parent hash.
+
+| Source | `v0.30.0` key | `v0.31.0` key |
+| --- | --- | --- |
+| LoRA | bare `lora_name` | `("lora", name, path)` |
+| `cache_salt` | bare salt | `("cache_salt", salt)` |
+| multimodal | `(identifier, offset)` | `("mm", identifier, offset)` |
+| prompt embeds | digest | `("prompt_embeds", digest)` |
+
+On verified `v0.30.0`, an unsalted request for adapter `support-acme` and a
+base-model request with `cache_salt="support-acme"` over equal tokens have
+identical first-block `extra_keys`, so the same first-block hash: either can
+reuse KV computed with the other's weights, and a caller-chosen salt can land
+in an adapter's namespace. Later blocks diverge because only the LoRA request
+adds its key there. This is a structural namespace collision of untagged
+inputs, not a cryptographic hash collision; changing the hash algorithm or
+seed does not fix it, and healthy hit/TTFT metrics do not refute it.
+
+On that path, caller-selected untagged salts are an isolation gap unless
+salts are server-derived or namespaced so that no salt can equal any adapter
+name. Safe changes: upgrade to `v0.31.0` or a verified backport, and enforce
+salt selection at the trust boundary. Evidence is passive: source at the
+deployed SHA, gateway salt provenance, and the adapter registry. Do not run an
+active cross-tenant probe.
+
+`v0.31.0` removes that collision and, by adding the path, stops a name
+re-pointed to a different path from reusing old blocks; the `v0.30.0`
+name-only key can serve the previous adapter's KV. The path is a string
+identity, not a hash of adapter content: when changed files at the same path
+are loaded, by an in-place reload, a restart, or another worker sharing a tier,
+the key is unchanged and old-weight blocks are not invalidated. KV computed
+with the previous weights can then be reused while those blocks remain
+reachable locally or in a shared/offload tier and an equal-token prefix
+arrives, so publish each adapter revision at a new versioned path. Neither
+change makes salt scope correct or proves complete tenant isolation.
+
+Only these two tags are verified here. For another release, backport, fork, or
+source build, inspect `generate_block_hash_extra_keys()` and
+`_gen_lora_extra_hash_keys()` at the deployed SHA; a version number or
+merge-commit ancestry is not proof, because fixes can be cherry-picked.
+Source tagging and the LoRA path are separate checks: a source-tagged build or
+backport can still key LoRA by name only, so record the path result separately.
+
+Upgrade effect: every block with LoRA, salt, multimodal, or prompt-embeds extra
+keys changes hash, as does every later block chained to it. Persisted or
+offloaded KV from `v0.30.0`, and a mixed `v0.30.0`/`v0.31.0` fleet sharing a
+tier, miss rather than reuse until writers share the schema and all other
+inputs. Equal-name adapters at different paths, such as the same files under
+two mount points, no longer share blocks. Chains with no extra keys, such as
+unsalted text-only base-model requests, are not changed by this schema, so do
+not assert a blanket cold cache.
+
+KV events are not the hash schema. In `v0.31.0`, `to_event_extra_keys()`
+publishes the untagged pre-`v0.31.0` shapes, and the LoRA event key carries the
+name but not the path; `BlockStored.block_hashes` carries the new hashes, so
+use those emitted hashes directly. Event shape does not reveal the deployed
+schema, so identical event `extra_keys` across versions or paths do not prove
+identical engine keys. A LoRA block hash cannot be rebuilt from event metadata
+alone, because the path is not published. For other keys, a consumer can
+restore source tags from `lora_name` and the fixed order (LoRA, multimodal,
+`cache_salt`, prompt embeds) only if it already knows the deployed schema and
+every other hash input: tokens, parent hash, algorithm, seed, and
+serialization. A router that recomputes request hashes with a name-only LoRA
+key will not match `v0.31.0` path-bearing block hashes. Use source inspection
+plus emitted block hashes, deployment identity, adapter name/path per worker,
+and route evidence.
+
 ## Shared-tier validation and evidence contract
 
 For local APC, FS, OBJ, P2P/PD, and other connectors, record `kv_tier_type`,
 the image/version/SHA, resolved retention source/value, concrete group classes,
-`scheduler_block_size`, hash algorithm, and seed compatibility status. For
+`scheduler_block_size`, hash algorithm, seed compatibility status, extra-key
+schema status, whether the LoRA key includes the path, and LoRA name/path
+identity compatibility. For
 P2P, require handshake/reject evidence and a config fingerprint/block length;
 for FS/OBJ, require independently verified config plus a real cross-process
 read. Never put a raw seed in an audit report, telemetry, recommended metric
@@ -205,7 +287,7 @@ For an offline export, preserve the actual routing input's meaning and use
 - Cache-blind routing may scatter prefixes; prefix-aware/hash may improve locality or concentrate load. Treat both as candidates; compare via the `Routing Outcome Gate` in `references/mechanics.md` with model, replicas, and KV fixed; paper numbers are not defaults.
 - Pin model/tokenizer/chat template versions and smoke-test token IDs.
 - Keep media representation stable for multimodal prefixes.
-- Treat per-request `cache_salt` as intentional isolation that fragments reuse; choose the coarsest safe trust boundary.
+- Treat per-request `cache_salt` as intentional isolation that fragments reuse; choose the coarsest safe trust boundary. With LoRA serving, first verify the extra-key namespace and adapter path identity at the deployed version/SHA (`cache_salt` and LoRA extra-key namespace).
 - Do not force APC on unique prompts without measuring prefix hit metrics.
 - Newer vLLM deployments can emit KV-cache events and use KV transfer/offload
   connectors. Inspect `--kv-events-config`, `kv_transfer_config`, and
@@ -225,7 +307,7 @@ Pair output with `vllm:prefix_cache_hits`, `vllm:prefix_cache_queries`, `vllm:pr
 
 ## Monitoring
 
-Track prefix hit/query ratio, available KV blocks, eviction indicators, TTFT/prefill by route, request length percentiles, prefix family cardinality, `max_model_len`, GPU memory utilization, replica count, router policy, tokenizer/model version, `cache_salt` cardinality, and multimodal representation. Use `references/observability.md` for Routing Outcome Gate fields, including capacity at SLO, queue/KV skew, errors/retries, and rewarm.
+Track prefix hit/query ratio, available KV blocks, eviction indicators, TTFT/prefill by route, request length percentiles, prefix family cardinality, `max_model_len`, GPU memory utilization, replica count, router policy, tokenizer/model version, `cache_salt` cardinality, LoRA name/path identity status, and multimodal representation. Use `references/observability.md` for Routing Outcome Gate fields, including capacity at SLO, queue/KV skew, errors/retries, and rewarm.
 
 When KV events are enabled, also track event delivery/drop rate, connector type,
 and transfer/offload latency separately from prefix-hit ratio. Event streams are
