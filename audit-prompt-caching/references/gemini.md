@@ -2,7 +2,7 @@
 
 ## Documentation Freshness
 
-Last reviewed: 2026-09-12.
+Last reviewed: 2026-09-12; only the Agent Platform cache isolation subsection was re-checked 2026-10-07 against the context caching overview (page updated 2026-10-06; observation date, not an introduction date).
 
 Verify before exact claims:
 - supported models for implicit and explicit caching
@@ -56,6 +56,17 @@ When using explicit caches, verify:
 ### Gemini API Vs Agent Platform (Vertex AI)
 
 Thresholds, regions, pricing, and supported models differ. The Agent Platform states a 90% discount for implicit and explicit hits on Gemini 2.5+ (75% on 2.0), stores explicit caches in the request region, has no maximum TTL, defaults to 60 minutes, and offers a project-level kill switch (`projects/{id}/cacheConfig` with `disableCache: true`, applied to all regions). The Gemini API pricing page shows cached input at about 10% of input for Gemini 3.x with model-specific storage prices that change on 2027-01-01 for the 3.6-3.8 Flash line, and some Flash-Lite models list caching as not available there while the Agent Platform supports them. Identify the exact surface before recommending changes.
+
+### Agent Platform Cache Isolation
+
+The Agent Platform documents that Google Cloud isolates cached data by project number and never shares cached content across projects. That is the provider boundary only. Within one project, the docs make the application responsible for scoping cached agent outputs and prompt context to each execution context and, for background agents and multi-tenant proxies, aligning context-caching boundaries with end-user permission boundaries so an agent cannot reuse cached credentials or context across users. Project isolation does not demonstrate application safety.
+
+Review passively from supplied code, configuration, or redacted traces:
+- how each explicit cache name (`cachedContents` resource) or cached agent context is keyed, and whether user-specific content maps to its execution context, end user, and permission scope
+- whether the lookup path authorizes the caller before attaching a cache name, especially in shared background workers and proxies
+- whether cached agent outputs, tool results, or credentials land in a cache reused across users
+
+When evidence shows user-specific cached content or agent context attached across users in one project, report a confirmed application isolation finding for that unauthorized cross-user attachment; disclosure of the content in model outputs is a separate claim and stays unproven unless supplied outputs show it. When the cache-name-to-user/permission mapping or the authorization check is not visible, report an unresolved isolation question and the evidence needed, not a demonstrated leak. Static context that every authorized caller may see is not a leak by itself, and this boundary does not require a project per user. Healthy hit rate or latency does not waive the review. Do not request credentials or run cross-user probes. This statement covers Agent Platform Gemini context caching; do not extend it to the Gemini Developer API (including Gemini Developer API Interactions) or Claude on the Agent Platform without their own source. Agent Platform Interactions is unverified against this overview: claim neither caching support, absence, nor isolation there from it.
 
 ### Large Stable Documents
 
