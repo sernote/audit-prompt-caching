@@ -16,6 +16,12 @@ Official sources:
 - Stable `v0.31.0` release (2026-10-05): https://github.com/vllm-project/vllm/releases/tag/v0.31.0
 - Block-hash extra keys at tags: https://github.com/vllm-project/vllm/blob/v0.30.0/vllm/v1/core/kv_cache_utils.py and https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/core/kv_cache_utils.py
 - Source-tagged extra keys (#51899): https://github.com/vllm-project/vllm/pull/51899; LoRA path in block hashes (#59335): https://github.com/vllm-project/vllm/pull/59335
+- P/D prefill cache hits in `prompt_tokens_details` (#54222, merged 2026-09-16): https://github.com/vllm-project/vllm/pull/54222
+- P-side write at `v0.31.0`: https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/core/sched/scheduler.py#L2172-L2182
+- D-side read and override at `v0.31.0`: https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/engine/output_processor.py#L234-L245 and https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/engine/output_processor.py#L697-L707
+- Pre-change counterparts at `v0.30.0`: https://github.com/vllm-project/vllm/blob/v0.30.0/vllm/v1/core/sched/scheduler.py and https://github.com/vllm-project/vllm/blob/v0.30.0/vllm/v1/engine/output_processor.py
+- `enable_prompt_tokens_details` default at `v0.31.0`: https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/entrypoints/launchers/cli_args.py#L145
+- Chat `prompt_tokens_details` emission gate at `v0.31.0`: https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/entrypoints/openai/chat_completion/serving.py#L90-L107
 
 ## Version and capability gate
 
@@ -256,6 +262,79 @@ label, or fixture.
 Do not infer production ROI from this config evidence. Pair hit/TTFT and
 prefill measurements with deployment version and route labels, and distinguish
 retention/geometry mismatch from cross-process hash mismatch.
+
+## P/D cached-token accounting
+
+Source check: 2026-10-07, tags `v0.30.0` (`ced6857a`) and `v0.31.0`
+(`db9527a4`), plus PR #54222, which the `v0.31.0` release notes list under KV
+connectors. In prefill/decode (P/D) disaggregation the P worker computes the
+prompt KV and the D worker receives it through the KV connector; the client
+usually receives D's response. D's own prefill stats count transferred KV as
+cached. When D reports that local count (always at `v0.30.0`; at `v0.31.0`
+whenever no integer `remote_prefill_cached_tokens` arrives with a truthy
+`do_remote_prefill`), `cached_tokens` close to `prompt_tokens` (~100%) is
+transfer accounting, not P-side APC hits or saved prefill. After a proven remote
+override (chain below), a high count can be a real P-side count. A near-100%
+count alone does not establish P-side hits.
+
+| Step | `v0.30.0` | `v0.31.0` |
+| --- | --- | --- |
+| P worker, request finish | no `remote_prefill_cached_tokens` symbol | if the request has prefill stats and the `kv_transfer_params` it returns for D carry a truthy `do_remote_prefill`, writes `remote_prefill_cached_tokens = prefill_stats.num_cached_tokens` into them |
+| proxy/gateway | no cached-token field to carry | must forward P's returned `kv_transfer_params` to D unchanged, keeping the field as a JSON integer |
+| D worker, request state | local prefill stats only | reads the field from `sampling_params.extra_args["kv_transfer_params"]` only when `do_remote_prefill` is truthy and the value is an `int` |
+| D worker, usage | `num_cached_tokens` from local prefill stats | local prefill stats first, then overridden by the remote count when one was read |
+
+A dropped, rebuilt, or retyped field (missing, a string such as `"0"`, a float,
+or `null`) is ignored, and D silently keeps its local transfer-inclusive count;
+the checked code path raises no error or warning. P and D both need the change:
+a `v0.30.0` P never writes the field, and a `v0.30.0` D never reads it. A
+version label alone therefore does not prove that usage is fixed, and neither
+does a proxy that forwards only `do_remote_prefill` and block IDs. On P, the
+scheduler stores local and external-connector cached tokens in
+`prefill_stats`, so with a P-side offload/connector tier the count is not pure
+local APC; check the `PrefillStats` definition at the deployed SHA.
+
+`prompt_tokens_details` is opt-in: the exact flag is
+`--enable-prompt-tokens-details` (plural `tokens`; the PR description spells it
+`--enable-prompt-token-details`), and `enable_prompt_tokens_details` defaults to
+`False` at `v0.31.0`. The checked chat-completion path returns no details when
+the flag is off, and also when no cached, cache-creation, or multimodal counts
+are available; check other endpoints separately. An absent
+`prompt_tokens_details` or absent/`null` `cached_tokens` is
+unobserved, not a measured zero. Check the flag on the API server that returns
+the client response, usually the one in front of D.
+
+A present integer `cached_tokens: 0` is a measured P-side zero for that request
+only after the whole chain is established:
+
+1. provenance: the usage object is from that request's D response and is
+   correlated by request ID and route with the P request;
+2. version/source: the P and D images or SHAs contain both the P-side write and
+   the D-side read;
+3. `do_remote_prefill` is truthy in the `kv_transfer_params` that D received;
+4. the proxy round-trips P's returned `kv_transfer_params`, with
+   `remote_prefill_cached_tokens` still an integer;
+5. emission: `--enable-prompt-tokens-details` is on for the responding server.
+
+The same chain applies to non-zero counts. vLLM chat usage is inclusive, so a
+`valid` denominator only shows that `cached_tokens <= prompt_tokens` is
+consistent arithmetic. It does not show which worker produced the numerator,
+and does not prove P-side hits, saved prefill, savings, latency, or rollout.
+Do not treat `v0.31.0` as a universal release floor: for a backport, fork,
+nightly, or other release, inspect the scheduler and output processor at the
+deployed SHA.
+
+Keep validation passive. Use source at the deployed SHAs; P/D/proxy launch
+config, including the connector and the flag; proxy code or config that
+handles `kv_transfer_params`; and redacted request-correlated traces that
+record, on P's output and on D's input, key presence, JSON type, and
+truthiness for the `do_remote_prefill` flag (not a token count), and key
+presence, JSON type, and integer value for `remote_prefill_cached_tokens`,
+never raw block IDs, engine hosts, or prompts. Corroborate a P-side count with
+P-pool `vllm:prefix_cache_hits`/`vllm:prefix_cache_queries` and P prefill time/TTFT by
+route. Do not run production experiments or active tenant probes to
+manufacture hits. None of this evidence proves complete application or tenant
+isolation.
 
 ## Mechanics
 
