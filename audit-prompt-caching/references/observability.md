@@ -106,6 +106,13 @@ bare salt values and adapter names, so redact event payloads before logging.
 
 Only a `valid` denominator supports a savings or hit-rate claim. Report `ambiguous` and `invalid` ratios as non-decision-grade evidence and fix accounting first.
 
+A `valid` denominator is arithmetic validity, not numerator provenance. For
+vLLM prefill/decode disaggregation, D-reported `cached_tokens` can count KV
+transferred from P rather than P-side APC hits, and absent
+`prompt_tokens_details` is unobserved, not zero; establish provenance per
+[`references/vllm.md` P/D cached-token accounting](vllm.md#pd-cached-token-accounting)
+before treating the ratio as hits, savings, latency, or rollout evidence.
+
 ## Provider aggregate evidence boundary
 
 Provider aggregates are evidence objects, not request events. Record the source,

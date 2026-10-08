@@ -77,7 +77,12 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # remeasured as the full corpus on top of that: 90479 -> 92733 (+2254;
 # 361913 -> 370932 chars). The per-file rounded sum for the same corpus is
 # 92747; this ceiling uses the aggregate estimate.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 92733
+# The vLLM v0.30.0/v0.31.0 P/D cached-token accounting contract (vllm.md +5837
+# chars, observability.md +447, evals 53-54 +4042), merged onto that main,
+# remeasured as the full merged corpus: 92733 -> 95315 (+2582; 370932 ->
+# 381258 chars). The per-file rounded sum for the same corpus is 95329; this
+# ceiling uses the aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 95315
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
