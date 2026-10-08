@@ -70,7 +70,14 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # corpus: 89341 -> 90479 (+1138; 357361 -> 361913 chars).
 # The per-file rounded sum for the same corpus is 90493; this ceiling uses the
 # aggregate estimate.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 90479
+# The Agent Platform project-number cache isolation boundary and passive
+# within-project application-scope checks, with findings gated on a concrete
+# boundary violation, an unknown-recipient-scope control-gap case, and an
+# authorized-sharing control (gemini.md +3516 chars, evals 51-52 +5503 chars),
+# remeasured as the full corpus on top of that: 90479 -> 92733 (+2254;
+# 361913 -> 370932 chars). The per-file rounded sum for the same corpus is
+# 92747; this ceiling uses the aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 92733
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
