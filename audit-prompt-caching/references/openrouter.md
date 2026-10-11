@@ -54,7 +54,7 @@ router-published and can differ from the vendor's own price list):
 | Provider | Mode | Min tokens | TTL | Write | Read |
 |---|---|---|---|---|---|
 | OpenAI | automatic; explicit on GPT-5.6+ | 1,024 | 30m minimum | free before 5.6, 1.25x on 5.6+ | 0.25x-0.5x |
-| Anthropic | explicit `cache_control` (top-level or up to 4 blocks) | 1,024-4,096 by model | 5m or `ttl: "1h"` | 1.25x / 2x | 0.1x |
+| Anthropic | explicit `cache_control` (top-level or up to 4 blocks) | 512-4,096 by model | 5m or `ttl: "1h"` | 1.25x / 2x | 0.1x |
 | Google Gemini | implicit on 2.5+; explicit via `cache_control` | 1,024-4,096 | ~3-5 min implicit; 5m explicit, no refresh | none implicit | 0.25x |
 | DeepSeek | automatic | unstated | unstated | 1.0x | 0.1x |
 | Moonshot AI | automatic | unstated | unstated | none | 0.25x |
