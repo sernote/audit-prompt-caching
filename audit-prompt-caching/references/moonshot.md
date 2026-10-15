@@ -14,6 +14,7 @@ Verify before exact claims:
 Official sources (Chinese platform, observed 2026-10-05):
 - Context caching guide: https://platform.kimi.com/docs/guide/context-caching
 - Model inference pricing: https://platform.kimi.com/docs/pricing/chat
+- Messages API (observed 2026-10-14): https://platform.kimi.com/docs/api/messages
 
 International sources from the 2026-09-12 review, not rechecked for this contract:
 - Automatic context caching: https://platform.kimi.ai/docs/guide/use-context-caching-feature-of-kimi-api
@@ -22,7 +23,7 @@ International sources from the 2026-09-12 review, not rechecked for this contrac
 
 ## Stable Mechanics
 
-Kimi API caching is **prefix caching** with no cache object or cache ID (on `api.moonshot.cn`, default automatic writes are documented only for Chat Completions and Responses on write-capable models listed below; see TTL Controls), and any change in the prefix makes everything after it unreusable. Put stable system prompts, tool definitions, reference material, and code first and per-turn content last; keep timestamps and random IDs out of the prefix.
+Kimi API caching is **prefix caching** with no cache object or cache ID (on `api.moonshot.cn`, Chat Completions, Responses, and Messages document default 5m reads, with writes on write-capable models listed below; see TTL Controls), and any change in the prefix makes everything after it unreusable. Put stable system prompts, tool definitions, reference material, and code first and per-turn content last; keep timestamps and random IDs out of the prefix.
 
 On the Chinese platform the guide documents (2026-10-05):
 - Cache Write support: `kimi-k3` supports Cache Write; `kimi-k2.7`, `kimi-k2.7-highspeed`, and `kimi-k2.6` do not. Use these exact names; do not treat `kimi-k2.7` and `kimi-k2.7-code` as the same model, and do not infer write or hit behavior for unlisted models. This is a write-capability and billing statement only: no documented Cache Write is not evidence that reads are absent or that the cache is not populated automatically (the pricing page's K2-series table, which includes `kimi-k2.6`, has a cached-input price column but no write column). A price category does not prove deployment behavior; check reads on the actual deployment.
@@ -44,8 +45,8 @@ Unless marked historical or international, these checks describe `api.moonshot.c
 ### TTL Controls
 
 - Chat Completions and Responses: `prompt_cache_options: {"mode": "implicit", "ttl": "5m" | "1h"}`; `implicit` is the only mode. Omitting it uses 5m: eligible prefixes are written automatically and billed as cache writes.
-- Messages (`/anthropic/v1/messages`): request-top-level `cache_control: {"type": "ephemeral", "ttl": "5m" | "1h"}` writes the prefix at that TTL. Omitting it makes the request read-only against the 5m cache, with no write. `cache_control` markers inside message content are ignored on this surface, so Anthropic-style block markers neither write nor choose a TTL; only the top-level field does.
-- Because hits renew the original TTL free, a read-only Messages request that hits an existing eligible 5m entry renews it without Cache Write; it adds no new content, and a miss renews nothing. Zero `cache_creation_input_tokens` therefore proves neither expiry nor missing renewal, and keeping a hit entry warm does not require recurring writes. Judge decay from observed request gaps, read/miss counts, and prefix changes.
+- Messages (`/anthropic/v1/messages`): only request-top-level `cache_control: {"type": "ephemeral", "ttl": "5m" | "1h"}` selects the TTL. Omitting it is documented as default 5m reads and writes, any write billed at 5m (observed 2026-10-14), which proves neither a write nor its absence. In-message `cache_control` markers are ignored, so block markers alone leave the 5m default.
+- Hits renew the original TTL free without Cache Write, so a full hit can report zero `cache_creation_input_tokens`. Check reads first: zero creation with reads proves neither expiry nor missing renewal, and keeping a hit entry warm does not require recurring writes. Judge decay from observed request gaps, read/miss counts, and prefix changes.
 
 ### Surfaces And Fields
 
@@ -54,7 +55,7 @@ Label records `provider: moonshot` so `analyze_usage_logs.py` applies the vendor
 - Chat Completions: total `usage.prompt_tokens`, read `usage.prompt_tokens_details.cached_tokens`, write `usage.prompt_tokens_details.cache_write_tokens`.
 - Responses: total `usage.input_tokens`, read/write in `usage.input_tokens_details.cached_tokens` / `.cache_write_tokens`.
 - For both, read, write, and uncached are mutually exclusive parts of the total: `uncached = total - read - write`.
-- Messages: total = `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`; `input_tokens` excludes reads and writes. `usage.cache_creation.ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens` split `cache_creation_input_tokens` by TTL; never add them to the total again. Zero creation is expected when the top-level `cache_control` is omitted.
+- Messages: total = `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`; `input_tokens` excludes reads and writes. `usage.cache_creation.ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens` split `cache_creation_input_tokens` by TTL; never add them to the total again.
 - Streaming Chat Completions needs `stream_options.include_usage=true`; the cache breakdown arrives in the final chunk's usage.
 - Optional response headers `Msh-Usage-Cache-Write-Tokens-5m` and `Msh-Usage-Cache-Write-Tokens-1h` (documented with a Chat Completions example) give per-TTL writes (0 when nothing new was written). Console request details add per-TTL write-token columns, with input = miss + hit + write.
 
@@ -99,7 +100,7 @@ if isinstance(total, int) and total > 0 and isinstance(read, int) and 0 <= read 
 
 Read the historical top-level `usage.cached_tokens` only when a capture from that deployment shows it, and record that field path; with no write field, leave writes unknown rather than zero on an unverified international deployment.
 
-If reads stay 0 on repeated calls: Messages traffic with no top-level `cache_control` or with markers only inside messages, when no earlier request wrote an eligible entry (read-only requests can hit and renew an existing entry but never populate one); a request TTL other than the warm entry's (5m and 1h caches do not interoperate); idle gap beyond the TTL; a different organization; prefix drift; effort/thinking change; host change through a router; or a legacy `/v1/caching` path. On international hosts, also check the historical 256-token rule.
+If reads stay 0 on repeated calls: a request TTL other than the warm entry's (block markers do not set it; 5m and 1h caches do not interoperate); idle gap beyond the TTL; a different organization; prefix drift; effort/thinking change; host change through a router; or a legacy `/v1/caching` path. On international hosts, also check the historical 256-token rule.
 
 ## Monitoring
 
