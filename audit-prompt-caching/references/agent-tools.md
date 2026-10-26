@@ -39,6 +39,17 @@ got smaller: validate stable `tools`/prefix hashes and provider usage per step.
 - Treat effort and reasoning configuration as prefix content. A per-step effort router restarts the cache unless it uses the provider's positional form: `configuration_update` on standard single-agent `gpt-6`/`gpt-6-astra`/`gpt-6-sol`/`gpt-6-luna`/`gpt-6.1-sol`, or an effort-only `role: "system"` message with the `mid-conversation-output-config-2026-07-01` beta on Claude Fable 5.1, Mythos 5.1, Opus 5, `claude-opus-5-5`, and `claude-sonnet-5-5` (adaptive thinking only; `between_tools` fixes effort). Log effort level and change type per step next to cache reads.
 - Treat provider conversation and reasoning handles as cache-relevant state. Examples include Gemini `previous_interaction_id`, Qwen `previous_response_id`, and a provider's documented thinking/reasoning continuation. Preserve them only for the same intended conversation; an opaque handle may carry user context and must be logged as a keyed hash, not as a raw identifier.
 
+## Collection order across lifecycle states
+
+For a reusable collection selected for review:
+
+- Follow discovery/deduplication through inclusion and conversion to the last visible ordered representation. Stable membership or deterministic identity hashes do not establish stable enumeration.
+- Separate initial inclusion, unchanged continuation, and changed or rebuilt state where reachable. Suppressing an equal set proves only that case. Compare repeated constructions of the same target state; a genuine membership change alone is not an ordering defect.
+- Identify whether each boundary preserves a sequence, sorts it, or assigns named fields. Map-key normalization does not sort nested lists; order lost before rendering does not establish prefix drift. Record an unavailable renderer as an evidence boundary.
+- Use a source-linked probe when useful, holding membership/content constant. A canonicalized fixture can test the ordering hypothesis but is not a product fix or cache measurement. Do not sort semantically ordered data blindly.
+
+Report the inclusion condition, first unsupported boundary, and any unexamined lifecycle case with the finding or scoped clean check.
+
 ## Fresh Ungrouped Restarts Reset an Auto-Generated Cache Key
 
 A distinct failure mode from tool-list churn: the prompt prefix is perfectly stable, yet a
