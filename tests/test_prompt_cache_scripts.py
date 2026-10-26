@@ -27,7 +27,9 @@ PLUGIN_EVAL_TRIGGER_TOKEN_BUDGET = 147
 # 6341 baseline; the AP-15 effort-continuity trigger, playbook, and linter
 # description add 282 more. Provider guidance and the Routing Outcome Gate are
 # preserved.
-PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
+# Collection lifecycle tracing and the source-mechanism evidence boundary add
+# 490 chars on current main: 26799 -> 27289, or 6700 -> 6823 estimated tokens.
+PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6823
 # Remeasured corpus after the Claude 5 family / GPT-6 Astra effort-continuity
 # references, AP-15 rule, linter branch, and evals 34-36.
 # Includes executable/eval source, not just references loaded by an agent.
@@ -82,7 +84,10 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6761
 # remeasured as the full merged corpus: 92733 -> 95315 (+2582; 370932 ->
 # 381258 chars). The per-file rounded sum for the same corpus is 95329; this
 # ceiling uses the aggregate estimate.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 95315
+# Current main's Bedrock wording adjustment reduced the corpus to 381183
+# chars (95296 estimated tokens). Collection lifecycle guidance adds 1179
+# chars: 381183 -> 382362, or 95296 -> 95591 (+295), aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 95591
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
@@ -6267,7 +6272,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
     def test_skill_stays_within_invoked_token_baseline(self):
         self.assertEqual(
             PLUGIN_EVAL_SKILL_TOKEN_BASELINE,
-            6761,
+            6823,
             "the whole-skill baseline must equal the measured content ceiling",
         )
         self.assertLessEqual(

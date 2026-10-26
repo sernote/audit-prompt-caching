@@ -120,6 +120,8 @@ Before recommending prompt-cache changes, check:
 
 If the gate fails, report why caching is not the right lever yet and recommend measurement, prompt restructuring, routing fixes, or a different optimization.
 
+These gates constrain severity and proposed changes, not recording a source mechanism. An unavailable renderer limits the cache-impact claim: state the proven upstream behavior and the missing downstream link separately.
+
 ## Language Match Rule
 
 Answer in the user's language by default. Preserve provider/API field names exactly, such as `cached_tokens`, `cache_write_tokens`, `prompt_cache_options`, `prompt_cache_breakpoint`, `configuration_update`, `output_config.effort`, `cache_control`, `cachePoint`, `TTFT`, and `prompt_cache_key`, but explain them in the user's language.
@@ -216,7 +218,7 @@ If detection is ambiguous, ask which provider/engine is in use.
 
 1. Detect mode, provider/engine, cache planes, and scenario; load matching references and apply the Freshness Gate.
 2. Run the Project Context and Applicability Gates, then scan code/config with `scripts/extract_llm_calls.py` when deterministic evidence helps.
-3. Inspect provider calls, prompt builders, cache controls, SDK parameters, env defaults, gateway/router, Compose/Kubernetes/Helm, engine flags, and replica topology.
+3. Inspect provider calls, prompt builders, cache controls, SDK parameters, env defaults, gateway/router, Compose/Kubernetes/Helm, engine flags, and replica topology. For reusable collections under review, trace producer → inclusion/update decision → last visible serialized representation. Check cases where the collection is included even if unchanged updates are suppressed; use the lifecycle checks in `references/agent-tools.md`.
 4. Map prompt structure in order: tools, schemas, system/developer instructions, examples, static documents, retrieved context, history, user data, volatile values; mark each segment static, semi-static, dynamic, or volatile. Ask for usage logs, rendered payload pairs, traces, or billing only where they confirm a finding, compare prefixes, calculate ROI, or correlate an incident.
 5. Apply the Usage Evidence Contract and measure reads/writes, TTFT/prefill, decode, route/replica, deploy, and agent-step effects; for agents include `prefix_hash`, `tools_count`, hashes, output, streaming, compaction, and routed provider/model.
 6. Apply `references/rules.json`; report evidence type, confidence, impact condition, safe action, fix, validation, and `do_not_do_yet` plus the Clinic Summary.
