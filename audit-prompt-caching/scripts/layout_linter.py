@@ -359,7 +359,10 @@ def lint_gpt56_cache_policy(payload):
                 )
             )
             continue
-        if value != {"mode": "explicit"}:
+        if value != {"mode": "explicit"} and not (
+            surface == "responses"
+            and value in [{"mode": "explicit", "ttl": ttl} for ttl in ("30m", "12h")]
+        ):
             findings.append(
                 cache_issue(
                     'prompt_cache_breakpoint must be exactly {"mode":"explicit"}',
