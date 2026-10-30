@@ -995,6 +995,287 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertEqual(event["source_fields"]["cached_tokens"], path)
                 self.assertEqual(event["denominator_status"], "valid")
 
+    def usage_summary(self, record):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "usage.json"
+            log_path.write_text(json.dumps(record))
+            result = run_script("analyze_usage_logs.py", log_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    # DashScope/Model Studio context-cache TEXT example (CN/EN and international
+    # docs): native input_tokens/output_tokens totals with OpenAI-style
+    # prompt_tokens_details; cached_tokens "is part of usage.input_tokens".
+    DASHSCOPE_NATIVE_TEXT_USAGE = {
+        "input_tokens": 3019,
+        "output_tokens": 101,
+        "prompt_tokens_details": {"cached_tokens": 2048},
+        "total_tokens": 3120,
+    }
+    DASHSCOPE_NATIVE_SOURCE_FIELDS = {
+        "input_tokens": "usage.input_tokens",
+        "cached_tokens": "usage.prompt_tokens_details.cached_tokens",
+        "cache_read_input_tokens": None,
+        "cache_creation_input_tokens": None,
+        "cache_write_tokens": None,
+        "output_tokens": "usage.output_tokens",
+    }
+
+    def test_analyze_usage_logs_reads_labeled_dashscope_native_inclusive_totals(self):
+        for provider in ("dashscope", "qwen"):
+            record = {"provider": provider, "usage": self.DASHSCOPE_NATIVE_TEXT_USAGE}
+            with self.subTest(provider=provider):
+                event = self.normalized_event(record)
+                self.assertEqual(event["provider"], provider)
+                self.assertEqual(event["accounting_semantics"], "inclusive")
+                self.assertEqual(event["input_tokens"], 3019)
+                self.assertEqual(event["total_input_tokens"], 3019)
+                self.assertEqual(event["output_tokens"], 101)
+                self.assertEqual(event["cached_tokens"], 2048)
+                self.assertEqual(
+                    event["source_fields"], self.DASHSCOPE_NATIVE_SOURCE_FIELDS
+                )
+                self.assertEqual(event["denominator_status"], "valid")
+                self.assertEqual(event["warnings"], [])
+
+                summary = self.usage_summary(record)
+                self.assertEqual(summary["total_input_tokens"], 3019)
+                self.assertEqual(summary["denominator_status"], "valid")
+                self.assertEqual(summary["warnings"], [])
+                self.assertEqual(summary["cache_hit_ratio"], round(2048 / 3019, 4))
+
+    def test_analyze_usage_logs_keeps_dashscope_native_miss_measured(self):
+        usage = {
+            **self.DASHSCOPE_NATIVE_TEXT_USAGE,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        }
+        record = {"provider": "dashscope", "usage": usage}
+        event = self.normalized_event(record)
+
+        self.assertEqual(event["input_tokens"], 3019)
+        self.assertEqual(event["total_input_tokens"], 3019)
+        self.assertEqual(event["cached_tokens"], 0)
+        self.assertEqual(event["source_fields"], self.DASHSCOPE_NATIVE_SOURCE_FIELDS)
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+        summary = self.usage_summary(record)
+        self.assertEqual(summary["denominator_status"], "valid")
+        self.assertEqual(summary["cache_hit_ratio"], 0)
+
+    def test_analyze_usage_logs_reads_qwen_responses_mixed_details_once(self):
+        # qwen.md: DashScope Responses usage may expose both details objects.
+        # prompt_tokens_details wins for every cache field; never sum both.
+        event = self.normalized_event(
+            {
+                "provider": "qwen",
+                "usage": {
+                    "input_tokens": 2000,
+                    "output_tokens": 50,
+                    "input_tokens_details": {
+                        "cached_tokens": 1000,
+                        "cache_creation_input_tokens": 3,
+                        "cache_write_tokens": 5,
+                    },
+                    "prompt_tokens_details": {
+                        "cached_tokens": 1000,
+                        "cache_creation_input_tokens": 500,
+                        "cache_write_tokens": 100,
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(event["input_tokens"], 2000)
+        self.assertEqual(event["cached_tokens"], 1000)
+        self.assertEqual(event["cache_creation_input_tokens"], 500)
+        self.assertEqual(event["cache_write_tokens"], 100)
+        self.assertEqual(
+            event["source_fields"],
+            {
+                "input_tokens": "usage.input_tokens",
+                "cached_tokens": "usage.prompt_tokens_details.cached_tokens",
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": (
+                    "usage.prompt_tokens_details.cache_creation_input_tokens"
+                ),
+                "cache_write_tokens": "usage.prompt_tokens_details.cache_write_tokens",
+                "output_tokens": "usage.output_tokens",
+            },
+        )
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_does_not_zero_cache_from_input_details_breakdown(self):
+        event = self.normalized_event(
+            {
+                "provider": "dashscope",
+                "usage": {
+                    "input_tokens": 3019,
+                    "output_tokens": 101,
+                    "input_tokens_details": {"text_tokens": 3019},
+                    "prompt_tokens_details": {"cached_tokens": 2048},
+                },
+            }
+        )
+
+        self.assertEqual(event["cached_tokens"], 2048)
+        self.assertEqual(event["source_fields"], self.DASHSCOPE_NATIVE_SOURCE_FIELDS)
+        self.assertEqual(event["total_input_tokens"], 3019)
+        self.assertEqual(event["denominator_status"], "valid")
+
+    def test_analyze_usage_logs_reads_unlabeled_native_shape_as_generic_openai(self):
+        # Without a provider label the generic OpenAI-shape adapter claims any
+        # record carrying a details object, so native DashScope-shaped usage is
+        # reported as provider "openai" with inclusive semantics; its measured
+        # input_tokens total is the inclusive denominator.
+        event = self.normalized_event({"usage": self.DASHSCOPE_NATIVE_TEXT_USAGE})
+
+        self.assertEqual(event["provider"], "openai")
+        self.assertEqual(event["accounting_semantics"], "inclusive")
+        self.assertEqual(event["total_input_tokens"], 3019)
+        self.assertEqual(event["cached_tokens"], 2048)
+        self.assertEqual(event["source_fields"], self.DASHSCOPE_NATIVE_SOURCE_FIELDS)
+        self.assertEqual(event["denominator_status"], "valid")
+        self.assertEqual(event["warnings"], [])
+
+    def test_analyze_usage_logs_openai_total_selection_controls(self):
+        for name, record, expected in (
+            (
+                "prompt_tokens wins over native totals and input details",
+                {
+                    "provider": "qwen",
+                    "usage": {
+                        "prompt_tokens": 3019,
+                        "completion_tokens": 101,
+                        "input_tokens": 99999,
+                        "output_tokens": 9999,
+                        "prompt_tokens_details": {"cached_tokens": 2048},
+                        "input_tokens_details": {"cached_tokens": 10},
+                    },
+                },
+                {
+                    "input_tokens": (3019, "usage.prompt_tokens"),
+                    "output_tokens": (101, "usage.completion_tokens"),
+                    "cached_tokens": (2048, "usage.prompt_tokens_details.cached_tokens"),
+                },
+            ),
+            (
+                "present zero prompt_tokens still wins",
+                {
+                    "provider": "qwen",
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "input_tokens": 3019,
+                        "output_tokens": 101,
+                        "prompt_tokens_details": {"cached_tokens": 0},
+                    },
+                },
+                {
+                    "input_tokens": (0, "usage.prompt_tokens"),
+                    "output_tokens": (0, "usage.completion_tokens"),
+                },
+            ),
+            (
+                "Singapore-style top-level cached_tokens on native totals",
+                {
+                    "provider": "dashscope",
+                    "usage": {
+                        "input_tokens": 3019,
+                        "output_tokens": 101,
+                        "cached_tokens": 2048,
+                    },
+                },
+                {
+                    "input_tokens": (3019, "usage.input_tokens"),
+                    "cached_tokens": (2048, "usage.cached_tokens"),
+                },
+            ),
+            (
+                "neither total with prompt details keeps chat output name",
+                {
+                    "usage": {
+                        "prompt_tokens_details": {"cached_tokens": 5},
+                        "completion_tokens": 7,
+                        "output_tokens": 9,
+                    },
+                },
+                {
+                    "input_tokens": (0, None),
+                    "output_tokens": (7, "usage.completion_tokens"),
+                    "cached_tokens": (5, "usage.prompt_tokens_details.cached_tokens"),
+                },
+            ),
+            (
+                "neither total with input details keeps responses output name",
+                {
+                    "usage": {
+                        "input_tokens_details": {"cached_tokens": 5},
+                        "completion_tokens": 7,
+                        "output_tokens": 9,
+                    },
+                },
+                {
+                    "input_tokens": (0, None),
+                    "output_tokens": (9, "usage.output_tokens"),
+                    "cached_tokens": (5, "usage.input_tokens_details.cached_tokens"),
+                },
+            ),
+        ):
+            with self.subTest(name):
+                event = self.normalized_event(record)
+                for field, (value, path) in expected.items():
+                    self.assertEqual(event[field], value, field)
+                    self.assertEqual(event["source_fields"][field], path, field)
+
+    def test_analyze_usage_logs_present_prompt_details_never_fall_through(self):
+        # An empty or malformed prompt_tokens_details still owns every cache
+        # field: input_tokens_details is not consulted, only the top-level
+        # fallback, and absent cache fields stay unobserved.
+        input_details = {
+            "cached_tokens": 600,
+            "cache_write_tokens": 50,
+            "cache_creation_input_tokens": 40,
+        }
+        for prompt_details in ({}, None, "malformed", []):
+            with self.subTest(prompt_details=prompt_details):
+                event = self.normalized_event(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "output_tokens": 10,
+                            "prompt_tokens_details": prompt_details,
+                            "input_tokens_details": input_details,
+                        },
+                    }
+                )
+                self.assertEqual(event["input_tokens"], 1000)
+                for field in (
+                    "cached_tokens",
+                    "cache_write_tokens",
+                    "cache_creation_input_tokens",
+                ):
+                    self.assertEqual(event[field], 0, field)
+                    self.assertIsNone(event["source_fields"][field], field)
+
+                event = self.normalized_event(
+                    {
+                        "provider": "openai",
+                        "usage": {
+                            "input_tokens": 1000,
+                            "cached_tokens": 300,
+                            "prompt_tokens_details": prompt_details,
+                            "input_tokens_details": input_details,
+                        },
+                    }
+                )
+                self.assertEqual(event["cached_tokens"], 300)
+                self.assertEqual(
+                    event["source_fields"]["cached_tokens"], "usage.cached_tokens"
+                )
+
     def test_analyze_usage_logs_labeled_vendor_without_cache_field_stays_ambiguous(self):
         event = self.normalized_event(
             {

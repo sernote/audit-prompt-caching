@@ -250,17 +250,19 @@ def openai_breakdown_value(usage, usage_prefix, details, details_prefix, names):
 
 def extract_openai(record):
     usage, prefix = usage_envelope(record)
-    if "prompt_tokens" in usage or "prompt_tokens_details" in usage:
-        input_names, output_names = ("prompt_tokens",), ("completion_tokens",)
-        details_key = "prompt_tokens_details"
-    else:
-        input_names, output_names = ("input_tokens",), ("output_tokens",)
+    # Totals and details are chosen independently.
+    details_key = "prompt_tokens_details"
+    names = "input_tokens", "output_tokens"
+    if "prompt_tokens" in usage or (
+        "input_tokens" not in usage and details_key in usage
+    ):
+        names = "prompt_tokens", "completion_tokens"
+    if details_key not in usage:
         details_key = "input_tokens_details"
-    details = usage.get(details_key)
-    details = details if isinstance(details, dict) else {}
+    details = mapping_at(usage, (details_key,))
     details_prefix = (*prefix, details_key)
     return extraction(
-        input_tokens=extracted_value(usage, input_names, prefix),
+        input_tokens=extracted_value(usage, names[:1], prefix),
         cached_tokens=openai_breakdown_value(
             usage, prefix, details, details_prefix, OPENAI_COMPATIBLE_CACHED_NAMES
         ),
@@ -272,7 +274,7 @@ def extract_openai(record):
         cache_creation_input_tokens=extracted_value(
             details, ("cache_creation_input_tokens",), details_prefix
         ),
-        output_tokens=extracted_value(usage, output_names, prefix),
+        output_tokens=extracted_value(usage, names[1:], prefix),
     )
 
 
