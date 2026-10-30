@@ -40,8 +40,8 @@ Important current behaviors to verify:
 
 Direct GPT-5.6 models add paid writes and optional explicit cache boundaries:
 
-- `prompt_cache_options.mode` is `implicit` (the default) or `explicit`; the only currently documented TTL is `"30m"`.
-- An explicit boundary is attached to a supported input content block as `"prompt_cache_breakpoint": {"mode": "explicit"}`. In implicit mode OpenAI also considers the latest message; explicit mode writes only marked prefixes. Explicit mode with no marker is cache-disabled rather than an API syntax error, but the linter reports it because it is commonly accidental.
+- `prompt_cache_options.mode`: `implicit` (default) or `explicit`; `ttl` is the request default, `"30m"`. Request-level `ttl: "12h"` is guide-only: unresolved, linter-flagged.
+- Supported content blocks take `"prompt_cache_breakpoint": {"mode": "explicit"}`; Responses may add `"ttl": "30m"|"12h"` (else inherited). 12h has a higher write rate; don't price all writes by `cache_policy.ttl`. Chat marker `ttl`/per-response write split are unconfirmed; no server acceptance observed. Implicit also uses the latest message; explicit writes only marked prefixes (none disables caching: valid, but linter flags it).
 - **`prompt_cache_key` is optional on GPT-5.6+.** Use it for separate customer/user accounting or hit-probing isolation. OpenAI routes automatically; diagnose low `cached_tokens` from prefix, breakpoint, region, and cadence first. The 15 requests-per-minute key guidance is for earlier models.
 - **Implicit mode can reuse earlier message boundaries.** The guide checks the implicit point, up to 20 earlier eligible message endings, and the initial developer-message block. Explicit-only mode checks marked points. A volatile suffix can still cause low-value writes; measure before switching modes.
 - Each request creates at most four writes; implicit mode consumes one slot. The cache guide says the first 2 and latest 50 explicit markers are read candidates, while create references mention 80. Check the target API before relying on a lookback count.
@@ -56,7 +56,7 @@ For GPT-6 standard single-agent conversations, keep request-level `reasoning.eff
 
 ## GPT-6 Sol Snapshot
 
-`gpt-6-sol` uses the GPT-5.6+ contract. Current prices per MTok: $2 ordinary input, $0.20 read, $2.50 write, $10 output. Its minimum is 1,024 visible tokens; `cached_tokens` reports the exact eligible boundary. `"30m"` is the only documented TTL and refreshes on reuse.
+`gpt-6-sol`: GPT-5.6+ contract; $2/$0.20/$2.50/$10 per MTok (ordinary/read/write/output); 1,024 visible tokens minimum; `cached_tokens` at the exact eligible boundary; reads refresh 30m coverage.
 
 In standard single-agent Responses, keep request-level effort constant and append `configuration_update` for changes. Keep tools stable; use supported `allowed_tools`, `tool_choice: "none"`, deferred search, or append-only `additional_tools` (no explicit marker there). `prompt_cache_options.prewarm: true` prepares a prefix without output but bills a write; verify the later read.
 
@@ -66,7 +66,7 @@ Keep data-control layers separate. Cache entries are organization-scoped. ZDR, r
 
 ## GPT-6.1 Sol Snapshot
 
-Verified 2026-09-30 against the changelog, pricing, model, caching, and reasoning pages. Direct `gpt-6.1-sol` (released 2026-09-29 on Responses and Chat Completions) uses the GPT-5.6+ cache contract: implicit or explicit `prompt_cache_options`, `"30m"` as the only TTL, a strict 1,024 visible tokens minimum, and `cached_tokens` at the exact eligible boundary. `prompt_cache_key` is optional for separate accounting, not needed for routing. Apply this to the exact direct ID only; Bedrock, wrapper, and future IDs need their own evidence.
+Verified 2026-09-30 (changelog/pricing/model/caching/reasoning). Direct `gpt-6.1-sol` (released 2026-09-29; Responses/Chat) uses the GPT-5.6+ contract: strict 1,024 visible tokens minimum, `cached_tokens` at the exact eligible boundary, optional `prompt_cache_key` for separate accounting, not routing. Verify Bedrock/wrapper/future IDs separately.
 
 Standard prices per MTok (ordinary/read/write/output): $2/$0.10/$2.50/$10 through 272K input tokens; above 272K the entire request uses $4/$0.20/$5/$15, not only the excess. Reads are 0.05x ordinary input, not the usual GPT-5.6+ 0.10x; writes are 1.25x. `cached_tokens` and `cache_write_tokens` are breakdowns of the reported input total; do not add them again. `prompt_cache_options.prewarm: true` prepares a stable prefix without output but bills writes; include every prewarm write charge in ROI, even without later reuse, and verify later reads in `cached_tokens`.
 

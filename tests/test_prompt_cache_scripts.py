@@ -4331,6 +4331,140 @@ class PromptCacheScriptsTest(unittest.TestCase):
                 self.assertFalse(output["cache_policy"]["valid"])
                 self.assertNotIn("AP-11", output["clean_checks"])
 
+    def assert_ap11_coherent(self, status, output):
+        """Exit code, status, validity, clean checks, and AP-11 findings agree."""
+        self.assertEqual(status, 1 if output["findings"] else 0, output)
+        self.assertEqual(output["status"], "findings" if output["findings"] else "ok")
+        policy = output["cache_policy"]
+        has_ap11 = any(item["rule_id"] == "AP-11" for item in output["findings"])
+        self.assertEqual(policy["valid"], (not has_ap11) if policy["validated"] else None)
+        self.assertEqual("AP-11" in output["clean_checks"], policy["validated"] and not has_ap11)
+
+    def test_layout_linter_accepts_responses_breakpoint_ttl_override(self):
+        # Prompt-caching guide, Responses create reference, openai-node v7.45.1
+        # and openai-python v3.41.0 (checked 2026-10-29): a Responses content
+        # marker may set ttl "30m" or "12h"; omitted ttl inherits the request
+        # default. Offline contract only; no live server acceptance observed.
+        blocks = {
+            "input_text": {"type": "input_text", "text": "Stable shared policy"},
+            "input_image": {"type": "input_image", "image_url": "https://example.com/a.png"},
+            "input_file": {"type": "input_file", "file_id": "file-stable"},
+        }
+        for request_mode in ("explicit", "implicit"):
+            for block_type, block in blocks.items():
+                for marker in ({"mode": "explicit"}, {"mode": "explicit", "ttl": "30m"},
+                               {"mode": "explicit", "ttl": "12h"}):
+                    payload = gpt61_sol_payload(
+                        prompt_cache_options={"mode": request_mode, "ttl": "30m"}
+                    )
+                    payload["input"][0]["content"][0] = {**block, "prompt_cache_breakpoint": marker}
+                    with self.subTest(mode=request_mode, block=block_type, marker=marker):
+                        status, output = lint_payload(payload)
+
+                        self.assert_ap11_coherent(status, output)
+                        self.assertEqual(status, 0, output["findings"])
+                        policy = output["cache_policy"]
+                        self.assertTrue(policy["validated"])
+                        self.assertEqual(policy["mode"], request_mode)
+                        self.assertEqual(policy["ttl"], "30m")
+                        self.assertEqual(policy["explicit_breakpoints"], 1)
+
+        # Guide "Mix lifetimes in one request" shape: 12h prefix, inherited 30m.
+        mixed = gpt61_sol_payload()
+        mixed["input"][0]["content"][0]["prompt_cache_breakpoint"] = {"mode": "explicit", "ttl": "12h"}
+        mixed["input"][1]["content"] = [
+            {"type": "input_text", "text": "Session context",
+             "prompt_cache_breakpoint": {"mode": "explicit"}},
+            {"type": "input_text", "text": "Current question"},
+        ]
+        status, output = lint_payload(mixed)
+        self.assert_ap11_coherent(status, output)
+        self.assertEqual(status, 0, output["findings"])
+        self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 2)
+
+        # Same acceptance for every existing direct model ID, and no others.
+        linter = load_script_module("layout_linter.py")
+        for model in sorted(linter.EXPLICIT_CACHE_MODELS):
+            payload = gpt61_sol_payload(model=model)
+            payload["input"][0]["content"][0]["prompt_cache_breakpoint"]["ttl"] = "12h"
+            with self.subTest(model=model):
+                policy = linter.lint(payload)["cache_policy"]
+                self.assertTrue(policy["valid"])
+                self.assertEqual(policy["explicit_breakpoints"], 1)
+
+    def test_layout_linter_keeps_breakpoint_ttl_rejections(self):
+        def responses(marker=None, block_type="input_text", **overrides):
+            payload = gpt61_sol_payload(**overrides)
+            block = payload["input"][0]["content"][0]
+            block["type"] = block_type
+            if marker is not None:
+                block["prompt_cache_breakpoint"] = marker
+            return payload
+
+        def chat(marker):
+            payload = gpt61_sol_payload("chat")
+            payload["messages"][0]["content"][0]["prompt_cache_breakpoint"] = marker
+            return payload
+
+        def item_level_marker():
+            payload = responses()
+            del payload["input"][0]["content"][0]["prompt_cache_breakpoint"]
+            payload["input"][0]["prompt_cache_breakpoint"] = {"mode": "explicit", "ttl": "12h"}
+            return payload
+
+        marker_path = "$.input[0].content[0].prompt_cache_breakpoint"
+        chat_path = "$.messages[0].content[0].prompt_cache_breakpoint"
+        rejected = "must be exactly"
+        twelve = {"mode": "explicit", "ttl": "12h"}
+        # (label, payload, evidence, issue, explicit_breakpoints)
+        cases = [
+            ("chat 12h", chat(twelve), chat_path, rejected, 0),
+            ("chat 30m", chat({"mode": "explicit", "ttl": "30m"}), chat_path, rejected, 0),
+            ("ttl 1h", responses({"mode": "explicit", "ttl": "1h"}), marker_path, rejected, 0),
+            ("ttl 24h", responses({"mode": "explicit", "ttl": "24h"}), marker_path, rejected, 0),
+            ("ttl case", responses({"mode": "explicit", "ttl": "12H"}), marker_path, rejected, 0),
+            ("ttl null", responses({"mode": "explicit", "ttl": None}), marker_path, rejected, 0),
+            ("ttl int", responses({"mode": "explicit", "ttl": 720}), marker_path, rejected, 0),
+            ("ttl list", responses({"mode": "explicit", "ttl": ["12h"]}), marker_path, rejected, 0),
+            ("extra type", responses({**twelve, "type": "explicit"}), marker_path, rejected, 0),
+            ("extra key", responses({**twelve, "scope": "shared"}), marker_path, rejected, 0),
+            ("mode implicit", responses({"mode": "implicit", "ttl": "12h"}), marker_path, rejected, 0),
+            ("mode missing", responses({"ttl": "12h"}), marker_path, rejected, 0),
+            ("not object", responses("12h"), marker_path, rejected, 0),
+            ("unsupported block", responses(twelve, block_type="output_text"),
+             marker_path, "unsupported content block type", 0),
+            ("item-level path", item_level_marker(), "$.input[0].prompt_cache_breakpoint",
+             "supported content block", 0),
+            ("request 12h", responses(twelve, prompt_cache_options={"mode": "explicit", "ttl": "12h"}),
+             "prompt_cache_options.ttl", "must be 30m", 1),
+            ("retention", responses(twelve, prompt_cache_retention="24h"),
+             "prompt_cache_retention", "deprecated", 1),
+        ]
+        for label, payload, evidence, issue, count in cases:
+            with self.subTest(label):
+                status, output = lint_payload(payload)
+
+                self.assert_ap11_coherent(status, output)
+                self.assertEqual(status, 1, output)
+                ap11 = [item for item in output["findings"] if item["rule_id"] == "AP-11"]
+                self.assertTrue(
+                    any(item["evidence"] == evidence and issue in item["issue"] for item in ap11),
+                    ap11,
+                )
+                self.assertTrue(output["cache_policy"]["validated"])
+                self.assertEqual(output["cache_policy"]["explicit_breakpoints"], count)
+
+        # Unsupported model IDs and provider prefixes stay unvalidated.
+        for model in ("openai/gpt-6.1-sol", "openrouter/gpt-5.6", "gpt-6.1-sol-2026-12-01"):
+            with self.subTest(model=model):
+                status, output = lint_payload(responses(twelve, model=model))
+
+                self.assert_ap11_coherent(status, output)
+                self.assertEqual(status, 0, output["findings"])
+                self.assertEqual(output["cache_policy"]["model_support"], "unknown")
+                self.assertFalse(output["cache_policy"]["validated"])
+                self.assertEqual(output["cache_policy"]["explicit_breakpoints"], 0)
+
     def test_layout_linter_accepts_gpt61_sol_configuration_update(self):
         # Reasoning guide (verified 2026-09-30): configuration_update is a GPT-6
         # family feature in standard single-agent mode; no 6.1-specific page
@@ -5887,6 +6021,27 @@ class PromptCacheScriptsTest(unittest.TestCase):
         ]:
             self.assertIn(required, reference)
         self.assertNotIn("prompt_cache_key` is required", reference)
+
+    def test_openai_reference_scopes_breakpoint_ttl_override(self):
+        # Guide plus openai-node v7.45.1 / openai-python v3.41.0 (2026-10-29):
+        # request ttl is the default; a Responses marker ttl may override it.
+        reference = " ".join(
+            (ROOT / "audit-prompt-caching" / "references" / "openai.md").read_text().split()
+        )
+        for stale in ("the only currently documented TTL", "is the only documented TTL",
+                      "as the only TTL"):
+            self.assertNotIn(stale, reference)
+        for required in (
+            "request default",
+            'Responses may add `"ttl": "30m"|"12h"` (else inherited)',
+            "higher write rate",
+            "Request-level `ttl: \"12h\"` is guide-only: unresolved",
+            "Chat marker `ttl`/per-response write split are unconfirmed",
+            "no server acceptance",
+        ):
+            self.assertIn(required, reference)
+        # No new pricing multiplier for 12h writes.
+        self.assertNotRegex(reference, r"2\.5\s*[x×]")
 
     def test_openai_reference_gpt61_sol_prices_keep_model_specific_ratios(self):
         # Changelog, pricing, and model pages (verified 2026-09-30): Standard
