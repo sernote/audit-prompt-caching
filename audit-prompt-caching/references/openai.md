@@ -70,7 +70,7 @@ Verified 2026-09-30 (changelog/pricing/model/caching/reasoning). Direct `gpt-6.1
 
 Standard prices per MTok (ordinary/read/write/output): $2/$0.10/$2.50/$10 through 272K input tokens; above 272K the entire request uses $4/$0.20/$5/$15, not only the excess. Reads are 0.05x ordinary input, not the usual GPT-5.6+ 0.10x; writes are 1.25x. `cached_tokens` and `cache_write_tokens` are breakdowns of the reported input total; do not add them again. `prompt_cache_options.prewarm: true` prepares a stable prefix without output but bills writes; include every prewarm write charge in ROI, even without later reuse, and verify later reads in `cached_tokens`.
 
-`configuration_update` is supported only as a Responses input item in standard single-agent Responses, not Chat Completions, based on the GPT-6 family contract rather than a 6.1-specific statement or live test. AP-15 flags pro mode and non-effort fields, but `layout_linter.py` cannot establish single-agent mode and does not inspect Chat `messages` for a misplaced update; verify both separately before relying on the update.
+`configuration_update` is supported only as a Responses input item in standard single-agent Responses, not Chat Completions, based on the GPT-6 family contract rather than a 6.1-specific statement or live test. openai-python v3.42.0 adds `text.format`; per-model support and cache effects are unknown, so check next-turn `cached_tokens`. AP-15 flags pro mode and malformed updates, but `layout_linter.py` cannot establish single-agent mode and does not inspect Chat `messages` for a misplaced update; verify both separately before relying on the update.
 
 ## Audit Checklist
 

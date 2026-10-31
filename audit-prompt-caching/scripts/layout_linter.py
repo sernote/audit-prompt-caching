@@ -453,16 +453,22 @@ def lint_openai_configuration_updates(payload, policy):
                     "keep mid-conversation effort changes on standard mode",
                 )
             )
-        update = item.get("reasoning")
-        extra_keys = set(item) - {"type", "id", "reasoning"}
-        update_keys = set(update) - {"effort"} if isinstance(update, dict) else set()
-        if extra_keys or update_keys or not isinstance(update, dict):
+        update = item.get("reasoning", {})
+        text = item.get("text", {"format": {"type": "text"}})
+        form = text.get("format") if isinstance(text, dict) else None
+        if (
+            set(item) - {"type", "id", "reasoning", "text"}
+            or not {"reasoning", "text"} & set(item)
+            or not isinstance(update, dict) or set(update) - {"effort"}
+            or text != {"format": form} or not isinstance(form, dict)
+            or form.get("type") not in ("text", "json_schema")
+        ):
             findings.append(
                 effort_issue(
-                    "configuration_update changes only reasoning.effort",
+                    "configuration_update changes only reasoning.effort and "
+                    "text.format (text or json_schema)",
                     path,
-                    "send {\"type\":\"configuration_update\","
-                    "\"reasoning\":{\"effort\":...}} and nothing else",
+                    "send reasoning.effort, text.format, or both, and nothing else",
                     severity="medium",
                 )
             )
