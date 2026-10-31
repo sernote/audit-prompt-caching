@@ -87,7 +87,10 @@ PLUGIN_EVAL_SKILL_TOKEN_BASELINE = 6823
 # Current main's Bedrock wording adjustment reduced the corpus to 381183
 # chars (95296 estimated tokens). Collection lifecycle guidance adds 1179
 # chars: 381183 -> 382362, or 95296 -> 95591 (+295), aggregate estimate.
-PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 95591
+# The AP-15 configuration_update text.format repair (layout_linter.py +272,
+# openai.md +127 chars), remeasured as the full corpus on current main:
+# 382361 -> 382760 chars, or 95591 -> 95690 (+99), aggregate estimate.
+PLUGIN_EVAL_DEFERRED_TOKEN_CEILING = 95690
 # Future wording changes must remeasure and update this ceiling; include the
 # before/after measurements in the PR description without compressing guidance.
 BASELINE_DESCRIPTION_CHARS = 679
@@ -145,6 +148,34 @@ def gpt61_sol_payload(surface="responses", **overrides):
         payload["messages"] = [stable, {"role": "user", "content": "Question"}]
     payload.update(overrides)
     return payload
+
+
+def configuration_update_payload(item, model="gpt-6.1-sol", **reasoning):
+    """Responses follow-up turn whose first input item is ``item``."""
+    return {
+        "model": model,
+        "reasoning": {"effort": "medium", **reasoning},
+        "previous_response_id": "resp_123",
+        "input": [item, {"role": "user", "content": "Include the evidence."}],
+    }
+
+
+# openai-python v3.42.0 (commit bd61e84) README/helpers example: a strict
+# JSON-schema output format sent as configuration_update.text.format.
+ANSWER_WITH_EVIDENCE_FORMAT = {
+    "type": "json_schema",
+    "name": "AnswerWithEvidence",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string"},
+            "evidence": {"type": "string"},
+        },
+        "required": ["answer", "evidence"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
 
 
 def claude_effort_payload(levels, thinking=None, effort=None, model="claude-sonnet-5-5"):
@@ -4504,6 +4535,105 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertFalse(any("documented only" in issue for issue in issues), issues)
         self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
         self.assertNotIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_accepts_configuration_update_text_format(self):
+        # openai-python v3.42.0 (commit bd61e84) types configuration_update as
+        # reasoning (effort only), text.format (text or json_schema), or both,
+        # with an optional echoed id. Structural acceptance says nothing about
+        # server acceptance, per-model text support, or cache effects, and the
+        # linter does not validate JSON-schema internals.
+        text_reset = {"format": {"type": "text"}}
+        schema_text = {"format": ANSWER_WITH_EVIDENCE_FORMAT}
+        cases = {
+            "A text json_schema": {"type": "configuration_update", "text": schema_text},
+            "B text reset": {"type": "configuration_update", "text": text_reset},
+            "C effort plus text": {
+                "type": "configuration_update",
+                "reasoning": {"effort": "high"},
+                "text": schema_text,
+            },
+            "D effort only": {
+                "type": "configuration_update",
+                "reasoning": {"effort": "high"},
+            },
+            "O echoed id": {
+                "id": "cnfu_1",
+                "type": "configuration_update",
+                "text": text_reset,
+            },
+        }
+        for label, item in cases.items():
+            with self.subTest(label):
+                status, output = lint_payload(configuration_update_payload(item))
+
+                self.assertEqual(status, 0, output["findings"])
+                self.assertEqual(output["findings"], [])
+                self.assertTrue(output["effort_policy"]["valid"])
+                self.assertEqual(output["effort_policy"]["per_message_effort_items"], 1)
+                self.assertTrue(output["effort_policy"]["per_message_effort_supported"])
+                self.assertIn("AP-15", output["clean_checks"])
+
+    def test_layout_linter_flags_malformed_configuration_update_shapes(self):
+        schema_text = {"format": ANSWER_WITH_EVIDENCE_FORMAT}
+        cases = {
+            "E json_object format": {"text": {"format": {"type": "json_object"}}},
+            "F text without format": {"text": {"verbosity": "low"}},
+            "G empty update": {},
+            "J extra instructions": {
+                "reasoning": {"effort": "low"},
+                "instructions": "x",
+            },
+            "K reasoning summary": {"reasoning": {"effort": "low", "summary": "auto"}},
+            "L Beta agent key": {"agent": {"name": "x"}, "text": schema_text},
+            "M text plus unknown key": {"text": schema_text, "instructions": "x"},
+            "N text null": {"text": None},
+            "text key beside format": {
+                "text": {"format": {"type": "text"}, "verbosity": "low"}
+            },
+            "format not an object": {"text": {"format": "text"}},
+            "format without type": {"text": {"format": {"name": "x"}}},
+            "text not an object": {"text": "text"},
+        }
+        for label, fields in cases.items():
+            payload = configuration_update_payload({"type": "configuration_update", **fields})
+            with self.subTest(label):
+                status, output = lint_payload(payload)
+
+                self.assertEqual(status, 1, output)
+                self.assertFalse(output["effort_policy"]["valid"])
+                self.assertNotIn("AP-15", output["clean_checks"])
+                ap15 = [found for found in output["findings"] if found["rule_id"] == "AP-15"]
+                self.assertEqual(len(ap15), 1, ap15)
+                self.assertEqual(ap15[0]["severity"], "medium")
+                self.assertEqual(ap15[0]["category"], "effort-continuity")
+                self.assertEqual(ap15[0]["evidence"], "$.input[0]")
+                self.assertIn("only reasoning.effort", ap15[0]["issue"])
+                self.assertIn("text.format", ap15[0]["issue"])
+                self.assertIn("text", ap15[0]["fix"])
+
+    def test_layout_linter_keeps_configuration_update_text_route_gates(self):
+        text_reset = {"type": "configuration_update", "text": {"format": {"type": "text"}}}
+        cases = {
+            "H pro mode": (
+                configuration_update_payload(text_reset, mode="pro"),
+                "configuration_update is rejected in reasoning.mode pro",
+            ),
+            "I non-GPT-6 model": (
+                configuration_update_payload(text_reset, model="gpt-5.6-sol"),
+                "configuration_update is documented only for GPT-6 models",
+            ),
+        }
+        for label, (payload, issue) in cases.items():
+            with self.subTest(label):
+                status, output = lint_payload(payload)
+
+                self.assertEqual(status, 1, output)
+                self.assertFalse(output["effort_policy"]["valid"])
+                self.assertNotIn("AP-15", output["clean_checks"])
+                ap15 = [found for found in output["findings"] if found["rule_id"] == "AP-15"]
+                self.assertEqual(len(ap15), 1, ap15)
+                self.assertEqual(ap15[0]["severity"], "high")
+                self.assertTrue(ap15[0]["issue"].startswith(issue), ap15)
 
     def test_layout_linter_excludes_gpt61_sol_aliases_from_direct_contract(self):
         # Exact direct IDs only: Bedrock, wrapper, and future variants need
