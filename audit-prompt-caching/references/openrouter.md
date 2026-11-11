@@ -16,10 +16,10 @@ https://openrouter.ai/docs/cookbook/administration/usage-accounting.
 OpenRouter is a router. Keep downstream `provider_prompt` evidence separate
 from OpenRouter `gateway_response` replay.
 
-- Sticky sessions expire after 10 minutes idle in the prompt-caching guide,
-  while the Pareto router page says 5 minutes; record which router served the
-  request and retain both figures. Success resets the timer and provider
-  errors do not update it. Locality is not a hit.
+- The prompt-caching guide gives a 60-minute sticky idle window. The Pareto
+  page says 5 minutes. Success resets the timer. Provider errors leave it
+  unchanged. Verify the route and served provider/model. Locality alone
+  cannot establish a cache hit.
 - Chat/Responses routing keys, in precedence order: body `session_id` (max
   256 chars; wins over the header), header `x-session-id`,
   `prompt_cache_key`, then a hash of the first system/developer message and
