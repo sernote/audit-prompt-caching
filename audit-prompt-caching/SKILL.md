@@ -33,8 +33,8 @@ Do not use this skill for:
 - non-LLM frontend/backend performance or non-inference Kubernetes routing
 - speculative savings claims without usage data or explicitly stated assumptions
 
-Modes: code audit (repository available), advisory (no codebase, ask only the
-missing diagnostic questions), agent audit (tools, MCP, loops, compaction), and
+Modes: code audit (repository available), advisory (no codebase),
+agent audit (tools, MCP, loops, compaction), and
 deployment audit (vLLM/SGLang, Kubernetes, gateways, replicas).
 
 vLLM audits: image digest/version/SHA, feature presence, effective
@@ -64,7 +64,7 @@ affected plane in findings.
 
 Before treating a hit rate as decision-grade, read the normalized event fields
 from `analyze_usage_logs.py --jsonl-normalized`: `schema_version`,
-`source_fields` (which raw field produced each canonical value),
+`source_fields` (raw field behind each canonical value),
 `accounting_semantics` (`inclusive`, `additive`, `ambiguous`),
 `denominator_status`, and `warnings`.
 
@@ -74,8 +74,15 @@ from `analyze_usage_logs.py --jsonl-normalized`: `schema_version`,
 - `invalid`: an adapter invariant is contradicted; fix accounting first.
 
 Aggregates take the worst status (`invalid > ambiguous > valid`).
-Do not build a second normalizer or hand-compute a ratio around this
-contract; extend the existing adapter. Paths: `references/observability.md`.
+Do not build a second normalizer or hand-compute a ratio; extend the
+existing adapter. Paths: `references/observability.md`.
+
+Usage/cost coverage starts at I/O, not the parser. Where a reader gets data
+via a call defined elsewhere (import, injected parameter, IPC/native
+bridge), open that body, down to the OS/network call; report what there
+rejects, truncates, or skips input and what the user then sees, or write
+`unopened: <callee>`. A stated limit or labeled gap is measurement loss, not
+a cache miss or by itself a defect.
 
 ## Cache Clinic Summary
 
@@ -84,7 +91,7 @@ Report `applicability`, `evidence_quality`, `prefix_stability`,
 exactly one status of `pass/warning/fail/unknown/not_applicable`.
 Leave every unproven dimension `unknown` instead of dropping it, and
 never aggregate them into a score, rank, or grade. `usage_accounting: pass`
-needs a valid denominator; `routing_locality: pass` is locality only, not
+needs a valid denominator and no `unopened` reader call; `routing_locality: pass` is locality only, not
 rollout approval. See `references/report-template.md`.
 
 ## Evidence Boundaries
@@ -103,7 +110,7 @@ cross-tenant probes need separate authorization and are out of scope.
 
 Before assigning severity or recommending project changes, review hot paths, repeat cadence, prompt families, and cache applicability.
 
-For code audits, map reachable paths as producer/override → final request or accounting consumer, with `traced/untraced/not applicable` and evidence or gap. Keep native/wrapper/fallback paths distinct until equivalence is proven; a file read or shared-consumer test does not cover every producer. Prioritize hot repeated paths over rare jobs and non-reusable prompts; revisit untraced paths before polishing findings.
+For code audits, map reachable paths as producer/override → final request or accounting consumer, with `traced/untraced/not applicable` and evidence or gap. Keep native/wrapper/fallback paths distinct until equivalence is proven; a file read or shared-consumer test does not cover every producer. Prioritize hot repeated paths; revisit untraced paths before polishing findings.
 
 If a route is rare, short, mostly unique, output/tool-latency dominated, privacy-isolated, or has no stable long prefix, say prompt caching is not the right lever there and drop generic cache warnings from actionable findings.
 
@@ -155,7 +162,7 @@ Group output as **Confirmed findings** (code/config/telemetry evidence applicabl
 
 ## Explicit Review Default
 
-If this skill is explicitly invoked and the user asks only "review", "сделай ревью", or equivalent, default to a cache-focused review of the available diff or repository, treating it as a prompt/prefix/KV cache audit and reporting cache-impact findings first. Do not perform a general code review unless the user explicitly asks for one.
+If this skill is explicitly invoked and the user asks only "review", "сделай ревью", or equivalent, default to a cache-focused review of the available diff or repository, reporting cache-impact findings first. Do not perform a general code review unless the user explicitly asks for one.
 
 ## Use-Case Map
 
@@ -172,14 +179,14 @@ Classify the request before auditing. Deeper artifact matrix: `references/use-ca
 
 ## Scenario References
 
-Beyond the Use-Case Map column above, load `references/economics.md` for cost or
+Load `references/economics.md` for cost or
 migration, `references/predeploy-checklist.md` for release or incident work,
 `references/agent-tools.md` for agents, MCP, and dynamic tools, and
 `references/rules.json` for anti-pattern rules.
 
 ## Bundled Scripts
 
-Use scripts when deterministic evidence is better than prose:
+Use scripts where deterministic evidence beats prose:
 
 - `scripts/prefix_stability_check.py`: whole-input comparison; `--canonical-json` is opt-in and does not prove explicit breakpoint reuse.
 - `scripts/layout_linter.py`: GPT-5.6/GPT-6 Astra layout and cache-control checks plus AP-15 effort continuity (`configuration_update`, Claude per-message `output_config`); wrappers remain unvalidated and headers are invisible, so the Claude beta header is reported, not verified.
@@ -212,7 +219,7 @@ Search SDK imports, API base URLs, model names, deployment manifests, and engine
 - OpenAI-compatible vendors (label usage records with the vendor so inclusive/additive semantics resolve): Moonshot/Kimi -> `references/moonshot.md`; MiniMax -> `references/minimax.md`; xAI Grok -> `references/xai.md`; Mistral -> `references/mistral.md`; Tencent Hunyuan -> `references/tencent.md`; Xiaomi MiMo -> `references/xiaomi.md`.
 - Self-hosted: `vllm`, `vllm bench serve`, `prefix_repetition`, `benchmark_prefix_caching.py`, KV-cache events, or KV transfer connectors -> `references/vllm.md`; SGLang/RadixAttention/HiCache/PD disaggregation -> `references/sglang.md`.
 
-If detection is ambiguous, ask which provider/engine is in use.
+If detection is ambiguous, ask which provider/engine.
 
 ## Audit Flow
 
@@ -225,12 +232,11 @@ If detection is ambiguous, ask which provider/engine is in use.
 7. For vLLM, verify version/SHA and feature surface before retention; audit per-group geometry, `scheduler_block_size`, tier, and hash compatibility, keeping retention/geometry, cross-process hash, and `cache_salt` isolation distinct.
 8. When changing code, verify prefix stability before claiming success.
 
-Bundled fixtures are examples and regression data; scripts accept normal JSON,
-JSONL, CSV usage logs and request payloads.
+Bundled fixtures are examples and regression data.
 
 ## Audit Playbooks
 
-Use these starts after provider detection and Freshness Gate:
+Start here after provider detection and Freshness Gate:
 
 - **OpenAI cached_tokens=0**: check length, prefix drift, API usage fields, breakpoints, output share, and wrappers. Check `prompt_cache_key` routing before GPT-5.6; on newer models it is optional for accounting.
 - **GPT-5.6 paid writes**: validate `prompt_cache_options` and marked blocks, separate inclusive `cached_tokens`/`cache_write_tokens` from input totals, and require current pricing before claiming savings. Prefer explicit mode when implicit writes churn on a volatile suffix.
@@ -255,8 +261,7 @@ Use these starts after provider detection and Freshness Gate:
 `references/rules.json` holds the machine-readable AP-1 through AP-15 inventory.
 AP-9b is the isolation/trust boundary; AP-14 is technical hash compatibility
 inside an already authorized sharing group; AP-15 is effort/reasoning
-configuration continuity inside a cached conversation. Turn rules into findings with this
-priority taxonomy:
+configuration continuity inside a cached conversation. Priority taxonomy for findings:
 
 | Priority | Category | Examples |
 |---|---|---|
@@ -289,7 +294,7 @@ For full handoff reports, load `references/report-template.md`.
 
 Before finalizing:
 - Answer the decision asked for: change needed, no change, or evidence missing.
-- Prefer wrapper/router references over generic provider references when both signals exist, and make no exact provider claim without the reference and Freshness Gate.
+- Make no exact provider claim without the matching reference and Freshness Gate.
 - Distinguish plane, cache miss, write-without-read, uneconomic hit, decode-bound latency, rate-limit pressure, and privacy-driven isolation.
 - Include falsifiable validation: prefix fingerprints, usage fields, route/replica metrics, or cost/latency split.
 - Do not propose cache controls, cache keys, or routing hints when the Not worth caching contract applies.
@@ -301,7 +306,7 @@ Do not claim a fix works until the matching scoped check holds:
 - Provider fixes: repeated calls show cache-read/cached-token fields increasing per the provider reference.
 - Routing changes: apply the full `Routing Outcome Gate` in `references/mechanics.md`; self-hosted non-routing fixes: prefix-hit/KV-pressure improves under a representative workload.
 
-Recommend a CI/smoke check that renders representative prompts and fails when the cacheable prefix changes unexpectedly.
+Recommend a CI/smoke check that fails when the rendered cacheable prefix changes unexpectedly.
 
 ## Advisory Questions
 
