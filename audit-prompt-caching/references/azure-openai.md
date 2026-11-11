@@ -26,7 +26,7 @@ As of the last review, Azure docs say prompt caching requires a minimum prompt l
 Behavior is gated by model family and deployment type, so record both before any exact claim:
 - GPT-5.5 and earlier: implicit caching only, no cache-write charge, cache hits after the first 1,024 tokens land in 128-token increments; `prompt_cache_retention` (`in_memory` or `24h`) is documented for gpt-4.1 and gpt-5 through gpt-5.5, with `24h` the default on gpt-5.5.
 - GPT-5.6 and later (including GPT-6): explicit breakpoints via `prompt_cache_options` and `prompt_cache_breakpoint` on Responses and Chat Completions, a separate `cache_write_tokens` usage field, paid cache writes, no 128-token rounding, and `prompt_cache_retention` deprecated. Pre-5.6 models return `400` for these parameters.
-- Provisioned (PTU-M) deployments support caching but not breakpoints or `cache_write_tokens`; cached tokens do not consume PTU capacity.
+- On PTU-M, GPT-6+ supports breakpoints and counts reads/writes at model-specific [normalized weights](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/provisioned-throughput-sizing). Earlier models cache automatically only. Their cached input uses zero PTU capacity.
 
 ## Provider Checks
 
@@ -50,7 +50,7 @@ On Standard GPT-5.6+, `prompt_cache_options.mode` defaults to `implicit` (latest
 
 Request-wide `prompt_cache_options.ttl` sets minimum reuse lifetime for new writes. Verify expiry and retention tier separately. The default is `30m`. Keep verified `12h` on supported Standard Responses deployments. Confirm model/version, deployment type, endpoint/API version and request/response wire. AP-11 matches `model` (Azure deployment name) to OpenAI IDs. AP-11 and a bare `400` leave support unverified.
 
-Use Azure pricing or billed rates for input, discounted reads and writes by model/version, region, currency, deployment type and service tier. Match write tokens to rates by effective TTL. Segment `12h` writes at the November 1, 2026 charge start. Confirmed omissions use `30m`. Unattributed TTL stays unknown. Numeric ROI requires verified rates (`references/economics.md`). Verify features, regions and dates in Azure docs and on wire. OpenAI and Bedrock have separate contracts. Do not send these parameters to pre-5.6 models or PTU-M deployments.
+Use Azure pricing or billed rates for input, discounted reads and writes by model/version, region, currency, deployment type and service tier. Match write tokens to rates by effective TTL. Segment `12h` writes at the November 1, 2026 charge start. Confirmed omissions use `30m`. Unattributed TTL stays unknown. Numeric ROI requires verified rates (`references/economics.md`). Verify features, regions and dates in Azure docs and on wire. OpenAI and Bedrock have separate contracts. Standard mode/TTL guidance leaves PTU-M request-wide support unverified. Size GPT-6+ PTU from model/deployment, raw usage and utilization.
 
 ### Tools, Images, And Schemas
 
@@ -82,7 +82,7 @@ total = getattr(usage, "prompt_tokens", 0)
 ratio = cached / total if total else 0
 ```
 
-For Responses, read `usage.input_tokens_details.cached_tokens` instead. On Standard GPT-5.6+ deployments also read `cache_write_tokens` in the same details object; `cached_tokens` and `cache_write_tokens` are inclusive subsets of the prompt total, so use the existing OpenAI-shape adapter rather than adding them to the input count. Pre-5.6 models and PTU-M expose no write field: do not infer write volume from `cached_tokens`; record the first request in a prefix cohort as an expected cold write and use billing/export data when exact write cost is required.
+For Responses, read `usage.input_tokens_details.cached_tokens`. Standard GPT-5.6+ adds `cache_write_tokens` there. Both count within input. Use the OpenAI-shape adapter. Pre-5.6 has no write field. Verify GPT-6+ PTU-M write schema in raw usage. Missing fields leave writes unknown. `cached_tokens` measures reads only. Use billing exports for exact charges.
 
 If `cached == 0` for repeated prompts:
 - prompt below current cacheable threshold
@@ -91,7 +91,7 @@ If `cached == 0` for repeated prompts:
 - cache lifetime expired between calls
 - route or affinity field fragmented reuse, or more than ~15 RPM on one prefix+key pair
 - `prompt_cache_options.mode: explicit` with no marked blocks (caching disabled by design)
-- unsupported model/deployment/API surface (PTU-M or pre-5.6 model with GPT-5.6 parameters)
+- unsupported model/API (GPT-5.6 params pre-5.6, breakpoints on pre-GPT-6 PTU-M)
 
 ## Monitoring
 
