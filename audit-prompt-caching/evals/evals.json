@@ -158,8 +158,8 @@
     },
     {
       "id": 32,
-      "prompt": "OpenRouter returned all-zero usage after 12 idle minutes; cache status/source headers were not retained and openrouter_metadata is absent. The team says a response-cache HIT warmed the downstream prompt cache. Proven?",
-      "expected_output": "No. Zero usage or missing metadata do not prove a response-cache HIT; require status/source evidence. A HIT occurs before the provider and cannot warm its prompt cache. Sticky locality expires after 10 idle minutes and is not hit evidence; retain route/provider/model attribution."
+      "prompt": "OpenRouter shows all-zero usage after 12 idle minutes, with no replay headers or openrouter_metadata. Did replay warm the prompt cache? Did stickiness expire on a fixed model or Pareto?",
+      "expected_output": "HIT stays unknown without status/source evidence. A gateway HIT bypasses the provider and cannot warm its cache. For active stickiness, 12 idle minutes is within the guide's 60-minute window. Pareto's page says 5 minutes. Expiry and cache warmth need independent evidence. Check route, served provider/model, attempts and provider TTL."
     },
     {
       "id": 33,
