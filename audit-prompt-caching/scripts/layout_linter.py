@@ -4,7 +4,7 @@
 Covers volatile prefixes, tool/schema drift, GPT-5.6/GPT-6 cache controls
 (AP-11), and mid-conversation effort continuity (AP-15): OpenAI
 `configuration_update` items and Claude per-message `output_config.effort`,
-including Sonnet 5.5's fixed effort under `thinking.type: "between_tools"`.
+including fixed effort under Sonnet 5.5 `between_tools`/Haiku 5.5 `disabled`.
 Request headers are not visible in a payload, so the Claude beta header is
 reported as a requirement rather than validated.
 """
@@ -48,17 +48,22 @@ CONFIGURATION_UPDATE_MODELS = GPT6_MODELS
 # Claude models documented for per-message `output_config.effort` inside a
 # `role: "system"` message (beta). Verify current docs before extending.
 PER_MESSAGE_EFFORT_MODELS = {
+    "claude-fable-5-2",
+    "claude-mythos-5-2",
     "claude-fable-5-1",
     "claude-mythos-5-1",
     "claude-opus-5-5",
     "claude-opus-5",
     "claude-sonnet-5-5",
+    "claude-haiku-5-5",
 }
 PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
-# Models where `thinking: {"type": "between_tools"}` fixes effort for the whole
-# conversation (a differing per-message level returns 400), mapped to the
-# documented Claude API default used when top-level effort is omitted.
-BETWEEN_TOOLS_DEFAULT_EFFORT = {"claude-sonnet-5-5": "high"}
+# Model -> (thinking type fixing effort, so a new per-message level is 400;
+# default when top-level effort is omitted).
+FIXED_EFFORT_THINKING = {
+    "claude-sonnet-5-5": ("between_tools", "high"),
+    "claude-haiku-5-5": ("disabled", "medium"),
+}
 SUPPORTED_CACHE_BLOCKS = {
     "chat": {"text", "image_url", "input_audio", "file", "refusal"},
     "responses": {"input_text", "input_image", "input_file"},
@@ -475,13 +480,12 @@ def lint_openai_configuration_updates(payload, policy):
     return findings
 
 
-def lint_anthropic_per_message_effort(payload, policy):
+def lint_anthropic_per_message_effort(payload, policy, fixed):
     findings = []
     messages = payload.get("messages")
     if not isinstance(messages, list):
         return findings
     model = payload.get("model")
-    fixed_effort = policy["between_tools_effort"]
     for index, message in enumerate(messages):
         if not isinstance(message, dict) or message.get("role") != "system":
             continue
@@ -492,26 +496,25 @@ def lint_anthropic_per_message_effort(payload, policy):
         if model not in PER_MESSAGE_EFFORT_MODELS:
             findings.append(
                 effort_issue(
-                    "per-message effort in a system message is documented only "
-                    "for Claude Fable 5.1, Claude Mythos 5.1, Opus 5.5, Opus 5, "
-                    "and Sonnet 5.5; other models return 400 or restart the cache",
+                    "per-message effort is validated only for exact direct Claude "
+                    "API IDs of Fable 5.2/5.1, Mythos 5.2/5.1, Opus 5.5/5, Sonnet "
+                    "5.5, Haiku 5.5; this ID is unvalidated or unsupported",
                     path,
-                    "hold top-level output_config.effort constant for this model "
-                    "or move the route to a supported model",
+                    "hold top-level effort constant or verify this ID's support",
                 )
             )
         config = message.get("output_config")
         if (
-            fixed_effort is not None
+            fixed
             and isinstance(config, dict)
             and "effort" in config
-            and config["effort"] != fixed_effort
+            and config["effort"] != fixed[1]
         ):
             findings.append(
                 effort_issue(
-                    "thinking between_tools fixes effort for the conversation; "
+                    f"thinking {fixed[0]} fixes effort for the conversation; "
                     f"per-message effort {config['effort']!r} differs from the "
-                    f"level in effect {fixed_effort!r} and returns 400",
+                    f"level in effect {fixed[1]!r} and returns 400",
                     path,
                     "keep per-message effort equal to the level in effect, or use "
                     "adaptive thinking (omit thinking or send type adaptive) to "
@@ -554,16 +557,13 @@ def lint_effort_continuity(payload):
         if policy["per_message_effort_supported"]:
             policy["beta_header"] = PER_MESSAGE_EFFORT_BETA
         thinking = payload.get("thinking")
-        model = payload.get("model")
-        if (
-            model in BETWEEN_TOOLS_DEFAULT_EFFORT
-            and isinstance(thinking, dict)
-            and thinking.get("type") == "between_tools"
-        ):
-            policy["between_tools_effort"] = (
-                policy["request_effort"] or BETWEEN_TOOLS_DEFAULT_EFFORT[model]
-            )
-        findings = lint_anthropic_per_message_effort(payload, policy)
+        mode, default = FIXED_EFFORT_THINKING.get(payload.get("model"), (None, None))
+        fixed = None
+        if mode and isinstance(thinking, dict) and thinking.get("type") == mode:
+            fixed = (mode, policy["request_effort"] or default)
+            if mode == "between_tools":
+                policy["between_tools_effort"] = fixed[1]
+        findings = lint_anthropic_per_message_effort(payload, policy, fixed)
     else:
         return policy, []
     if policy["per_message_effort_items"]:

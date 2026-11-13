@@ -5,7 +5,7 @@ Last reviewed: 2026-09-22. Verify official docs before exact claims about Claude
 Official sources:
 - Prompt caching: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
 - Mid-conversation system messages: https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
-- Effort and per-message effort: https://platform.claude.com/docs/en/build-with-claude/effort
+- Effort: https://platform.claude.com/docs/en/build-with-claude/effort, https://platform.claude.com/docs/en/build-with-claude/effort-per-message
 - Thinking and prompt caching: https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-and-prompt-caching
 - What's new in Claude Fable 5.1: https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1
 - Tool use with prompt caching: https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching
@@ -42,7 +42,7 @@ Verified 2026-09-11 against the pages above; re-check before quoting.
 
 The thinking configuration and the resolved effort level are rendered into the prompt. Changing top-level `output_config.effort`, `thinking.type`, or `budget_tokens` between requests always invalidates message-level breakpoints, and invalidates tool and system breakpoints too on models that render the configuration ahead of them. Setting a value explicitly to the model default (`effort: "high"`) is equivalent to omitting it and does not invalidate.
 
-**Per-message effort (beta)** on Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 5, and Claude Sonnet 5.5 (see its `between_tools` limit below) keeps the cache: append `{"role": "system", "content": [], "output_config": {"effort": "<level>"}}` to `messages` and send the `mid-conversation-output-config-2026-07-01` beta header. The level applies from the next `user` turn until a later message changes it; everything before it is unchanged, so the cached prefix still matches. Check surface support before using it; Claude Code documents that the cache-preserving path does not apply on Amazon Bedrock, Google Cloud's Agent Platform, gateways, or HIPAA configurations. Models without per-message effort, including Claude Fable 5, return 400 `output_config.effort requires a model that supports per-turn effort`. Levels are `low`, `medium`, `high`, `xhigh`, `max`; `xhigh`/`max` availability is per model.
+**Per-message effort (beta)** on direct Claude API `claude-fable-5-2`, `claude-mythos-5-2` (verified organizations), Fable 5.1, Mythos 5.1, Opus 5.5, Opus 5, Sonnet 5.5, and `claude-haiku-5-5`: append `{"role": "system", "content": [], "output_config": {"effort": "<level>"}}` to `messages` and send the `mid-conversation-output-config-2026-07-01` beta header. The message applies by position. Keep it in place on later requests (no earlier insertion, move, or removal). Sonnet 5.5 `between_tools` and Haiku 5.5 `disabled` thinking fix effort at the top-level level (default `medium` on Haiku); a new per-message level returns 400 (use adaptive thinking). Confirm the header (Bedrock InvokeModel: body `anthropic_beta`), model, platform, and actual cache reads. Claude Code docs' Bedrock, Agent Platform, gateway, and HIPAA exclusions cover Claude Code only, not API data handling. On the direct Claude API, models without it, including Claude Fable 5, return 400 `output_config.effort requires a model that supports per-turn effort`. `xhigh`/`max` availability is per model.
 
 ## Claude Opus 5.5 Cache Snapshot
 
@@ -52,7 +52,7 @@ Opus 5.5 defaults to `medium` effort, and setting that value explicitly is cache
 
 Opus 5.5 binds thinking blocks to the prefix. Replaying after prefix edits returns 400 by default for accounts created from 2026-08-31. Model switches can drop unreadable blocks, breaking cache reuse.
 
-Audit rule AP-15: a per-step effort router on a cached conversation is a repeated write-without-read pattern unless it uses per-message effort on a supported model and surface. `layout_linter.py` reports `effort_policy` and validates the message shape and model; it cannot see request headers, so confirm the beta header in the SDK call or gateway config.
+Audit rule AP-15: a per-step effort router on a cached conversation is a repeated write-without-read pattern unless it uses per-message effort on a supported model and surface. `layout_linter.py` reports `effort_policy` and checks message shape and exact model ID, not headers; confirm the beta in the SDK call or gateway config.
 
 ## Claude Sonnet 5.5 Cache Snapshot
 
@@ -74,7 +74,7 @@ Verified 2026-10-02 against the Sonnet 5.5, effort, prompt caching, mid-conversa
 - Explicit cache breakpoints belong on the last block whose full prefix should remain identical.
 - For long conversations, add additional breakpoints before the active breakpoint moves more than 20 blocks past a prior write.
 - Mid-conversation `{"role": "system"}` messages preserve the top-level system prefix on supported routes (see the Claude 5 Family Snapshot and the Claude Sonnet 5.5 Cache Snapshot); Claude Sonnet 5 is excluded.
-- Effort or thinking configuration changed between requests: message breakpoints miss by design (AP-15). On Fable 5.1, Mythos 5.1, Opus 5.5, Opus 5, and Sonnet 5.5 check for the per-message effort form and beta header (Sonnet 5.5 `between_tools` requires the level in effect); on other models recommend holding effort constant within a cached conversation.
+- Effort or thinking configuration changed between requests: message breakpoints miss by design (AP-15). Check per-message effort form and beta per [Effort changes and the cache](#effort-changes-and-the-cache) (fixed-effort thinking needs the level in effect); otherwise hold effort constant.
 - Model switch, fallback, or router mid-conversation on a Fable 5.1 or Sonnet 5.5 history: the API drops thinking blocks the target model cannot read and the prefix changes from that block onward; check `input_transformations` before blaming prompt drift.
 - Fable 5.1 route with `cache_read_input_tokens` high but cost estimates off: confirm the 0.025x read multiplier and the Opus 4.7+ tokenizer before comparing with older routes.
 - longer TTL entries must appear before shorter TTL entries when mixing 1h and 5m breakpoints. Syntax includes `"ttl": "1h"`.

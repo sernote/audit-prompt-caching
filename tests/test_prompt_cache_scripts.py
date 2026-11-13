@@ -4906,6 +4906,160 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("claude-sonnet-5-5", linter.PER_MESSAGE_EFFORT_MODELS)
         self.assertNotIn("claude-sonnet-5", linter.PER_MESSAGE_EFFORT_MODELS)
 
+    def test_layout_linter_accepts_direct_fable_mythos_haiku_per_message_effort(self):
+        # Direct Claude API IDs added by the per-message effort availability
+        # table; adaptive thinking (explicit or omitted) varies effort freely.
+        for model in ("claude-fable-5-2", "claude-mythos-5-2", "claude-haiku-5-5"):
+            for thinking in ("adaptive", None):
+                with self.subTest(model=model, thinking=thinking):
+                    status, output = lint_payload(
+                        claude_effort_payload(["high"], thinking, "medium", model=model)
+                    )
+
+                    self.assertEqual(status, 0, output)
+                    self.assert_effort_json_matches_exit(status, output)
+                    policy = output["effort_policy"]
+                    self.assertTrue(policy["per_message_effort_supported"])
+                    self.assertEqual(
+                        policy["beta_header"], "mid-conversation-output-config-2026-07-01"
+                    )
+                    self.assertIsNone(policy["between_tools_effort"])
+        self.assertEqual(
+            load_script_module("layout_linter.py").PER_MESSAGE_EFFORT_MODELS,
+            {
+                "claude-fable-5-2",
+                "claude-mythos-5-2",
+                "claude-fable-5-1",
+                "claude-mythos-5-1",
+                "claude-opus-5-5",
+                "claude-opus-5",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5",
+            },
+        )
+
+    def test_layout_linter_flags_haiku_5_5_disabled_thinking_effort_change(self):
+        # Haiku 5.5 thinking disabled fixes effort at explicit top-level effort,
+        # else the documented default medium; a new per-message level is 400.
+        for effort, levels, in_effect, changed in (
+            (None, ["high"], "medium", [2]),
+            ("low", ["medium"], "low", [2]),
+            ("high", ["high", "low"], "high", [3]),
+        ):
+            with self.subTest(effort=effort, levels=levels):
+                status, output = lint_payload(
+                    claude_effort_payload(levels, "disabled", effort, model="claude-haiku-5-5")
+                )
+
+                self.assertEqual(status, 1, output)
+                self.assert_effort_json_matches_exit(status, output)
+                findings = [
+                    item for item in output["findings"] if item["rule_id"] == "AP-15"
+                ]
+                self.assertEqual(
+                    [item["evidence"] for item in findings],
+                    [f"$.messages[{index}]" for index in changed],
+                )
+                self.assertTrue(all(item["severity"] == "high" for item in findings))
+                self.assertIn("disabled", findings[0]["issue"])
+                self.assertNotIn("between_tools", findings[0]["issue"])
+                self.assertIn(repr(in_effect), findings[0]["issue"])
+                self.assertIn("adaptive", findings[0]["fix"])
+                policy = output["effort_policy"]
+                self.assertTrue(policy["per_message_effort_supported"])
+                self.assertEqual(
+                    policy["beta_header"], "mid-conversation-output-config-2026-07-01"
+                )
+                self.assertIsNone(policy["between_tools_effort"])
+                self.assertFalse(policy["valid"])
+
+    def test_layout_linter_accepts_haiku_5_5_disabled_thinking_unchanged_effort(self):
+        for effort, levels in (
+            (None, ["medium"]),
+            ("medium", ["medium"]),
+            ("low", ["low", "low"]),
+            ("high", ["high"]),
+        ):
+            with self.subTest(effort=effort, levels=levels):
+                status, output = lint_payload(
+                    claude_effort_payload(levels, "disabled", effort, model="claude-haiku-5-5")
+                )
+
+                self.assertEqual(status, 0, output)
+                self.assert_effort_json_matches_exit(status, output)
+                self.assertIsNone(output["effort_policy"]["between_tools_effort"])
+
+    def test_layout_linter_keeps_new_per_message_contract_exact(self):
+        # Dated, Bedrock-style, and older IDs stay unvalidated for this contract.
+        for model in (
+            "claude-haiku-5-5-20261109",
+            "anthropic.claude-haiku-5-5",
+            "global.anthropic.claude-fable-5-2",
+            "claude-mythos-5-2-20261109",
+            "claude-fable-5",
+        ):
+            with self.subTest(model=model):
+                status, output = lint_payload(
+                    claude_effort_payload(["high"], None, "medium", model=model)
+                )
+
+                self.assertEqual(status, 1, output)
+                self.assert_effort_json_matches_exit(status, output)
+                policy = output["effort_policy"]
+                self.assertFalse(policy["per_message_effort_supported"])
+                self.assertIsNone(policy["beta_header"])
+                issue = next(
+                    item["issue"]
+                    for item in output["findings"]
+                    if item["rule_id"] == "AP-15"
+                )
+                self.assertIn("Haiku 5.5", issue)
+                # Unvalidated IDs must not be asserted to 400 or restart cache.
+                self.assertIn("exact direct Claude API", issue)
+                self.assertIn("unvalidated", issue)
+                self.assertNotIn("400", issue)
+                self.assertNotIn("restart", issue)
+
+    def test_per_message_effort_contract_is_documented(self):
+        refs = ROOT / "audit-prompt-caching" / "references"
+        ap15 = next(
+            rule
+            for rule in json.loads((refs / "rules.json").read_text())["rules"]
+            if rule["id"] == "AP-15"
+        )
+        for model in ("claude-fable-5-2", "claude-mythos-5-2", "claude-haiku-5-5"):
+            self.assertIn(model, ap15["fix"], model)
+        self.assertIn("disabled", ap15["avoid"])
+        reference = (refs / "anthropic.md").read_text()
+        paragraph = reference.split("**Per-message effort (beta)**", 1)[1]
+        paragraph = paragraph.split("\n\n", 1)[0]
+        for required in (
+            "`claude-fable-5-2`",
+            "`claude-mythos-5-2`",
+            "`claude-haiku-5-5`",
+            "disabled",
+            "`medium`",
+            "anthropic_beta",
+            "Claude Code",
+            "applies by position",
+            "Keep it in place on later requests",
+            "On the direct Claude API, models without it",
+            "cache reads",
+        ):
+            self.assertIn(required, paragraph, required)
+        # Position decides when the level starts: a system message right after a
+        # new-input user turn applies to that turn's reply, so this phrase is wrong.
+        self.assertNotIn("from the next `user` turn", paragraph)
+        checklist = reference.split("## Audit Checklist", 1)[1].split("\n## ", 1)[0]
+        ap15_item = next(line for line in checklist.splitlines() if "(AP-15)" in line)
+        self.assertIn("(#effort-changes-and-the-cache)", ap15_item)
+        self.assertIn("https://platform.claude.com/docs/en/build-with-claude/effort-per-message", reference)
+        evals = json.loads(
+            (ROOT / "audit-prompt-caching" / "evals" / "evals.json").read_text()
+        )
+        eval35 = next(item for item in evals["evals"] if item["id"] == 35)
+        self.assertNotIn("не на Bedrock", eval35["expected_output"])
+
     def test_sonnet_5_5_effort_contract_is_documented(self):
         refs = ROOT / "audit-prompt-caching" / "references"
         ap15 = next(
@@ -4916,8 +5070,7 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("claude-sonnet-5-5", ap15["fix"])
         self.assertIn("between_tools", ap15["avoid"])
         playbook = (refs / "agent-tools.md").read_text()
-        self.assertIn("claude-sonnet-5-5", playbook)
-        self.assertIn("between_tools", playbook)
+        self.assertIn("anthropic.md#effort-changes-and-the-cache", playbook)
         reference = (refs / "anthropic.md").read_text()
         section = reference.split("## Claude Sonnet 5.5 Cache Snapshot", 1)[1]
         section = section.split("\n## ", 1)[0]
@@ -4940,12 +5093,25 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertIn("https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5", reference)
 
     def test_ap15_rule_and_agent_playbook_match_supported_effort_models(self):
-        rules = json.loads((ROOT / "audit-prompt-caching" / "references" / "rules.json").read_text())
+        refs = ROOT / "audit-prompt-caching" / "references"
+        rules = json.loads((refs / "rules.json").read_text())
         ap15 = next(rule for rule in rules["rules"] if rule["id"] == "AP-15")
-        playbook = (ROOT / "audit-prompt-caching" / "references" / "agent-tools.md").read_text()
-        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "claude-opus-5-5"):
+        playbook = (refs / "agent-tools.md").read_text()
+        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
             self.assertIn(model, ap15["fix"], model)
             self.assertIn(model, playbook, model)
+        # Claude per-message effort models and fixed-effort thinking modes live
+        # only in anthropic.md; the playbook AP-15 bullet links there instead.
+        bullet = next(
+            line for line in playbook.splitlines() if "per-step effort router" in line
+        )
+        self.assertIn("(anthropic.md#effort-changes-and-the-cache)", bullet)
+        self.assertNotRegex(bullet, r"`claude-[^`]+`")
+        effort = (refs / "anthropic.md").read_text()
+        effort = effort.split("### Effort changes and the cache", 1)[1].split("\n## ", 1)[0]
+        for required in ("Opus 5.5", "Sonnet 5.5", "`claude-haiku-5-5`", "`between_tools`", "`disabled`"):
+            self.assertIn(required, effort, required)
+        self.assertIn("claude-opus-5-5", ap15["fix"])
         # The playbook's direct OpenAI configuration_update list must name
         # exactly the linter's exact-ID allowlist (no wildcard or Bedrock ID).
         listed = re.search(

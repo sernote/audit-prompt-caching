@@ -174,7 +174,7 @@
     {
       "id": 35,
       "prompt": "Мы перешли на Claude Fable 5.1 и меняем output_config.effort между запросами одного диалога. cache_creation_input_tokens растёт каждый ход, cache_read_input_tokens почти ноль. Что проверить?",
-      "expected_output": "Ответ на русском. Смена top-level output_config.effort перерисовывает промпт и сбрасывает кэш сообщений (AP-15). На Fable 5.1, Mythos 5.1 и Opus 5 использовать per-message effort: role system с пустым content и output_config.effort плюс beta-заголовок mid-conversation-output-config-2026-07-01; на Claude API и Google Cloud, не на Bedrock. Проверить, что чтения кэша сохраняются на следующем ходу; учесть 0.025x цену чтения и 512-токенный минимум."
+      "expected_output": "Ответ на русском. Смена top-level output_config.effort перерисовывает промпт и сбрасывает кэш сообщений (AP-15). На Fable 5.1, Mythos 5.1 и Opus 5 использовать per-message effort: role system с пустым content и output_config.effort плюс beta-заголовок mid-conversation-output-config-2026-07-01; поддержку сверить по модели и платформе. Проверить, что чтения кэша сохраняются на следующем ходу; учесть 0.025x цену чтения и 512-токенный минимум."
     },
     {
       "id": 36,
