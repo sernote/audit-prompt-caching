@@ -44,7 +44,7 @@ Many projects call DeepSeek through the OpenAI SDK with a custom `base_url`. Do 
 
 - Chat Completions: `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens` (required, hit + miss = `prompt_tokens`) plus `prompt_tokens_details.cached_tokens` as an alias of the hit count and `completion_tokens_details.reasoning_tokens`. Streaming usage arrives only on the last chunk with `stream_options.include_usage`.
 - Responses API (stateless: `previous_response_id`, `conversation`, and `store` unsupported): `usage.input_tokens_details.cached_tokens` only, with no miss counter, so the denominator is `input_tokens`.
-- Anthropic-compatible `https://api.deepseek.com/anthropic`: `cache_control` is documented as ignored on text, tools, `tool_use`, and `tool_result`; caching stays automatic, and the guide does not document the returned cache usage fields. Treat `cache_read_input_tokens`/`cache_creation_input_tokens` on this route as unverified until captured.
+- Messages API (`/anthropic`) caches automatically and ignores `cache_control`. For streams, count final `message_delta.usage` once per request. Skip `message_start`. Flag missing final usage. Sum `input_tokens` (misses), `cache_read_input_tokens` and `cache_creation_input_tokens` (currently 0). Reads cannot identify what was reused.
 
 ### Thinking Mode And Tools
 
