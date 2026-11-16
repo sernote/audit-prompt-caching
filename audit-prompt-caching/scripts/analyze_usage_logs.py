@@ -555,18 +555,22 @@ def infer_provider(record):
     return usage_adapter_for(record).provider
 
 
-def cache_benefit_tokens(row):
-    return row["cached_tokens"] + row["cache_read_input_tokens"]
-
-
-def cache_write_total_tokens(row):
-    return row["cache_write_tokens"] + row["cache_creation_input_tokens"]
+def qwen_chat_write_alias(adapter, record, source_fields):
+    """Qwen4 Chat documents both nested write spellings as equal aliases."""
+    return (
+        isinstance(adapter, OpenAICompatibleUsageAdapter)
+        and provider_name(record) in ("qwen", "dashscope", "alibaba")
+        and source_fields["input_tokens"] == "usage.prompt_tokens"
+        and all(
+            source_fields[field] == "usage.prompt_tokens_details." + field
+            for field in ("cache_write_tokens", "cache_creation_input_tokens")
+        )
+    )
 
 
 def inclusive_aggregates(row):
     """Return the derived inclusive totals that must fit inside the input total."""
-    benefit = cache_benefit_tokens(row)
-    write_total = cache_write_total_tokens(row)
+    benefit, write_total = row["cache_benefit_tokens"], row["cache_write_total_tokens"]
     return (
         ("cache_benefit_tokens", benefit),
         ("cache_write_total_tokens", write_total),
@@ -667,24 +671,29 @@ def normalize_record(record, accounting_mode=None, index=None):
         if adapter.semantics == "ambiguous" and accounting_mode
         else adapter.semantics
     )
-
-    benefit_tokens = cache_benefit_tokens(row)
-    write_total_tokens = cache_write_total_tokens(row)
+    writes = row["cache_write_tokens"], row["cache_creation_input_tokens"]
+    alias = qwen_chat_write_alias(adapter, record, source_fields)
+    mismatch = alias and writes[0] != writes[1]
+    row["cache_benefit_tokens"] = row["cached_tokens"] + row["cache_read_input_tokens"]
+    row["cache_write_total_tokens"] = writes[0] if alias and not mismatch else sum(writes)
     total_input_tokens = row["input_tokens"]
     if semantics == "additive":
-        total_input_tokens += benefit_tokens + write_total_tokens
-
+        total_input_tokens += row["cache_benefit_tokens"] + row["cache_write_total_tokens"]
+    warnings = normalization_warnings(adapter, row, semantics, index)
+    if mismatch:
+        message = "Qwen Chat cache write aliases differ"
+        warnings.append(
+            {"code": "QWEN_CACHE_WRITE_ALIAS_MISMATCH", "index": index, "message": message}
+        )
     row.update(
         {
-            "cache_benefit_tokens": benefit_tokens,
-            "cache_write_total_tokens": write_total_tokens,
             "total_input_tokens": total_input_tokens,
             "accounting_semantics": semantics,
             "source_fields": source_fields,
-            "denominator_status": denominator_status(
-                row, semantics, total_input_tokens
-            ),
-            "warnings": normalization_warnings(adapter, row, semantics, index),
+            "denominator_status": "invalid"
+            if mismatch
+            else denominator_status(row, semantics, total_input_tokens),
+            "warnings": warnings,
         }
     )
     return row
@@ -746,32 +755,26 @@ def read_records(path):
     return read_json_records(Path(path))
 
 
+def ratio(numerator, denominator, empty=None):
+    return round(numerator / denominator, 4) if denominator else empty
+
+
 def summarize(records, accounting_mode=None):
-    normalized = [
-        normalize_record(record, accounting_mode=accounting_mode, index=index)
-        for index, record in enumerate(records)
-    ]
-    totals = {
-        "records": len(normalized),
-        "input_tokens": sum(row["input_tokens"] for row in normalized),
-        "cached_tokens": sum(row["cached_tokens"] for row in normalized),
-        "cache_read_input_tokens": sum(
-            row["cache_read_input_tokens"] for row in normalized
-        ),
-        "cache_creation_input_tokens": sum(
-            row["cache_creation_input_tokens"] for row in normalized
-        ),
-        "cache_write_tokens": sum(row["cache_write_tokens"] for row in normalized),
-        "cache_write_total_tokens": sum(
-            row["cache_write_total_tokens"] for row in normalized
-        ),
-        "cache_benefit_tokens": sum(
-            row["cache_benefit_tokens"] for row in normalized
-        ),
-        "total_input_tokens": sum(row["total_input_tokens"] for row in normalized),
-        "output_tokens": sum(row["output_tokens"] for row in normalized),
-        "warnings": [warning for row in normalized for warning in row["warnings"]],
-    }
+    normalized = normalized_events(records, accounting_mode)
+    totals = {"records": len(normalized)}
+    for field in (
+        "input_tokens",
+        "cached_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+        "cache_write_tokens",
+        "cache_write_total_tokens",
+        "cache_benefit_tokens",
+        "total_input_tokens",
+        "output_tokens",
+    ):
+        totals[field] = sum(row[field] for row in normalized)
+    totals["warnings"] = [warning for row in normalized for warning in row["warnings"]]
     totals["denominator_status"] = aggregate_denominator_status(
         {row["denominator_status"] for row in normalized}
     )
@@ -779,24 +782,11 @@ def summarize(records, accounting_mode=None):
     totals["accounting_semantics"] = (
         next(iter(semantics)) if len(semantics) == 1 else "mixed" if semantics else "unknown"
     )
-    totals["cache_hit_ratio"] = (
-        round(totals["cache_benefit_tokens"] / totals["total_input_tokens"], 4)
-        if totals["total_input_tokens"]
-        else 0
-    )
-    totals["cache_write_read_ratio"] = (
-        round(totals["cache_write_total_tokens"] / totals["cache_benefit_tokens"], 4)
-        if totals["cache_benefit_tokens"]
-        else None
-    )
-    totals["output_share"] = (
-        round(
-            totals["output_tokens"]
-            / (totals["total_input_tokens"] + totals["output_tokens"]),
-            4,
-        )
-        if totals["total_input_tokens"] or totals["output_tokens"]
-        else 0
+    benefit, total_input = totals["cache_benefit_tokens"], totals["total_input_tokens"]
+    totals["cache_hit_ratio"] = ratio(benefit, total_input, 0)
+    totals["cache_write_read_ratio"] = ratio(totals["cache_write_total_tokens"], benefit)
+    totals["output_share"] = ratio(
+        totals["output_tokens"], total_input + totals["output_tokens"], 0
     )
     return totals
 

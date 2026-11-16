@@ -1137,6 +1137,140 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(event["denominator_status"], "valid")
         self.assertEqual(event["warnings"], [])
 
+    @staticmethod
+    def qwen_chat_usage(write, creation, cached=0, prompt=2304):
+        # Qwen4 explicit-cache Chat example: both nested write spellings.
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": 128,
+            "prompt_tokens_details": {
+                "cached_tokens": cached,
+                "cache_write_tokens": write,
+                "cache_creation_input_tokens": creation,
+            },
+        }
+
+    def test_analyze_usage_logs_counts_qwen_chat_write_aliases_once(self):
+        # explicit-cache-qwen4: the two Chat write fields are equal; never add.
+        for provider in ("qwen", "dashscope", "alibaba"):
+            cold = {"provider": provider, "usage": self.qwen_chat_usage(2048, 2048)}
+            warm = {"provider": provider, "usage": self.qwen_chat_usage(0, 0, 2048)}
+            long_cold = {
+                "provider": provider,
+                "usage": self.qwen_chat_usage(2048, 2048, prompt=10000),
+            }
+            with self.subTest(provider=provider):
+                event = self.normalized_event(cold)
+                self.assertEqual(event["accounting_semantics"], "inclusive")
+                self.assertEqual(event["cache_write_tokens"], 2048)
+                self.assertEqual(event["cache_creation_input_tokens"], 2048)
+                self.assertEqual(event["cache_write_total_tokens"], 2048)
+                self.assertEqual(
+                    event["source_fields"]["cache_creation_input_tokens"],
+                    "usage.prompt_tokens_details.cache_creation_input_tokens",
+                )
+                self.assertEqual(
+                    event["source_fields"]["cache_write_tokens"],
+                    "usage.prompt_tokens_details.cache_write_tokens",
+                )
+                self.assertEqual(event["denominator_status"], "valid")
+                self.assertEqual(event["warnings"], [])
+                self.assertEqual(
+                    self.normalized_event(long_cold)["cache_write_total_tokens"], 2048
+                )
+
+                summary = self.usage_summary([cold, warm])
+                self.assertEqual(summary["cache_write_tokens"], 2048)
+                self.assertEqual(summary["cache_creation_input_tokens"], 2048)
+                self.assertEqual(summary["cache_write_total_tokens"], 2048)
+                self.assertEqual(summary["cache_benefit_tokens"], 2048)
+                self.assertEqual(summary["total_input_tokens"], 4608)
+                self.assertEqual(summary["cache_hit_ratio"], 0.4444)
+                self.assertEqual(summary["cache_write_read_ratio"], 1.0)
+                self.assertEqual(summary["denominator_status"], "valid")
+                self.assertEqual(summary["warnings"], [])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, [cold])
+            result = run_script("render_audit_report.py", "--usage-log", usage_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Cache write tokens: 2048", result.stdout)
+
+    def test_analyze_usage_logs_rejects_qwen_chat_write_alias_mismatch(self):
+        for write, creation in ((2048, 1024), (2048, 0), (0, 2048)):
+            record = {
+                "provider": "qwen",
+                "usage": self.qwen_chat_usage(write, creation, prompt=10000),
+            }
+            with self.subTest(write=write, creation=creation):
+                event = self.normalized_event(record)
+                self.assertEqual(event["cache_write_tokens"], write)
+                self.assertEqual(event["cache_creation_input_tokens"], creation)
+                # Neither alias is authoritative; keep the non-decision-grade sum.
+                self.assertEqual(event["cache_write_total_tokens"], write + creation)
+                self.assertEqual(event["denominator_status"], "invalid")
+                self.assertEqual(
+                    [warning["code"] for warning in event["warnings"]],
+                    ["QWEN_CACHE_WRITE_ALIAS_MISMATCH"],
+                )
+                self.assertEqual(self.usage_summary(record)["denominator_status"], "invalid")
+        with tempfile.TemporaryDirectory() as tmp:
+            usage_path = self.write_usage_log(tmp, [record])
+            result = run_script("render_audit_report.py", "--usage-log", usage_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Usage accounting: fail", result.stdout)
+        self.assertIn("QWEN_CACHE_WRITE_ALIAS_MISMATCH", result.stdout)
+
+    def test_analyze_usage_logs_keeps_other_write_shapes_summed(self):
+        # Alias counting needs a Qwen label, the labeled Chat adapter,
+        # usage.prompt_tokens and both keys inside usage.prompt_tokens_details.
+        chat = self.qwen_chat_usage(2048, 2048, prompt=10000)
+        details = chat["prompt_tokens_details"]
+        split = {
+            **chat,
+            "cache_write_tokens": 2048,
+            "prompt_tokens_details": {
+                "cached_tokens": 0,
+                "cache_creation_input_tokens": 2048,
+            },
+        }
+        records = {
+            "unlabeled": {"usage": chat},
+            "other-provider": {"provider": "deepseek", "usage": chat},
+            "responses": {
+                "provider": "qwen",
+                "usage": {"input_tokens": 10000, "prompt_tokens_details": details},
+            },
+            "split": {"provider": "qwen", "usage": split},
+            "top-level": {"provider": "qwen", **chat},
+            "no-cached-field": {
+                "provider": "qwen",
+                "usage": {
+                    "prompt_tokens": 10000,
+                    "prompt_tokens_details": {
+                        "cache_write_tokens": 2048,
+                        "cache_creation_input_tokens": 2048,
+                    },
+                },
+            },
+        }
+        for name, record in records.items():
+            with self.subTest(shape=name):
+                event = self.normalized_event(record)
+                self.assertEqual(event["cache_write_total_tokens"], 4096)
+                self.assertNotIn(
+                    "QWEN_CACHE_WRITE_ALIAS_MISMATCH",
+                    [warning["code"] for warning in event["warnings"]],
+                )
+        for field in ("cache_write_tokens", "cache_creation_input_tokens"):
+            usage = self.qwen_chat_usage(2048, 2048)
+            del usage["prompt_tokens_details"][field]
+            with self.subTest(single=field):
+                event = self.normalized_event({"provider": "qwen", "usage": usage})
+                self.assertEqual(event["cache_write_total_tokens"], 2048)
+                self.assertIsNone(event["source_fields"][field])
+                self.assertEqual(event["denominator_status"], "valid")
+
     def test_analyze_usage_logs_does_not_zero_cache_from_input_details_breakdown(self):
         event = self.normalized_event(
             {
