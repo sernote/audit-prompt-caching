@@ -20,6 +20,7 @@ Official sources:
 - Responses API: https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses
 - Context cache: https://help.aliyun.com/en/model-studio/context-cache
 - Explicit cache best practice: https://help.aliyun.com/en/model-studio/explicit-cache-best-practice
+- Qwen4 explicit cache: https://www.alibabacloud.com/help/en/model-studio/explicit-cache-qwen4
 - Anthropic-compatible Messages API: https://www.alibabacloud.com/help/en/model-studio/anthropic-api-messages
 - Model pricing: https://help.aliyun.com/en/model-studio/model-pricing
 
@@ -33,9 +34,9 @@ Qwen can mean:
 
 Always identify which one is in use.
 
-DashScope docs describe both explicit and implicit context caching for supported models, and the two are mutually exclusive per request: a request carrying `cache_control` uses only explicit caching. Both need at least 1,024 cacheable tokens (explicit TTL 5 minutes, reset on hit; implicit TTL unspecified and implicit cannot be disabled). Snapshot models such as `qwen3.8-max-0902` and third-party models (DeepSeek, Kimi, GLM) are listed with explicit cache support per region. Self-hosted Qwen follows the inference engine's cache behavior, so use the vLLM/SGLang reference for those deployments.
+Managed explicit caching needs 1,024+ tokens, max 4 breakpoints and ~20-block lookback. On pre-Qwen4 routes, `cache_control` makes requests explicit-only (5m TTL reset on hit). Their implicit (also 1,024+) has no stated TTL and cannot be disabled. Their Qwen3.5+ marks are **message-level** (in-message marks share a boundary, system messages merge, `tools` join system and are unmarkable), older models content-level.
 
-Explicit breakpoints on Qwen3.5+ are **message-level**: several `cache_control` markers inside one message's content array do not create separate breakpoints, multiple system messages merge into one segment, and `tools` are cached as part of the system message and cannot carry `cache_control`. Up to 4 markers per request. Older Qwen models support content-level breakpoints. A hit is also lost when the gap between the last content block and an existing cached block exceeds about 20 content blocks.
+Qwen4 prefixes end at marked content blocks. Hits need same user/model/prefix and renew only this request's breakpoints. TTL `5m` (default) or `1h` applies to explicit cache only. Chat/Responses use root `prompt_cache_options.mode`/`.ttl`. Mode `implicit` (Responses default) auto-marks input end for explicit caching. Blocks use `prompt_cache_breakpoint` (Chat also `cache_control`, whose last marker's `ttl` applies without root ttl). Unmarked Chat `explicit` or ttl-only requests use implicit cache. Anthropic-compatible root `cache_control` is automatic, block-level manual, each with `ttl`.
 
 For the documented DashScope Responses flow, enable session cache with `x-dashscope-session-cache: enable` (default `disable`) and continue with `previous_response_id`; a response `id` stays valid for 7 days and the cache engages once the cumulative context exceeds 1,024 tokens. Any character change in the system or user prompt, including whitespace, resets `cached_tokens` to 0. This is distinct from a generic prefix hash: preserve the response lineage only within the intended conversation and do not log raw IDs. Responses usage reports the total as `usage.input_tokens` and may expose both `input_tokens_details.cached_tokens` and `prompt_tokens_details.cached_tokens`, plus `prompt_tokens_details.cache_creation_input_tokens` with a nested `cache_creation.cache_type` fixed to `ephemeral`; do not assume OpenAI field names are complete for Qwen.
 
