@@ -4229,6 +4229,100 @@ class PromptCacheScriptsTest(unittest.TestCase):
         self.assertEqual(output["findings"][0]["rule_id"], "AP-1")
         self.assertIn("input contains", output["findings"][0]["evidence"])
 
+    def test_layout_linter_skips_gpt62_responses_root_instructions_for_ap1(self):
+        # OpenAI prompt-caching guide (GPT-6.2 changelog, Nov 17, 2026): exact
+        # GPT-6.2 Sol/Astra append Responses top-level `instructions` after
+        # `input`, beyond eligible cache breakpoints, so only `input` is the
+        # AP-1 prefix. A stable-looking suffix must not hide input volatility.
+        stable = "Stable reusable policy. Classify the supplied document."
+        volatile = "Today is 2026-11-18. request_id=req_gpt62"
+        for model in ("gpt-6.2-sol", "gpt-6.2-astra"):
+            for label, reusable, dynamic in (
+                (
+                    "input[0]",
+                    [{"role": "developer", "content": stable}],
+                    [{"role": "user", "content": volatile}],
+                ),
+                ("input", stable, volatile),
+            ):
+                for case, instructions, value, expected in (
+                    ("root-only volatility", volatile, reusable, 0),
+                    ("early input volatility", volatile, dynamic, 1),
+                    ("stable-looking suffix", stable, dynamic, 1),
+                ):
+                    payload = {"model": model, "instructions": instructions, "input": value}
+                    with self.subTest(model=model, input=label, case=case):
+                        status, output = lint_payload(payload)
+                        findings = output["findings"]
+
+                        self.assertEqual(status, expected, output)
+                        if expected:
+                            self.assertEqual([item["rule_id"] for item in findings], ["AP-1"])
+                            self.assertTrue(
+                                findings[0]["evidence"].startswith(f"{label} contains"),
+                                findings[0]["evidence"],
+                            )
+                        else:
+                            self.assertEqual(output["status"], "ok")
+                            self.assertEqual(findings, [])
+                            self.assertIn("AP-1", output["clean_checks"])
+
+    def test_layout_linter_keeps_root_instructions_first_outside_gpt62_responses(self):
+        # Only exact direct GPT-6.2 Sol/Astra IDs on an unambiguous Responses
+        # surface drop root instructions from AP-1; other IDs, aliases,
+        # snapshots, Chat, ambiguous, and missing surfaces keep them first.
+        stable = [{"role": "developer", "content": "Stable reusable policy."}]
+        cases = {
+            model: {"model": model, "input": stable}
+            for model in (
+                "gpt-6.1-sol",
+                "gpt-6.2",
+                "gpt-6.3-sol",
+                "gpt-6.2-sol-2026-11-17",
+                "openai/gpt-6.2-sol",
+                "openai.gpt-6.2-astra",
+                "GPT-6.2-SOL",
+                "custom-alias",
+            )
+        }
+        for model in ("gpt-6.2-sol", "gpt-6.2-astra"):
+            cases[f"{model} chat"] = {"model": model, "messages": stable}
+            cases[f"{model} ambiguous"] = {"model": model, "messages": stable, "input": stable}
+            cases[f"{model} missing surface"] = {"model": model}
+        for case, payload in cases.items():
+            payload["instructions"] = "Today is 2026-11-18. request_id=req_gpt62"
+            with self.subTest(case=case):
+                status, output = lint_payload(payload)
+                finding = output["findings"][0]
+
+                self.assertEqual(status, 1, output)
+                self.assertEqual(finding["rule_id"], "AP-1")
+                self.assertTrue(
+                    finding["evidence"].startswith("instructions contains"),
+                    finding["evidence"],
+                )
+
+    def test_layout_linter_keeps_gpt62_cache_and_effort_contracts(self):
+        # The AP-1 instructions exclusion does not extend the AP-11 cache-control
+        # or AP-15 configuration_update allowlists to GPT-6.2; each needs its own
+        # documented evidence before those exact-ID sets change.
+        for model in ("gpt-6.2-sol", "gpt-6.2-astra"):
+            payload = gpt61_sol_payload(model=model, instructions="Today is 2026-11-18.")
+            payload["input"].insert(
+                1, {"type": "configuration_update", "reasoning": {"effort": "high"}}
+            )
+            with self.subTest(model=model):
+                status, output = lint_payload(payload)
+
+                self.assertEqual(status, 1, output)
+                self.assertEqual([item["rule_id"] for item in output["findings"]], ["AP-15"])
+                self.assertEqual(output["clean_checks"], ["AP-1", "AP-2"])
+                self.assertEqual(output["cache_policy"]["model_support"], "unknown")
+                self.assertFalse(output["cache_policy"]["validated"])
+                self.assertFalse(output["effort_policy"]["per_message_effort_supported"])
+                self.assertTrue(output["effort_policy"]["validated"])
+                self.assertFalse(output["effort_policy"]["valid"])
+
     def test_layout_linter_validates_direct_gpt56_explicit_marker(self):
         with tempfile.TemporaryDirectory() as tmp:
             request_path = Path(tmp) / "request.json"

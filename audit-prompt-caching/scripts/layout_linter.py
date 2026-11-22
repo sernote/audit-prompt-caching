@@ -42,6 +42,9 @@ STABLE_HINT_RE = re.compile(
 GPT56_MODELS = {"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
 GPT6_MODELS = {"gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"}
 EXPLICIT_CACHE_MODELS = GPT56_MODELS | GPT6_MODELS
+# Exact direct IDs that append Responses root `instructions` after `input`,
+# beyond eligible cache breakpoints; AP-1 skips them. Verify docs to extend.
+INSTRUCTIONS_AFTER_INPUT_MODELS = {"gpt-6.2-sol", "gpt-6.2-astra"}
 # Direct OpenAI models documented for the positional `configuration_update`
 # input item (standard, single-agent mode only). Verify current docs.
 CONFIGURATION_UPDATE_MODELS = GPT6_MODELS
@@ -102,7 +105,10 @@ def input_text(input_item):
 def ordered_prompt_segments(payload):
     segments = []
     instructions = payload.get("instructions")
-    if instructions is not None:
+    if instructions is not None and not (
+        payload.get("model") in INSTRUCTIONS_AFTER_INPUT_MODELS
+        and api_surface(payload) == "responses"
+    ):
         segments.append(("instructions", serialized_text(instructions)))
 
     messages = payload.get("messages", [])
@@ -122,32 +128,20 @@ def ordered_prompt_segments(payload):
 
 
 def lint_volatile_prefix(payload):
-    segments = ordered_prompt_segments(payload)
-    if not segments:
-        return None
-    volatile_index = None
-    stable_index = None
-    volatile_label = ""
-    volatile_evidence = ""
-    for index, (label, text) in enumerate(segments):
-        if volatile_index is None and VOLATILE_RE.search(text):
-            volatile_index = index
-            volatile_label = label
-            volatile_evidence = text[:160]
-        if stable_index is None and STABLE_HINT_RE.search(text):
-            stable_index = index
-    if volatile_index is not None and (
-        stable_index is None or volatile_index <= stable_index
-    ):
-        return finding(
-            "AP-1",
-            "high",
-            "prefix-stability",
-            "volatile data appears before reusable prompt content",
-            f"{volatile_label} contains {volatile_evidence!r}",
-            "move request/user/time metadata after the stable cacheable prefix",
-            "render multiple requests and confirm the cacheable prefix hash is stable",
-        )
+    # The first segment with volatile or stable content decides AP-1.
+    for label, text in ordered_prompt_segments(payload):
+        if VOLATILE_RE.search(text):
+            return finding(
+                "AP-1",
+                "high",
+                "prefix-stability",
+                "volatile data appears before reusable prompt content",
+                f"{label} contains {text[:160]!r}",
+                "move request/user/time metadata after the stable cacheable prefix",
+                "render multiple requests and confirm the cacheable prefix hash is stable",
+            )
+        if STABLE_HINT_RE.search(text):
+            return None
     return None
 
 
